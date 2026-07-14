@@ -38,8 +38,35 @@ export const SCORE_AIR_GEM = 250;
 export const SCORE_STUNT = 400;
 export const SCORE_LANE_BONUS = 200;
 export const SCORE_SMASH = 50;
+export const SCORE_MONSTER = 300;
 export const SCORE_FINISH = 1000;
 export const LANE_BONUS_SECONDS = 4;
+
+// AI opponents
+export const OPPONENT_COUNT = 3;
+export const OPPONENTS: { name: string; color: number; skill: number }[] = [
+  { name: "Vex", color: 0xef4444, skill: 0.99 },
+  { name: "Nyx", color: 0x22c55e, skill: 0.96 },
+  { name: "Zir", color: 0xf59e0b, skill: 0.93 },
+];
+
+// sword swing (transformer melee)
+export const SWING_DURATION = 0.35;
+
+// camera presets: distance behind, height, look-ahead distance, look height
+export interface CameraPreset {
+  name: string;
+  back: number;
+  height: number;
+  ahead: number;
+  lookHeight: number;
+  fov: number;
+}
+export const CAMERA_PRESETS: CameraPreset[] = [
+  { name: "CHASE", back: 9.5, height: 3.4, ahead: 7, lookHeight: 1.2, fov: 72 },
+  { name: "CINEMATIC", back: 16, height: 6.5, ahead: 4, lookHeight: 1.8, fov: 66 },
+  { name: "HOOD", back: 2, height: 2.3, ahead: 14, lookHeight: 1.6, fov: 82 },
+];
 
 // re-exported so 3D code and the shared HUD agree
 export { NITRO_MAX_CHARGES, TRANSFORM_DURATION } from "../game/constants";

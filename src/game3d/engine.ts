@@ -3,48 +3,66 @@ import {
   WIDTH, HEIGHT, STEP,
   ROAD_HALF_WIDTH, LANE_CENTERS,
   MAX_SPEED, ACCEL, BRAKING, DECEL, OFF_ROAD_DECEL, OFF_ROAD_LIMIT, CENTRIFUGAL,
-  TOTAL_LAPS, OUT_OF_BOUNDS_X, OUT_OF_BOUNDS_PENALTY,
+  OUT_OF_BOUNDS_X, OUT_OF_BOUNDS_PENALTY,
   NITRO_MAX_CHARGES, NITRO_DURATION, NITRO_SPEED_FACTOR,
   GRAVITY, RAMP_LAUNCH, FLY_LIFT, MAX_ALT, AIR_GEM_ALT, AIR_GEM_TOLERANCE,
   TRANSFORM_DURATION, TRANSFORM_SPEED_FACTOR,
-  SCORE_GEM, SCORE_AIR_GEM, SCORE_STUNT, SCORE_LANE_BONUS, SCORE_SMASH, SCORE_FINISH,
-  LANE_BONUS_SECONDS,
+  SCORE_GEM, SCORE_AIR_GEM, SCORE_STUNT, SCORE_LANE_BONUS, SCORE_SMASH,
+  SCORE_MONSTER, SCORE_FINISH, LANE_BONUS_SECONDS,
+  OPPONENTS, CAMERA_PRESETS, SWING_DURATION,
 } from "./constants";
 import { Track, makeRoadTexture, makeCheckerTexture } from "./track";
 import { loadModels, instantiate, type ModelLibrary } from "./assets";
 import {
-  makeSkyDome, makeGround, makeGem, makeNitroCan, makeOrb, makeRamp,
-  makeCrystalCluster, makeMech, makeFlame, makeUnderGlow, type MechRig,
+  makeSkyDome, makeGround, makeGroundTexture, makeGrassTexture,
+  makeGrassField, makeRockField, makeMountainRing,
+  makeGem, makeNitroCan, makeOrb, makeRamp, makeCrystalCluster, makeMonster,
+  makeMech, makeSlash, makeFlame, makeUnderGlow, tintModel,
+  type MechRig, type Placement,
 } from "./objects";
+import { REALMS, pickScenery, type RealmSpec, type SceneryKind } from "./realms";
+import { Opponent } from "./ai";
+import { Minimap } from "./minimap";
 import { Input } from "../game/input";
 import { drawHud, drawToasts, drawCenterText, type Toast } from "../game/render";
 import type { GameMode, GameResult, GameOptions } from "../game/engine";
 
 type Phase = "loading" | "countdown" | "racing" | "finished";
 
-type EntityType = "gem" | "airGem" | "nitro" | "orb" | "ramp" | "rock";
+type EntityType = "gem" | "airGem" | "nitro" | "orb" | "ramp" | "rock" | "monster";
 
 interface Entity {
   type: EntityType;
   dist: number;
-  lateral: number; // playerX units: 1 = road edge
+  lateral: number;
   collectedLap: number;
   obj: THREE.Object3D;
   baseY: number;
   phase: number;
 }
 
+interface ModeConfig {
+  laps: number;
+  opponents: boolean;
+  orbs: boolean;
+  monsters: boolean;
+  startNitro: number;
+  label: string;
+}
+
+const MODE_CONFIG: Record<GameMode, ModeConfig> = {
+  classic:   { laps: 3, opponents: true,  orbs: false, monsters: false, startNitro: 1, label: "CIRCUIT" },
+  timetrial: { laps: 3, opponents: false, orbs: false, monsters: false, startNitro: 1, label: "TIME TRIAL" },
+  nitro:     { laps: 1, opponents: true,  orbs: false, monsters: false, startNitro: NITRO_MAX_CHARGES, label: "NITRO SPRINT" },
+  transform: { laps: 3, opponents: true,  orbs: true,  monsters: true,  startNitro: 1, label: "TRANSFORMER" },
+};
+
 const COLLIDE_WIDTH: Record<EntityType, number> = {
-  gem: 0.24,
-  airGem: 0.3,
-  nitro: 0.24,
-  orb: 0.32,
-  ramp: 0.42,
-  rock: 0.3,
+  gem: 0.24, airGem: 0.3, nitro: 0.24, orb: 0.32, ramp: 0.42, rock: 0.3, monster: 0.36,
 };
 
 const BUCKET_METERS = 5;
-const COLLIDE_DIST = 2.6;
+const COLLIDE_DIST = 2.8;
 
 function clamp(v: number, min: number, max: number) {
   return Math.max(min, Math.min(max, v));
@@ -67,8 +85,11 @@ export class Game {
   private scene = new THREE.Scene();
   private camera: THREE.PerspectiveCamera;
   private input = new Input();
-  private track = new Track();
+  private realm: RealmSpec;
+  private track: Track;
+  private minimap: Minimap;
   private mode: GameMode;
+  private cfg: ModeConfig;
   private onFinish: (result: GameResult) => void;
   private rafId = 0;
   private last = 0;
@@ -80,13 +101,18 @@ export class Game {
   private entities: Entity[] = [];
   private buckets = new Map<number, Entity[]>();
   private spinners: Entity[] = [];
+  private monsters: Entity[] = [];
+  private opponents: Opponent[] = [];
   private playerRoot = new THREE.Group();
-  private playerBody = new THREE.Group(); // leans & rolls
+  private playerBody = new THREE.Group();
   private carModel: THREE.Group | null = null;
   private mech: MechRig | null = null;
+  private slash: THREE.Mesh | null = null;
   private flames: THREE.Mesh[] = [];
   private underGlow: THREE.Mesh | null = null;
   private camPos = new THREE.Vector3();
+  private camSnap = true;
+  private cameraIndex = 0;
 
   // race state
   private phase: Phase = "loading";
@@ -95,6 +121,7 @@ export class Game {
   private lap = 1;
   private raceTime = 0;
   private finished = false;
+  private finalPosition = 1;
 
   // player state
   private position = 0;
@@ -105,6 +132,7 @@ export class Game {
   private vAlt = 0;
   private stuntAir = false;
   private spin = 0;
+  private swingT = 0;
 
   private nitroCharges = 1;
   private nitroT = 0;
@@ -126,12 +154,19 @@ export class Game {
   constructor(container: HTMLElement, options: GameOptions) {
     this.container = container;
     this.mode = options.mode;
+    this.cfg = MODE_CONFIG[options.mode];
+    this.realm = REALMS[options.realm ?? "forest"];
+    this.track = new Track(this.realm.controlPoints);
+    this.minimap = new Minimap(this.track);
     this.onFinish = options.onFinish;
+    this.lap = 1;
+    this.nitroCharges = this.cfg.startNitro;
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setSize(WIDTH, HEIGHT, false);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.domElement.className = "game-layer";
+    this.renderer.setClearColor(this.realm.palette.fog);
 
     const hudCanvas = document.createElement("canvas");
     hudCanvas.width = WIDTH;
@@ -144,8 +179,9 @@ export class Game {
     container.appendChild(this.renderer.domElement);
     container.appendChild(hudCanvas);
 
-    this.camera = new THREE.PerspectiveCamera(72, WIDTH / HEIGHT, 0.1, 1500);
-    this.scene.fog = new THREE.Fog(0x2a1b4d, 60, 420);
+    const pal = this.realm.palette;
+    this.camera = new THREE.PerspectiveCamera(CAMERA_PRESETS[0].fov, WIDTH / HEIGHT, 0.1, 1600);
+    this.scene.fog = new THREE.Fog(pal.fog, pal.fogNear, pal.fogFar);
 
     if (process.env.NODE_ENV !== "production") {
       (window as unknown as { __frGame?: Game }).__frGame = this;
@@ -177,23 +213,35 @@ export class Game {
   // --- world building ------------------------------------------------------
 
   private buildWorld(library: ModelLibrary) {
-    const { scene, track } = this;
+    const { scene, track, realm } = this;
+    const pal = realm.palette;
 
-    scene.add(makeSkyDome());
-    scene.add(makeGround());
-    scene.add(new THREE.HemisphereLight(0x9080d0, 0x1a2e1a, 1.1));
-    const sun = new THREE.DirectionalLight(0xc0b0ff, 1.4);
-    sun.position.set(60, 100, 30);
+    scene.add(makeSkyDome(pal));
+    scene.add(makeGround(makeGroundTexture(pal)));
+
+    // horizon-filling mountain ring
+    const cx = (track.bounds.minX + track.bounds.maxX) / 2;
+    const cz = (track.bounds.minZ + track.bounds.maxZ) / 2;
+    const radius = Math.max(track.bounds.maxX - track.bounds.minX, track.bounds.maxZ - track.bounds.minZ) * 0.75 + 260;
+    scene.add(makeMountainRing(pal, cx, cz, radius));
+
+    scene.add(new THREE.HemisphereLight(pal.hemiSky, pal.hemiGround, pal.hemiInt));
+    const sun = new THREE.DirectionalLight(pal.sun, pal.sunInt);
+    sun.position.set(80, 130, 40);
     scene.add(sun);
 
-    scene.add(track.buildRoadMesh(makeRoadTexture()));
+    scene.add(track.buildVergeMesh(makeGrassTexture(pal)));
+    scene.add(track.buildRoadMesh(makeRoadTexture(pal)));
     scene.add(track.buildStartLine(makeCheckerTexture()));
 
-    // player rig: root follows the track, body leans/rolls, forms swap inside
+    // player rig
     this.carModel = instantiate(library, "racer", 4.2);
     const mech = makeMech();
     mech.group.visible = false;
     this.mech = mech;
+    this.slash = makeSlash();
+    this.slash.position.set(1.2, 2.2, 1.6);
+    this.playerBody.add(this.slash);
     this.underGlow = makeUnderGlow();
     this.underGlow.position.y = 0.08;
     for (const x of [-0.8, 0.8]) {
@@ -207,7 +255,34 @@ export class Game {
     this.playerRoot.add(this.playerBody);
     scene.add(this.playerRoot);
 
+    if (this.cfg.opponents) this.spawnOpponents(library);
     this.decorate(library);
+  }
+
+  private spawnOpponents(library: ModelLibrary) {
+    for (let i = 0; i < OPPONENTS.length; i++) {
+      const spec = OPPONENTS[i];
+      const car = instantiate(library, "racer", 4.2);
+      tintModel(car, spec.color);
+      this.scene.add(car);
+      const startDist = this.track.wrap(-(i + 1) * 7);
+      const opp = new Opponent(car, spec.color, spec.name, spec.skill, startDist);
+      opp.lane = LANE_CENTERS[i % 3];
+      this.opponents.push(opp);
+    }
+  }
+
+  private sceneryObject(kind: SceneryKind, library: ModelLibrary, rand: () => number): THREE.Object3D {
+    switch (kind) {
+      case "crystal": return makeCrystalCluster(rand, this.realm.palette.crystalColors);
+      case "treeA": return instantiate(library, "treeA", 3 + rand() * 2.2);
+      case "treeB": return instantiate(library, "treeB", 3 + rand() * 2.2);
+      case "treeDark": return instantiate(library, "treeDark", 2.5 + rand() * 2);
+      case "mushroom": return instantiate(library, "mushroom", 1.2 + rand() * 1.4);
+      case "mushroomTall": return instantiate(library, "mushroomTall", 1.6 + rand() * 1.6);
+      case "rockA": return instantiate(library, "rockA", 2 + rand() * 2.5);
+      case "rockB": return instantiate(library, "rockB", 2 + rand() * 2.5);
+    }
   }
 
   private addEntity(type: EntityType, dist: number, lateral: number, obj: THREE.Object3D, extraY = 0) {
@@ -229,39 +304,53 @@ export class Game {
     if (type === "gem" || type === "airGem" || type === "orb" || type === "nitro") {
       this.spinners.push(entity);
     }
+    if (type === "monster") this.monsters.push(entity);
   }
 
   private decorate(library: ModelLibrary) {
-    const rand = mulberry32(42);
-    const len = this.track.length;
+    const rand = mulberry32(1337);
+    const { track, realm } = this;
+    const len = track.length;
+    const pal = realm.palette;
     const lane = () => LANE_CENTERS[Math.floor(rand() * 3)];
 
-    // roadside scenery (no collision)
-    for (let d = 0; d < len; d += 6) {
+    // roadside scenery — two bands each side for depth, denser than before
+    for (let d = 0; d < len; d += 4) {
       for (const side of [-1, 1]) {
-        const r = rand();
-        let obj: THREE.Object3D;
-        if (r < 0.28) obj = makeCrystalCluster(rand);
-        else if (r < 0.5) obj = instantiate(library, rand() < 0.5 ? "treeA" : "treeB", 3 + rand() * 2);
-        else if (r < 0.62) obj = instantiate(library, "treeDark", 2.5 + rand() * 2);
-        else if (r < 0.8) obj = instantiate(library, rand() < 0.5 ? "mushroom" : "mushroomTall", 1.2 + rand() * 1.6);
-        else if (r < 0.92) obj = instantiate(library, rand() < 0.5 ? "rockA" : "rockB", 2 + rand() * 2.5);
-        else continue; // occasional gap
-        const lateral = side * (ROAD_HALF_WIDTH + 3 + rand() * 9);
-        const p = this.track.pointAt(d + rand() * 4, lateral);
-        obj.position.x = p.x;
-        obj.position.z = p.z;
-        obj.rotation.y = rand() * Math.PI * 2;
-        this.scene.add(obj);
+        // near band
+        if (rand() < 0.85) {
+          const obj = this.sceneryObject(pickScenery(realm, rand), library, rand);
+          const off = side * (ROAD_HALF_WIDTH + 6 + rand() * 12);
+          const p = track.pointAt(d + rand() * 3, off);
+          obj.position.set(p.x, 0, p.z);
+          obj.rotation.y = rand() * Math.PI * 2;
+          this.scene.add(obj);
+        }
+        // far band
+        if (rand() < 0.5) {
+          const obj = this.sceneryObject(pickScenery(realm, rand), library, rand);
+          const off = side * (ROAD_HALF_WIDTH + 22 + rand() * 34);
+          const p = track.pointAt(d + rand() * 3, off);
+          obj.position.set(p.x, 0, p.z);
+          obj.rotation.y = rand() * Math.PI * 2;
+          obj.scale.multiplyScalar(1.1 + rand() * 0.5);
+          this.scene.add(obj);
+        }
       }
     }
+
+    // ground clutter fills the empty flats
+    const centerline = track.sampleXZ(220);
+    const grass = this.scatter(centerline, rand, 2600, ROAD_HALF_WIDTH * 1.3 + 3, 130);
+    this.scene.add(makeGrassField(pal, grass));
+    const pebbles = this.scatter(centerline, rand, 700, ROAD_HALF_WIDTH * 1.3 + 4, 150);
+    this.scene.add(makeRockField(pal, pebbles));
 
     // gem runs
     for (let d = 40; d < len - 40; d += 120) {
       const l = lane();
       for (let k = 0; k < 6; k++) {
-        const gem = makeGem(false);
-        this.addEntity("gem", d + k * 3.5, l, gem, 0.8);
+        this.addEntity("gem", d + k * 3.5, l, makeGem(pal.gem, false), 0.8);
       }
     }
 
@@ -281,17 +370,48 @@ export class Game {
       const l = lane();
       this.addEntity("ramp", d, l, makeRamp());
       for (const off of [15, 21, 27]) {
-        const gem = makeGem(true);
-        this.addEntity("airGem", d + off, l, gem, AIR_GEM_ALT);
+        this.addEntity("airGem", d + off, l, makeGem(0xfbbf24, true), AIR_GEM_ALT);
       }
     }
 
-    // transform orbs
-    if (this.mode === "transform") {
-      for (let d = 120; d < len - 60; d += 480) {
+    // transform orbs + monsters
+    if (this.cfg.orbs) {
+      for (let d = 120; d < len - 60; d += 460) {
         this.addEntity("orb", d, lane(), makeOrb());
       }
     }
+    if (this.cfg.monsters) {
+      for (let d = 240; d < len - 60; d += 150) {
+        this.addEntity("monster", d, lane(), makeMonster(rand));
+      }
+    }
+  }
+
+  /** Scatter points across the arena, skipping the road corridor. */
+  private scatter(
+    centerline: { x: number; z: number }[],
+    rand: () => number,
+    count: number,
+    minDist: number,
+    reach: number
+  ): Placement[] {
+    const { bounds } = this.track;
+    const pts: Placement[] = [];
+    let tries = 0;
+    while (pts.length < count && tries < count * 4) {
+      tries++;
+      const x = bounds.minX - reach + rand() * (bounds.maxX - bounds.minX + reach * 2);
+      const z = bounds.minZ - reach + rand() * (bounds.maxZ - bounds.minZ + reach * 2);
+      let near = Infinity;
+      for (const c of centerline) {
+        const dx = c.x - x, dz = c.z - z;
+        const dd = dx * dx + dz * dz;
+        if (dd < near) near = dd;
+      }
+      if (near < minDist * minDist) continue;
+      pts.push({ x, z, y: 0, s: 0.6 + rand() * 1.1, r: rand() * Math.PI * 2 });
+    }
+    return pts;
   }
 
   // --- game loop -----------------------------------------------------------
@@ -320,11 +440,33 @@ export class Game {
     return max;
   }
 
+  private playerProgress() {
+    return (this.lap - 1) * this.track.length + this.position;
+  }
+
+  private computePosition() {
+    if (this.opponents.length === 0) return 1;
+    const mine = this.playerProgress();
+    let ahead = 0;
+    for (const o of this.opponents) {
+      if (o.progress(this.track.length) > mine) ahead++;
+    }
+    return ahead + 1;
+  }
+
   private update(dt: number) {
     this.time += dt;
     for (const t of this.toasts) t.t -= dt;
     this.toasts = this.toasts.filter((t) => t.t > 0);
     this.crashFlash = Math.max(0, this.crashFlash - dt);
+    this.swingT = Math.max(0, this.swingT - dt);
+
+    if (this.input.cameraCycle) {
+      this.cameraIndex = (this.cameraIndex + 1) % CAMERA_PRESETS.length;
+      this.camera.fov = CAMERA_PRESETS[this.cameraIndex].fov;
+      this.camera.updateProjectionMatrix();
+      this.camSnap = true;
+    }
 
     if (this.phase === "loading") return;
 
@@ -334,20 +476,26 @@ export class Game {
       return;
     }
 
+    if (this.phase === "racing") this.updateOpponents(dt);
+
     if (this.phase === "finished") {
       this.speed = Math.max(0, this.speed + DECEL * dt);
       this.position = this.track.wrap(this.position + this.speed * dt);
+      this.updateOpponents(dt);
       this.finishT -= dt;
       if (this.finishT <= 0 && !this.finished) {
         this.finished = true;
         this.onFinish({
           mode: this.mode,
+          realm: this.realm.id,
           score: Math.max(0, Math.round(this.score)),
           gems: this.gems,
           stunts: this.stunts,
           laneBonuses: this.laneBonuses,
           penalties: this.penalties,
           timeMs: Math.round(this.raceTime * 1000),
+          position: this.finalPosition,
+          totalRacers: this.opponents.length + 1,
         });
       }
       return;
@@ -435,8 +583,8 @@ export class Game {
 
     // lane discipline bonus
     if (!airborne && Math.abs(this.playerX) <= 1 && speedPercent > 0.3) {
-      const lane = this.playerX < -1 / 3 ? 0 : this.playerX > 1 / 3 ? 2 : 1;
-      if (lane === this.lastLane) {
+      const laneIdx = this.playerX < -1 / 3 ? 0 : this.playerX > 1 / 3 ? 2 : 1;
+      if (laneIdx === this.lastLane) {
         this.laneT += dt;
         if (this.laneT >= LANE_BONUS_SECONDS) {
           this.laneT = 0;
@@ -445,7 +593,7 @@ export class Game {
           this.toast(`CLEAN LANE +${SCORE_LANE_BONUS}`, "#a7f3d0");
         }
       } else {
-        this.lastLane = lane;
+        this.lastLane = laneIdx;
         this.laneT = 0;
       }
     } else {
@@ -455,19 +603,18 @@ export class Game {
     this.collide(speedPercent);
 
     // advance & laps
-    const before = this.position;
     this.position += this.speed * dt;
     if (this.position >= this.track.length) {
       this.position -= this.track.length;
       this.lap++;
-      if (this.lap > TOTAL_LAPS) {
+      if (this.lap > this.cfg.laps) {
         this.phase = "finished";
         this.finishT = 2.5;
+        this.finalPosition = this.computePosition();
         this.score += SCORE_FINISH;
         this.toast(`FINISH +${SCORE_FINISH}`, "#fbbf24");
       } else {
-        this.toast(`LAP ${this.lap}/${TOTAL_LAPS}`, "#c084fc");
-        // respawn consumables collected on earlier laps
+        this.toast(`LAP ${this.lap}/${this.cfg.laps}`, "#c084fc");
         for (const e of this.entities) {
           if (e.collectedLap !== 0 && e.collectedLap !== this.lap) {
             e.collectedLap = 0;
@@ -476,7 +623,16 @@ export class Game {
         }
       }
     }
-    void before;
+  }
+
+  private updateOpponents(dt: number) {
+    const mine = this.playerProgress();
+    const len = this.track.length;
+    for (const o of this.opponents) {
+      const gap = mine - o.progress(len); // + means player ahead
+      const base = MAX_SPEED * (0.88 + clamp(gap / 140, -0.14, 0.2));
+      o.update(dt, this.track, base, this.cfg.laps);
+    }
   }
 
   private land() {
@@ -559,11 +715,26 @@ export class Game {
           if (this.transformed) {
             this.collect(e);
             this.score += SCORE_SMASH;
+            this.swingT = SWING_DURATION;
             this.toast(`SMASH +${SCORE_SMASH}`, "#f0abfc");
           } else {
             this.speed = Math.min(this.speed, MAX_SPEED * 0.15);
             if (this.crashFlash <= 0) this.toast("CRASH!", "#f87171");
             this.crashFlash = 0.6;
+          }
+        }
+        break;
+      case "monster":
+        if (this.alt < 1.6) {
+          if (this.transformed) {
+            this.collect(e);
+            this.score += SCORE_MONSTER;
+            this.swingT = SWING_DURATION;
+            this.toast(`SLASH +${SCORE_MONSTER}`, "#67e8f9");
+          } else {
+            this.speed = Math.min(this.speed, MAX_SPEED * 0.12);
+            if (this.crashFlash <= 0) this.toast("MONSTER!", "#f87171");
+            this.crashFlash = 0.7;
           }
         }
         break;
@@ -581,14 +752,12 @@ export class Game {
     const { track } = this;
 
     if (this.phase !== "loading") {
-      // player placement
       const lateralM = this.playerX * ROAD_HALF_WIDTH * 0.9;
       const p = track.pointAt(this.position, lateralM);
       this.playerRoot.position.set(p.x, p.y + this.alt, p.z);
       const tan = track.tangentAt(this.position);
       this.playerRoot.rotation.y = Math.atan2(tan.x, tan.z);
 
-      // lean + barrel roll
       this.playerBody.rotation.z = -this.steer * 0.16 + this.spin * Math.PI * 2;
       this.playerBody.rotation.x = clamp(-this.vAlt * 0.03, -0.35, 0.35);
 
@@ -597,39 +766,64 @@ export class Game {
       if (this.mech) {
         this.mech.group.visible = this.transformed;
         this.mech.wings.visible = this.transformed && this.alt > 0.15;
-        const corePulse = 1.8 + Math.sin(this.time * 6) * 0.6;
-        (this.mech.core.material as THREE.MeshStandardMaterial).emissiveIntensity = corePulse;
+        (this.mech.core.material as THREE.MeshStandardMaterial).emissiveIntensity =
+          1.8 + Math.sin(this.time * 6) * 0.6;
+        // sword swing arc
+        let swing = -0.5;
+        if (this.swingT > 0) {
+          const t = 1 - this.swingT / SWING_DURATION;
+          swing = -0.5 + Math.sin(t * Math.PI) * 2.4;
+        }
+        this.mech.armR.rotation.x = swing;
+      }
+      if (this.slash) {
+        const show = this.transformed && this.swingT > 0;
+        this.slash.visible = show;
+        if (show) {
+          const t = 1 - this.swingT / SWING_DURATION;
+          this.slash.scale.setScalar(1 + t * 1.6);
+          (this.slash.material as THREE.MeshBasicMaterial).opacity = 1 - t;
+          this.slash.rotation.z = -t * 2.2;
+        }
       }
       const boosting = this.nitroT > 0 || (this.transformed && this.alt > 0.15);
       for (const flame of this.flames) {
         flame.visible = boosting;
         const flick = 1 + Math.sin(this.time * 40 + flame.position.x) * 0.3;
         flame.scale.set(flick, 1 + flick * 0.4, flick);
-        (flame.material as THREE.MeshBasicMaterial).color.setHex(
-          this.transformed ? 0x22d3ee : 0xfb923c
-        );
+        (flame.material as THREE.MeshBasicMaterial).color.setHex(this.transformed ? 0x22d3ee : 0xfb923c);
       }
       if (this.underGlow) {
         this.underGlow.visible = !this.transformed;
-        const pulse = 0.9 + Math.sin(this.time * 9) * 0.15;
-        this.underGlow.scale.setScalar(pulse);
-        this.underGlow.position.y = 0.08 - this.alt; // glow stays on the road
+        this.underGlow.scale.setScalar(0.9 + Math.sin(this.time * 9) * 0.15);
+        this.underGlow.position.y = 0.08 - this.alt;
       }
 
-      // pickup animations
+      // pickup + monster animation
       for (const e of this.spinners) {
         if (!e.obj.visible) continue;
         e.obj.rotation.y = this.time * 1.6 + e.phase;
         e.obj.position.y = e.baseY + Math.sin(this.time * 2.5 + e.phase) * 0.18;
       }
+      for (const e of this.monsters) {
+        if (!e.obj.visible) continue;
+        e.obj.rotation.y = Math.sin(this.time * 1.5 + e.phase) * 0.4;
+        e.obj.position.y = e.baseY + Math.abs(Math.sin(this.time * 3 + e.phase)) * 0.25;
+      }
 
-      // chase camera
-      const camAnchor = track.pointAt(this.position - 9.5, lateralM * 0.7);
-      camAnchor.y = 3.4 + this.alt * 0.55;
-      this.camPos.lerp(camAnchor, this.camPos.lengthSq() === 0 ? 1 : 0.55);
+      // camera
+      const preset = CAMERA_PRESETS[this.cameraIndex];
+      const camAnchor = track.pointAt(this.position - preset.back, lateralM * 0.7);
+      camAnchor.y += preset.height + this.alt * 0.55;
+      if (this.camSnap) {
+        this.camPos.copy(camAnchor);
+        this.camSnap = false;
+      } else {
+        this.camPos.lerp(camAnchor, 0.55);
+      }
       this.camera.position.copy(this.camPos);
-      const lookAt = track.pointAt(this.position + 7, lateralM * 0.5);
-      lookAt.y = 1.2 + this.alt * 0.8;
+      const lookAt = track.pointAt(this.position + preset.ahead, lateralM * 0.5);
+      lookAt.y += preset.lookHeight + this.alt * 0.8;
       this.camera.lookAt(lookAt);
 
       this.renderer.render(this.scene, this.camera);
@@ -649,17 +843,33 @@ export class Game {
       return;
     }
 
+    const position = this.opponents.length ? this.computePosition() : undefined;
     drawHud(ctx, {
       mph: Math.round((this.speed / MAX_SPEED) * 180),
       score: Math.max(0, Math.round(this.score)),
-      lap: Math.min(this.lap, TOTAL_LAPS),
-      totalLaps: TOTAL_LAPS,
+      lap: Math.min(this.lap, this.cfg.laps),
+      totalLaps: this.cfg.laps,
       raceTime: this.raceTime,
       nitroCharges: this.nitroCharges,
       nitroActive: this.nitroT > 0,
       transformT: this.transformed ? this.transformT : 0,
       crashFlash: this.crashFlash,
+      position,
+      totalRacers: this.opponents.length ? this.opponents.length + 1 : undefined,
+      cameraName: CAMERA_PRESETS[this.cameraIndex].name,
     });
+
+    // minimap bottom-center
+    const size = 132;
+    this.minimap.draw(
+      ctx,
+      WIDTH / 2 - size / 2,
+      HEIGHT - size - 8,
+      size,
+      { x: this.playerRoot.position.x, z: this.playerRoot.position.z, color: "#67e8f9" },
+      this.opponents.map((o) => ({ x: o.obj.position.x, z: o.obj.position.z, color: `#${o.color.toString(16).padStart(6, "0")}` }))
+    );
+
     drawToasts(ctx, this.toasts);
 
     if (this.phase === "countdown") {

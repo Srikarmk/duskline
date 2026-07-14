@@ -41,12 +41,25 @@
       rocks, transformer mode with flight
 - [x] HUD reused as 2D canvas layered over WebGL
 
+## Realism + maps + AI overhaul (done)
+- [x] 3 realms with distinct tracks + themes (Enchanted Forest, Ember Wastes,
+      Crystal Peaks); realm select on home screen
+- [x] Track elevation (hills) with grass verges to hide the road/ground gap
+- [x] Dense environment: textured ground, two scenery bands per side,
+      instanced grass + pebble clutter, mountain ring, twin moons, fog
+- [x] Minimap (top-down track + player + opponent dots)
+- [x] AI opponents (3) with rubber-band pacing + live race position
+- [x] 4 modes: Classic, Time Trial, Nitro Sprint, Transformer Rush
+- [x] Camera angles (chase / cinematic / hood), cycle with C
+- [x] Improved mech model with an energy sword
+- [x] Transformer combat: monsters to slash (sword swing + slash arc)
+- [x] Controls swapped: SPACE = nitro, SHIFT = fly
+
 ## Next up
-- [ ] Mech: swap primitive build for a downloaded CC0 model
-- [ ] Hills/elevation on the 3D track (currently flat)
-- [ ] Playtest & tune: centrifugal strength, ramp launch, transform duration
-- [ ] Sound: engine hum, pickups, nitro, music
-- [ ] More realms (lava, sky citadel) with palette/scenery swaps
-- [ ] AI opponents & race positions
-- [ ] Projectile spells / shields power-ups
+- [ ] Player↔opponent collisions / bumping (currently pass-through)
+- [ ] Monsters that move / attack back (currently stationary hazards)
+- [ ] Grand Prix mode: sequence all 3 realms, cumulative score
+- [ ] Sound: engine hum, pickups, nitro, sword, music
+- [ ] Global leaderboard (Vercel KV) instead of per-browser localStorage
+- [ ] Playtest & tune: centrifugal, ramp launch, transform duration, AI skill
 - [ ] Touch controls (mobile), desktop wrap (Tauri/Electron)

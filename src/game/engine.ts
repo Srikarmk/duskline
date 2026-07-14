@@ -17,20 +17,25 @@ import {
   drawToasts, drawCenterText, type Toast,
 } from "./render";
 
-export type GameMode = "classic" | "transform";
+export type GameMode = "classic" | "timetrial" | "nitro" | "transform";
+export type RealmId = "forest" | "ember" | "peaks";
 
 export interface GameResult {
   mode: GameMode;
+  realm?: RealmId;
   score: number;
   gems: number;
   stunts: number;
   laneBonuses: number;
   penalties: number;
   timeMs: number;
+  position?: number;
+  totalRacers?: number;
 }
 
 export interface GameOptions {
   mode: GameMode;
+  realm?: RealmId;
   onFinish: (result: GameResult) => void;
 }
 

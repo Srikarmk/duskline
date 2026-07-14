@@ -23,14 +23,28 @@ callback, which delivers a `GameResult`).
 - `src/game3d/` — the active Three.js engine:
   - `engine.ts` — `Game` class: fixed-timestep loop, driving/altitude/nitro/
     transform state, entity collisions (distance-bucket lookup), scoring,
-    laps, chase camera, HUD orchestration
-  - `track.ts` — closed CatmullRom circuit, road-ribbon mesh with procedural
-    canvas texture, precomputed signed curvature, start-line mesh
+    laps, AI update + ranking, camera presets, monster/sword combat, HUD +
+    minimap orchestration
+  - `realms.ts` — the 3 realms (control points + palette + scenery mix). Pure
+    data, no three.js import, so the home screen can read realm metadata.
+  - `track.ts` — closed 3D CatmullRom circuit with elevation, road-ribbon +
+    grass-verge meshes, procedural textures, curvature, minimap sampling
+  - `objects.ts` — sky dome, textured ground, mountain ring, instanced
+    clutter, pickups, crystal clusters, monsters, the mech (with sword),
+    opponent tinting, effects
+  - `ai.ts` — `Opponent`: follows the track, changes lanes, eases through
+    curves; engine feeds it a rubber-banded target speed each frame
+  - `minimap.ts` — top-down circuit + racer dots on the HUD canvas
   - `assets.ts` — GLTF loading (redirects Kenney's missing palette texture to
     a white pixel; converts unlit materials to lit), model instancing helper
-  - `objects.ts` — sky dome, ground, pickups (gems/nitro/orbs/ramps),
-    crystal clusters, the primitive-built mech, flame/under-glow effects
-  - `constants.ts` — all tuning (meters, m/s); tweak feel here
+  - `constants.ts` — all tuning (meters, m/s), AI + camera presets; tweak here
+
+## Modes, realms, controls
+
+Modes live in `MODE_CONFIG` in engine.ts (laps / opponents / orbs / monsters /
+startNitro). Realms live in `realms.ts`. Both are chosen on the home screen and
+passed via `GameOptions`. Controls: arrows/WASD drive, **SPACE = nitro**,
+**SHIFT = fly** (mech), **C = cycle camera**.
 - `src/game/` — the original pseudo-3D canvas engine. Still provides shared
   pieces to game3d: `input.ts` (keyboard), `render.ts` HUD/toast drawing
   (drawn on a 2D canvas layered over WebGL), and the `GameMode`/`GameResult`

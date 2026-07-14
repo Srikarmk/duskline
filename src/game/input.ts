@@ -49,9 +49,12 @@ export class Input {
     return this.down.has("ArrowRight") || this.down.has("d");
   }
   get fly() {
-    return this.down.has(" ");
+    return this.down.has("Shift");
   }
   get nitroPressed() {
-    return this.consumePress("Shift");
+    return this.consumePress(" ");
+  }
+  get cameraCycle() {
+    return this.consumePress("c");
   }
 }

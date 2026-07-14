@@ -103,9 +103,24 @@ main {
   box-shadow: 0 0 12px rgba(192, 132, 252, 0.4);
 }
 
+.section-label {
+  align-self: flex-start;
+  font-size: 11px;
+  letter-spacing: 3px;
+  color: #8b85a8;
+  margin-bottom: -8px;
+}
+
 .modes {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  width: 100%;
+}
+
+.realms {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 12px;
   width: 100%;
 }

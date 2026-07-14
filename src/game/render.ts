@@ -528,6 +528,9 @@ export interface HudState {
   nitroActive: boolean;
   transformT: number;
   crashFlash: number;
+  position?: number;
+  totalRacers?: number;
+  cameraName?: string;
 }
 
 function panel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
@@ -566,6 +569,19 @@ export function drawHud(ctx: CanvasRenderingContext2D, hud: HudState) {
   ctx.font = "14px monospace";
   ctx.fillText(`LAP ${hud.lap}/${hud.totalLaps}  ${formatTime(hud.raceTime)}`, WIDTH - 28, 62);
 
+  // race position
+  if (hud.position && hud.totalRacers) {
+    const ord = ["1ST", "2ND", "3RD", "4TH", "5TH", "6TH"][hud.position - 1] ?? `${hud.position}TH`;
+    panel(ctx, WIDTH - 196, 88, 180, 40);
+    ctx.fillStyle = hud.position === 1 ? "#fbbf24" : "#e8e0ff";
+    ctx.font = "bold 22px monospace";
+    ctx.textAlign = "right";
+    ctx.fillText(ord, WIDTH - 28, 109);
+    ctx.fillStyle = "#8b85a8";
+    ctx.font = "12px monospace";
+    ctx.fillText(`of ${hud.totalRacers}`, WIDTH - 96, 110);
+  }
+
   // nitro charges
   panel(ctx, 16, HEIGHT - 56, 118, 40);
   for (let i = 0; i < NITRO_MAX_CHARGES; i++) {
@@ -575,7 +591,14 @@ export function drawHud(ctx: CanvasRenderingContext2D, hud: HudState) {
   ctx.fillStyle = "#8b85a8";
   ctx.font = "10px monospace";
   ctx.textAlign = "left";
-  ctx.fillText("SHIFT", 24, HEIGHT - 24);
+  ctx.fillText("SPACE", 24, HEIGHT - 24);
+
+  if (hud.cameraName) {
+    ctx.fillStyle = "#8b85a8";
+    ctx.font = "11px monospace";
+    ctx.textAlign = "right";
+    ctx.fillText(`[C] ${hud.cameraName}`, WIDTH - 20, HEIGHT - 26);
+  }
 
   // transform timer
   if (hud.transformT > 0) {
@@ -586,7 +609,7 @@ export function drawHud(ctx: CanvasRenderingContext2D, hud: HudState) {
     ctx.fillStyle = "#fdf4ff";
     ctx.font = "bold 13px monospace";
     ctx.textAlign = "center";
-    ctx.fillText("TRANSFORMED — SPACE TO FLY", WIDTH / 2, 29);
+    ctx.fillText("TRANSFORMED — SHIFT TO FLY", WIDTH / 2, 29);
   }
 
   if (hud.crashFlash > 0) {
