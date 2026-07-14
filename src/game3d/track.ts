@@ -4,6 +4,9 @@ import type { RealmPalette } from "./realms";
 
 const TEX_TILE_METERS = 10;
 const VERGE_WIDTH = 18; // grass bank from road edge out to flat ground
+// The CatmullRom curve can undershoot below its control points in dips; keep the
+// road surface above this floor so the flat ground plane never pokes through it.
+const GROUND_FLOOR = 0.35;
 
 export interface XZ {
   x: number;
@@ -51,6 +54,7 @@ export class Track {
   pointAt(dist: number, lateral = 0, out = new THREE.Vector3()) {
     const t = this.wrap(dist) / this.length;
     const p = this.curve.getPointAt(t, out);
+    if (p.y < GROUND_FLOOR) p.y = GROUND_FLOOR;
     if (lateral !== 0) {
       const tan = this.curve.getTangentAt(t);
       p.x += -tan.z * lateral;
@@ -93,8 +97,9 @@ export class Track {
       const tan = this.curve.getTangentAt(t);
       const nx = -tan.z;
       const nz = tan.x;
-      positions.push(p.x + nx * edge, p.y + 0.06, p.z + nz * edge);
-      positions.push(p.x - nx * edge, p.y + 0.06, p.z - nz * edge);
+      const ry = Math.max(GROUND_FLOOR, p.y) + 0.1;
+      positions.push(p.x + nx * edge, ry, p.z + nz * edge);
+      positions.push(p.x - nx * edge, ry, p.z - nz * edge);
       const v = d / TEX_TILE_METERS;
       uvs.push(0, v, 1, v);
       if (i < count) {
@@ -109,7 +114,10 @@ export class Track {
     geo.setIndex(indices);
     geo.computeVertexNormals();
 
-    const mat = new THREE.MeshLambertMaterial({ map: texture, side: THREE.DoubleSide });
+    const mat = new THREE.MeshLambertMaterial({
+      map: texture, side: THREE.DoubleSide,
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+    });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.renderOrder = 1;
     return mesh;
@@ -134,10 +142,14 @@ export class Track {
       const tan = this.curve.getTangentAt(t);
       const nx = -tan.z;
       const nz = tan.x;
+      // inner edge tucks slightly under the road so the grass never bleeds onto
+      // the road edge; its height follows the floored road
+      const innerEdge = edge - 0.8;
+      const vy = Math.max(GROUND_FLOOR, p.y) + 0.02;
       // 4 verts per cross section: rightOuter, rightInner, leftInner, leftOuter
       positions.push(p.x + nx * (edge + VERGE_WIDTH), 0, p.z + nz * (edge + VERGE_WIDTH));
-      positions.push(p.x + nx * edge, p.y + 0.03, p.z + nz * edge);
-      positions.push(p.x - nx * edge, p.y + 0.03, p.z - nz * edge);
+      positions.push(p.x + nx * innerEdge, vy, p.z + nz * innerEdge);
+      positions.push(p.x - nx * innerEdge, vy, p.z - nz * innerEdge);
       positions.push(p.x - nx * (edge + VERGE_WIDTH), 0, p.z - nz * (edge + VERGE_WIDTH));
       const v = d / TEX_TILE_METERS;
       uvs.push(0, v, 0.3, v, 0.7, v, 1, v);
