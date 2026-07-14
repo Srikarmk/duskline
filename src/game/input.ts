@@ -57,4 +57,7 @@ export class Input {
   get cameraCycle() {
     return this.consumePress("c");
   }
+  get muteToggle() {
+    return this.consumePress("m");
+  }
 }

@@ -531,6 +531,7 @@ export interface HudState {
   position?: number;
   totalRacers?: number;
   cameraName?: string;
+  soundMuted?: boolean;
 }
 
 function panel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
@@ -597,7 +598,8 @@ export function drawHud(ctx: CanvasRenderingContext2D, hud: HudState) {
     ctx.fillStyle = "#8b85a8";
     ctx.font = "11px monospace";
     ctx.textAlign = "right";
-    ctx.fillText(`[C] ${hud.cameraName}`, WIDTH - 20, HEIGHT - 26);
+    ctx.fillText(`[C] ${hud.cameraName}`, WIDTH - 20, HEIGHT - 42);
+    ctx.fillText(`[M] SOUND ${hud.soundMuted ? "OFF" : "ON"}`, WIDTH - 20, HEIGHT - 26);
   }
 
   // transform timer
