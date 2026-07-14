@@ -41,6 +41,43 @@ export function saveScore(name: string, result: GameResult): ScoreEntry[] {
   return scores;
 }
 
+export interface GlobalScores {
+  scores: ScoreEntry[];
+  global: boolean;
+}
+
+export async function fetchGlobalScores(): Promise<GlobalScores | null> {
+  try {
+    const res = await fetch("/api/scores", { cache: "no-store" });
+    if (!res.ok) return null;
+    return (await res.json()) as GlobalScores;
+  } catch {
+    return null;
+  }
+}
+
+export async function submitGlobalScore(
+  name: string,
+  result: GameResult
+): Promise<GlobalScores | null> {
+  try {
+    const res = await fetch("/api/scores", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name,
+        score: result.score,
+        mode: result.mode,
+        timeMs: result.timeMs,
+      }),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as GlobalScores;
+  } catch {
+    return null;
+  }
+}
+
 export function loadLastName(): string {
   if (typeof window === "undefined") return "";
   return window.localStorage.getItem(NAME_KEY) ?? "";

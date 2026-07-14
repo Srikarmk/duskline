@@ -26,7 +26,7 @@ import { Minimap } from "./minimap";
 import { Sound } from "./sound";
 import { Input } from "../game/input";
 import { drawHud, drawToasts, drawCenterText, type Toast } from "../game/render";
-import type { GameMode, GameResult, GameOptions } from "../game/engine";
+import type { GameMode, GameResult, GameOptions, RaceStanding } from "../game/engine";
 
 type Phase = "loading" | "countdown" | "racing" | "finished";
 
@@ -57,6 +57,7 @@ const MODE_CONFIG: Record<GameMode, ModeConfig> = {
   timetrial: { laps: 3, opponents: false, orbs: false, monsters: false, startNitro: 1, label: "TIME TRIAL" },
   nitro:     { laps: 1, opponents: true,  orbs: false, monsters: false, startNitro: NITRO_MAX_CHARGES, label: "NITRO SPRINT" },
   transform: { laps: 3, opponents: true,  orbs: true,  monsters: true,  startNitro: 1, label: "TRANSFORMER" },
+  grandprix: { laps: 2, opponents: true,  orbs: false, monsters: false, startNitro: 1, label: "GRAND PRIX" },
 };
 
 const COLLIDE_WIDTH: Record<EntityType, number> = {
@@ -466,6 +467,16 @@ export class Game {
     return ahead + 1;
   }
 
+  private computeStandings(): RaceStanding[] {
+    const len = this.track.length;
+    const racers = [
+      { name: "YOU", isPlayer: true, progress: this.playerProgress() },
+      ...this.opponents.map((o) => ({ name: o.name, isPlayer: false, progress: o.progress(len) })),
+    ];
+    racers.sort((a, b) => b.progress - a.progress);
+    return racers.map((r, i) => ({ name: r.name, isPlayer: r.isPlayer, position: i + 1 }));
+  }
+
   private update(dt: number) {
     this.time += dt;
     for (const t of this.toasts) t.t -= dt;
@@ -518,6 +529,7 @@ export class Game {
           timeMs: Math.round(this.raceTime * 1000),
           position: this.finalPosition,
           totalRacers: this.opponents.length + 1,
+          standings: this.computeStandings(),
         });
       }
       return;

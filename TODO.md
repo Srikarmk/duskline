@@ -55,11 +55,24 @@
 - [x] Transformer combat: monsters to slash (sword swing + slash arc)
 - [x] Controls swapped: SPACE = nitro, SHIFT = fly
 
+## Sound + combat + GP + global board (done)
+- [x] Procedural Web Audio: speed-tracking engine hum, per-event SFX, ambient
+      music loop; M mutes (persisted)
+- [x] Opponent bumping (side-to-side shove + speed loss)
+- [x] Monsters patrol + charge the transformed player; slash with cooldown,
+      take a hit if caught mid-recovery
+- [x] Grand Prix mode: 3 realms back-to-back, championship points,
+      intermission standings, final championship screen
+- [x] Global leaderboard: /api/scores route (KV/Upstash REST + in-memory
+      fallback), client submit + Global/Local tabs on the home screen
+
+## To make the global board truly shared (one-time)
+- [ ] Connect a KV store in Vercel dashboard (Storage → Upstash Redis). It
+      auto-adds KV_REST_API_URL / KV_REST_API_TOKEN; the API activates on the
+      next deploy (no code change). Until then it falls back to per-instance
+      memory and the home screen shows a hint.
+
 ## Next up
-- [ ] Player↔opponent collisions / bumping (currently pass-through)
-- [ ] Monsters that move / attack back (currently stationary hazards)
-- [ ] Grand Prix mode: sequence all 3 realms, cumulative score
-- [ ] Sound: engine hum, pickups, nitro, sword, music
-- [ ] Global leaderboard (Vercel KV) instead of per-browser localStorage
 - [ ] Playtest & tune: centrifugal, ramp launch, transform duration, AI skill
+- [ ] Monsters that attack back with real damage / a health bar
 - [ ] Touch controls (mobile), desktop wrap (Tauri/Electron)

@@ -17,8 +17,14 @@ import {
   drawToasts, drawCenterText, type Toast,
 } from "./render";
 
-export type GameMode = "classic" | "timetrial" | "nitro" | "transform";
+export type GameMode = "classic" | "timetrial" | "nitro" | "transform" | "grandprix";
 export type RealmId = "forest" | "ember" | "peaks";
+
+export interface RaceStanding {
+  name: string;
+  isPlayer: boolean;
+  position: number;
+}
 
 export interface GameResult {
   mode: GameMode;
@@ -31,6 +37,7 @@ export interface GameResult {
   timeMs: number;
   position?: number;
   totalRacers?: number;
+  standings?: RaceStanding[];
 }
 
 export interface GameOptions {

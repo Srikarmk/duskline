@@ -3,7 +3,10 @@
 import { useEffect, useState } from "react";
 import type { GameMode, RealmId, GameResult } from "@/src/game/engine";
 import { REALMS } from "@/src/game3d/realms";
-import { loadScores, loadLastName, type ScoreEntry } from "@/src/ui/leaderboard";
+import {
+  loadScores, loadLastName, fetchGlobalScores,
+  type ScoreEntry,
+} from "@/src/ui/leaderboard";
 
 interface Props {
   lastResult: GameResult | null;
@@ -14,11 +17,12 @@ const MODES: { id: GameMode; name: string; blurb: string }[] = [
   { id: "classic", name: "CLASSIC CIRCUIT", blurb: "3 laps vs 3 AI racers. Gems, stunts, nitro." },
   { id: "timetrial", name: "TIME TRIAL", blurb: "Solo run. Beat the clock over 3 clean laps." },
   { id: "nitro", name: "NITRO SPRINT", blurb: "1 lap, full nitro, all-out sprint vs the pack." },
-  { id: "transform", name: "TRANSFORMER RUSH", blurb: "Grab orbs to morph into a sword-mech — slash monsters and fly." },
+  { id: "transform", name: "TRANSFORMER RUSH", blurb: "Morph into a sword-mech — slash monsters and fly." },
+  { id: "grandprix", name: "GRAND PRIX", blurb: "All 3 realms back-to-back for the championship." },
 ];
 
 const MODE_LABEL: Record<GameMode, string> = {
-  classic: "CIRCUIT", timetrial: "TRIAL", nitro: "SPRINT", transform: "RUSH",
+  classic: "CIRCUIT", timetrial: "TRIAL", nitro: "SPRINT", transform: "RUSH", grandprix: "GP",
 };
 
 function formatTime(ms: number) {
@@ -30,15 +34,26 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
   const [name, setName] = useState("");
   const [mode, setMode] = useState<GameMode>("classic");
   const [realm, setRealm] = useState<RealmId>("forest");
-  const [scores, setScores] = useState<ScoreEntry[]>([]);
+  const [localScores, setLocalScores] = useState<ScoreEntry[]>([]);
+  const [globalScores, setGlobalScores] = useState<ScoreEntry[] | null>(null);
+  const [isGlobal, setIsGlobal] = useState(false);
+  const [board, setBoard] = useState<"global" | "local">("global");
 
   useEffect(() => {
     setName(loadLastName());
-    setScores(loadScores());
+    setLocalScores(loadScores());
+    fetchGlobalScores().then((res) => {
+      if (res) {
+        setGlobalScores(res.scores);
+        setIsGlobal(res.global);
+      }
+    });
   }, []);
 
   const canStart = name.trim().length > 0;
   const realmIds = Object.keys(REALMS) as RealmId[];
+  const isGP = mode === "grandprix";
+  const shownScores = board === "global" ? globalScores ?? [] : localScores;
 
   return (
     <div className="home">
@@ -69,19 +84,29 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
         />
       </label>
 
-      <div className="section-label">REALM</div>
-      <div className="realms">
-        {realmIds.map((id) => (
-          <button
-            key={id}
-            className={`mode-card ${realm === id ? "selected" : ""}`}
-            onClick={() => setRealm(id)}
-          >
-            <strong>{REALMS[id].name}</strong>
-            <span>{REALMS[id].blurb}</span>
-          </button>
-        ))}
-      </div>
+      {!isGP ? (
+        <>
+          <div className="section-label">REALM</div>
+          <div className="realms">
+            {realmIds.map((id) => (
+              <button
+                key={id}
+                className={`mode-card ${realm === id ? "selected" : ""}`}
+                onClick={() => setRealm(id)}
+              >
+                <strong>{REALMS[id].name}</strong>
+                <span>{REALMS[id].blurb}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="gp-note">
+          Grand Prix runs all three realms in order:
+          {" "}Enchanted Forest → Ember Wastes → Crystal Peaks. Championship
+          points each round.
+        </div>
+      )}
 
       <div className="section-label">MODE</div>
       <div className="modes">
@@ -102,7 +127,7 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
         disabled={!canStart}
         onClick={() => onStart(name.trim(), mode, realm)}
       >
-        START RACE
+        {isGP ? "START GRAND PRIX" : "START RACE"}
       </button>
 
       <p className="controls-help">
@@ -110,12 +135,33 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
         sound: M · spin mid-air for stunts
       </p>
 
-      {scores.length > 0 && (
-        <div className="leaderboard">
+      <div className="leaderboard">
+        <div className="board-head">
           <h2>HALL OF LEGENDS</h2>
+          <div className="board-tabs">
+            <button
+              className={board === "global" ? "active" : ""}
+              onClick={() => setBoard("global")}
+            >
+              GLOBAL
+            </button>
+            <button
+              className={board === "local" ? "active" : ""}
+              onClick={() => setBoard("local")}
+            >
+              THIS DEVICE
+            </button>
+          </div>
+        </div>
+        {board === "global" && !isGlobal && (
+          <p className="board-hint">shared board activates once a KV store is connected</p>
+        )}
+        {shownScores.length === 0 ? (
+          <p className="board-hint">no scores yet — be the first!</p>
+        ) : (
           <table>
             <tbody>
-              {scores.map((s, i) => (
+              {shownScores.map((s, i) => (
                 <tr key={i}>
                   <td>{i + 1}.</td>
                   <td>{s.name}</td>
@@ -126,8 +172,8 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
               ))}
             </tbody>
           </table>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
