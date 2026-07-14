@@ -39,7 +39,7 @@ main {
 /* --- home screen --- */
 
 .home {
-  width: min(560px, 92vw);
+  width: min(1180px, 94vw);
   max-height: 96vh;
   overflow-y: auto;
   display: flex;
@@ -47,7 +47,7 @@ main {
   gap: 18px;
   align-items: center;
   text-align: center;
-  padding: 24px 8px;
+  padding: 24px 16px;
 }
 
 .title {
@@ -113,14 +113,14 @@ main {
 
 .modes {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 12px;
   width: 100%;
 }
 
 .realms {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: repeat(4, 1fr);
   gap: 12px;
   width: 100%;
 }

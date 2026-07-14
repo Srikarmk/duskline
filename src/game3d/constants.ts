@@ -16,19 +16,20 @@ export const OFF_ROAD_LIMIT = MAX_SPEED / 4;
 
 // --- steering & drift (lateral-velocity model, not positional) ---
 /** target lateral velocity (playerX units/s) per unit steer at full speed */
-export const STEER_ACCEL = 2.6;
+export const STEER_ACCEL = 3.2;
 /** how fast lateral velocity chases its target when gripping (higher = tighter) */
-export const GRIP = 6;
+export const GRIP = 6.5;
 /** low grip while drifting — the car slides instead of biting */
 export const DRIFT_GRIP = 2.1;
-/** outward lateral velocity from a curve, per (curvature × speed) */
-export const CENTRIFUGAL = 2.0;
+/** outward lateral velocity from a curve, per (curvature × speed) — gentle so
+ *  turns don't fling you off the road unless you ignore the steering */
+export const CENTRIFUGAL = 0.9;
 /** seconds of drift before a boost is earned */
 export const DRIFT_MIN_CHARGE = 0.55;
 export const DRIFT_BOOST_FACTOR = 1.28;
 
 export const TOTAL_LAPS = 3;
-export const OUT_OF_BOUNDS_X = 2.3;
+export const OUT_OF_BOUNDS_X = 2.9;
 export const OUT_OF_BOUNDS_PENALTY = 100;
 
 export const NITRO_DURATION = 2.2;

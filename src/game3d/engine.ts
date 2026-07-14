@@ -289,7 +289,10 @@ export class Game {
       const car = instantiate(library, "racer", 4.2);
       tintModel(car, spec.color);
       this.scene.add(car);
-      const startDist = this.track.wrap(-(i + 1) * 7);
+      // start on the grid just ahead of the player (small positive distance so
+      // ranking-by-progress is correct — a wrapped-negative dist would read as
+      // a whole lap ahead and leave the player stuck in last)
+      const startDist = 2 + i * 3;
       const opp = new Opponent(car, spec.color, spec.name, spec.skill, startDist);
       opp.lane = LANE_CENTERS[i % 3];
       this.opponents.push(opp);
@@ -759,7 +762,7 @@ export class Game {
     const len = this.track.length;
     for (const o of this.opponents) {
       const gap = mine - o.progress(len); // + means player ahead
-      const base = MAX_SPEED * (0.88 + clamp(gap / 140, -0.14, 0.2));
+      const base = MAX_SPEED * (0.9 + clamp(gap / 160, -0.12, 0.12));
       o.update(dt, this.track, base, this.cfg.laps);
 
       // side-by-side bumping with the player
