@@ -33,11 +33,20 @@
 - [x] Mech form: auto-run, higher top speed, smash rocks for points
 - [x] Flight (hold Space): altitude physics, collect air gems, double gem value
 
+## Three.js rewrite (done)
+- [x] Real 3D engine in src/game3d: CatmullRom circuit, road ribbon mesh,
+      chase camera, night sky dome, fog
+- [x] CC0 glTF models (Kenney car kit + nature kit) for racer & scenery
+- [x] All mechanics ported: nitro, stunts, lane bonus, OOB, collectibles,
+      rocks, transformer mode with flight
+- [x] HUD reused as 2D canvas layered over WebGL
+
 ## Next up
-- [ ] Look & feel overhaul: better car/mech art, richer realm theming (user request)
+- [ ] Mech: swap primitive build for a downloaded CC0 model
+- [ ] Hills/elevation on the 3D track (currently flat)
 - [ ] Playtest & tune: centrifugal strength, ramp launch, transform duration
 - [ ] Sound: engine hum, pickups, nitro, music
-- [ ] More realms (lava, sky citadel) with palette swaps
+- [ ] More realms (lava, sky citadel) with palette/scenery swaps
 - [ ] AI opponents & race positions
 - [ ] Projectile spells / shields power-ups
 - [ ] Touch controls (mobile), desktop wrap (Tauri/Electron)

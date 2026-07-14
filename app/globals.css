@@ -19,11 +19,21 @@ main {
   place-items: center;
 }
 
-canvas {
-  image-rendering: pixelated;
-  max-width: 100vw;
-  max-height: 100vh;
+.game-stage {
+  position: relative;
+  width: min(98vw, calc(96vh * 4 / 3));
   aspect-ratio: 4 / 3;
+}
+
+.game-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.game-hud {
+  pointer-events: none;
 }
 
 /* --- home screen --- */

@@ -10,6 +10,8 @@ export interface ProjectedPoint {
 export type SpriteType =
   | "crystal"
   | "tree"
+  | "mushroom"
+  | "pillar"
   | "rock"
   | "gem"
   | "airGem"
@@ -173,11 +175,17 @@ export class Road {
       this.segments[i].sprites.push({ type, offset, collectedLap: 0 });
     };
 
-    // roadside scenery on both sides
+    // roadside scenery on both sides; pillars are rarer landmarks
+    const scenery = (): SpriteType => {
+      const r = rand();
+      if (r < 0.35) return "crystal";
+      if (r < 0.7) return "tree";
+      if (r < 0.92) return "mushroom";
+      return "pillar";
+    };
     for (let i = 0; i < len; i += 4) {
-      const off = 1.4 + rand() * 2;
-      add(i, rand() < 0.5 ? "crystal" : "tree", -off);
-      add(i, rand() < 0.5 ? "crystal" : "tree", 1.4 + rand() * 2);
+      add(i, scenery(), -(1.4 + rand() * 2));
+      add(i, scenery(), 1.4 + rand() * 2);
     }
 
     // gem runs: 8 gems spaced down one lane

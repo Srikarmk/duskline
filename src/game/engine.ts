@@ -391,7 +391,7 @@ export class Game {
       (playerSegment.p2.world.y - playerSegment.p1.world.y) * playerPercent;
 
     this.bgOffset += playerSegment.curve * (this.speed / MAX_SPEED) * 2;
-    drawBackground(ctx, this.bgOffset, playerY * 0.008);
+    drawBackground(ctx, this.bgOffset, playerY * 0.008, this.time);
 
     let x = 0;
     let dx = -(baseSegment.curve * basePercent);
@@ -417,7 +417,7 @@ export class Game {
       if (behindCamera || backFace || hidden) continue;
 
       const fog = 1 - Math.exp(-((n / DRAW_DISTANCE) ** 2) * 5);
-      drawSegment(ctx, segment, fog);
+      drawSegment(ctx, segment, fog, segment.index < 3);
       maxY = segment.p1.screen.y;
     }
 

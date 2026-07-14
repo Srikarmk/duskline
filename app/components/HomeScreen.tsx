@@ -29,7 +29,7 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
   return (
     <div className="home">
       <h1 className="title">FANTASY RACER</h1>
-      <p className="subtitle">a pseudo-3D magic kart racer</p>
+      <p className="subtitle">a 3D magic kart racer</p>
 
       {lastResult && (
         <div className="result-banner">
