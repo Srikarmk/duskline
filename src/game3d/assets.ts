@@ -24,34 +24,50 @@ const MODEL_PATHS: Record<ModelName, string> = {
 
 export type ModelLibrary = Record<ModelName, THREE.Group>;
 
-// Kenney nature-kit GLBs reference an external palette texture that isn't
-// shipped in the pack; the real color lives in each material's
-// baseColorFactor. Feed the loader a white 1px texture so colors multiply
-// through unchanged (and no 404s are logged).
+// The car kit ships a real colormap atlas (car_colormap.png) that the racer's
+// UVs map into — pointing the loader at it gives the car its proper livery.
+// The nature kit bakes colors into materials and has no atlas, so we feed it a
+// white 1px texture (colors multiply through unchanged, no 404s).
 const WHITE_PIXEL =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+const CAR_ATLAS = "/models/Textures/car_colormap.png";
+
+function makeLoader(colormapUrl: string): GLTFLoader {
+  const manager = new THREE.LoadingManager();
+  manager.setURLModifier((url) => (url.includes("colormap") ? colormapUrl : url));
+  return new GLTFLoader(manager);
+}
+
+/** Convert unlit (KHR_materials_unlit) meshes to lit ones, preserving texture. */
+function relight(group: THREE.Group) {
+  group.traverse((obj) => {
+    if (obj instanceof THREE.Mesh) {
+      const src = obj.material as THREE.Material & {
+        color?: THREE.Color;
+        map?: THREE.Texture | null;
+        isMeshBasicMaterial?: boolean;
+      };
+      if (src.isMeshBasicMaterial) {
+        obj.material = new THREE.MeshLambertMaterial({
+          color: src.color ?? new THREE.Color(0xffffff),
+          map: src.map ?? null,
+        });
+      }
+      obj.castShadow = false;
+      obj.receiveShadow = false;
+    }
+  });
+}
 
 export async function loadModels(): Promise<ModelLibrary> {
-  const manager = new THREE.LoadingManager();
-  manager.setURLModifier((url) =>
-    url.includes("colormap") ? WHITE_PIXEL : url
-  );
-  const loader = new GLTFLoader(manager);
+  const carLoader = makeLoader(CAR_ATLAS);
+  const natureLoader = makeLoader(WHITE_PIXEL);
   const entries = await Promise.all(
     (Object.keys(MODEL_PATHS) as ModelName[]).map(async (name) => {
+      const loader = name === "racer" ? carLoader : natureLoader;
       const gltf = await loader.loadAsync(MODEL_PATHS[name]);
       const group = gltf.scene;
-      group.traverse((obj) => {
-        if (obj instanceof THREE.Mesh) {
-          // some kits use unlit materials; convert so our lights shade them
-          const src = obj.material as THREE.Material & { color?: THREE.Color };
-          if (src.color) {
-            obj.material = new THREE.MeshLambertMaterial({ color: src.color });
-          }
-          obj.castShadow = false;
-          obj.receiveShadow = false;
-        }
-      });
+      relight(group);
       return [name, group] as const;
     })
   );

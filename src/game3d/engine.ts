@@ -2,7 +2,8 @@ import * as THREE from "three";
 import {
   WIDTH, HEIGHT, STEP,
   ROAD_HALF_WIDTH, LANE_CENTERS,
-  MAX_SPEED, ACCEL, BRAKING, DECEL, OFF_ROAD_DECEL, OFF_ROAD_LIMIT, CENTRIFUGAL,
+  MAX_SPEED, ACCEL, BRAKING, DECEL, OFF_ROAD_DECEL, OFF_ROAD_LIMIT,
+  STEER_ACCEL, GRIP, DRIFT_GRIP, CENTRIFUGAL, DRIFT_MIN_CHARGE, DRIFT_BOOST_FACTOR,
   OUT_OF_BOUNDS_X, OUT_OF_BOUNDS_PENALTY,
   NITRO_MAX_CHARGES, NITRO_DURATION, NITRO_SPEED_FACTOR,
   GRAVITY, RAMP_LAUNCH, FLY_LIFT, MAX_ALT, AIR_GEM_ALT, AIR_GEM_TOLERANCE,
@@ -133,12 +134,19 @@ export class Game {
   // player state
   private position = 0;
   private playerX = 0;
+  private playerVX = 0; // lateral velocity (drift inertia)
   private speed = 0;
   private steer = 0;
+  private carYaw = 0; // visual heading offset from the track tangent
+  private drifting = false;
+  private driftDir = 0;
+  private driftCharge = 0;
+  private driftBoostT = 0;
   private alt = 0;
   private vAlt = 0;
   private stuntAir = false;
-  private spin = 0;
+  private spin = 0; // barrel-roll revolutions
+  private flip = 0; // pitch-flip revolutions
   private swingT = 0;
 
   private nitroCharges = 1;
@@ -225,23 +233,30 @@ export class Game {
     const { scene, track, realm } = this;
     const pal = realm.palette;
 
+    const isVoid = realm.style === "void";
     scene.add(makeSkyDome(pal));
-    scene.add(makeGround(makeGroundTexture(pal)));
 
-    // horizon-filling mountain ring
-    const cx = (track.bounds.minX + track.bounds.maxX) / 2;
-    const cz = (track.bounds.minZ + track.bounds.maxZ) / 2;
-    const radius = Math.max(track.bounds.maxX - track.bounds.minX, track.bounds.maxZ - track.bounds.minZ) * 0.75 + 260;
-    scene.add(makeMountainRing(pal, cx, cz, radius));
+    if (!isVoid) {
+      scene.add(makeGround(makeGroundTexture(pal)));
+      // horizon-filling mountain ring
+      const cx = (track.bounds.minX + track.bounds.maxX) / 2;
+      const cz = (track.bounds.minZ + track.bounds.maxZ) / 2;
+      const radius = Math.max(track.bounds.maxX - track.bounds.minX, track.bounds.maxZ - track.bounds.minZ) * 0.75 + 260;
+      scene.add(makeMountainRing(pal, cx, cz, radius));
+    }
 
     scene.add(new THREE.HemisphereLight(pal.hemiSky, pal.hemiGround, pal.hemiInt));
     const sun = new THREE.DirectionalLight(pal.sun, pal.sunInt);
     sun.position.set(80, 130, 40);
     scene.add(sun);
 
-    scene.add(track.buildVergeMesh(makeGrassTexture(pal)));
+    if (!isVoid) scene.add(track.buildVergeMesh(makeGrassTexture(pal)));
     scene.add(track.buildRoadMesh(makeRoadTexture(pal)));
     scene.add(track.buildStartLine(makeCheckerTexture()));
+    if (isVoid) {
+      scene.add(track.buildTube());
+      scene.add(track.buildRails());
+    }
 
     // player rig
     this.carModel = instantiate(library, "racer", 4.2);
@@ -327,37 +342,41 @@ export class Game {
     const pal = realm.palette;
     const lane = () => LANE_CENTERS[Math.floor(rand() * 3)];
 
-    // roadside scenery — two bands each side for depth, denser than before
-    for (let d = 0; d < len; d += 4) {
-      for (const side of [-1, 1]) {
-        // near band
-        if (rand() < 0.85) {
-          const obj = this.sceneryObject(pickScenery(realm, rand), library, rand);
-          const off = side * (ROAD_HALF_WIDTH + 6 + rand() * 12);
-          const p = track.pointAt(d + rand() * 3, off);
-          obj.position.set(p.x, 0, p.z);
-          obj.rotation.y = rand() * Math.PI * 2;
-          this.scene.add(obj);
-        }
-        // far band
-        if (rand() < 0.5) {
-          const obj = this.sceneryObject(pickScenery(realm, rand), library, rand);
-          const off = side * (ROAD_HALF_WIDTH + 22 + rand() * 34);
-          const p = track.pointAt(d + rand() * 3, off);
-          obj.position.set(p.x, 0, p.z);
-          obj.rotation.y = rand() * Math.PI * 2;
-          obj.scale.multiplyScalar(1.1 + rand() * 0.5);
-          this.scene.add(obj);
+    if (realm.style === "void") {
+      this.decorateVoid(library, rand);
+    } else {
+      // roadside scenery — two bands each side for depth
+      for (let d = 0; d < len; d += 4) {
+        for (const side of [-1, 1]) {
+          // near band
+          if (rand() < 0.85) {
+            const obj = this.sceneryObject(pickScenery(realm, rand), library, rand);
+            const off = side * (ROAD_HALF_WIDTH + 6 + rand() * 12);
+            const p = track.pointAt(d + rand() * 3, off);
+            obj.position.set(p.x, 0, p.z);
+            obj.rotation.y = rand() * Math.PI * 2;
+            this.scene.add(obj);
+          }
+          // far band
+          if (rand() < 0.5) {
+            const obj = this.sceneryObject(pickScenery(realm, rand), library, rand);
+            const off = side * (ROAD_HALF_WIDTH + 22 + rand() * 34);
+            const p = track.pointAt(d + rand() * 3, off);
+            obj.position.set(p.x, 0, p.z);
+            obj.rotation.y = rand() * Math.PI * 2;
+            obj.scale.multiplyScalar(1.1 + rand() * 0.5);
+            this.scene.add(obj);
+          }
         }
       }
-    }
 
-    // ground clutter fills the empty flats
-    const centerline = track.sampleXZ(220);
-    const grass = this.scatter(centerline, rand, 2600, ROAD_HALF_WIDTH * 1.3 + 3, 130);
-    this.scene.add(makeGrassField(pal, grass));
-    const pebbles = this.scatter(centerline, rand, 700, ROAD_HALF_WIDTH * 1.3 + 4, 150);
-    this.scene.add(makeRockField(pal, pebbles));
+      // ground clutter fills the empty flats
+      const centerline = track.sampleXZ(220);
+      const grass = this.scatter(centerline, rand, 2600, ROAD_HALF_WIDTH * 1.3 + 3, 130);
+      this.scene.add(makeGrassField(pal, grass));
+      const pebbles = this.scatter(centerline, rand, 700, ROAD_HALF_WIDTH * 1.3 + 4, 150);
+      this.scene.add(makeRockField(pal, pebbles));
+    }
 
     // gem runs
     for (let d = 40; d < len - 40; d += 120) {
@@ -427,6 +446,25 @@ export class Game {
     return pts;
   }
 
+  /** Floating crystals and asteroids around the anti-gravity void track. */
+  private decorateVoid(library: ModelLibrary, rand: () => number) {
+    const { track, realm } = this;
+    const len = track.length;
+    for (let d = 0; d < len; d += 5) {
+      for (const side of [-1, 1]) {
+        if (rand() < 0.5) continue;
+        const obj = rand() < 0.6
+          ? makeCrystalCluster(rand, realm.palette.crystalColors)
+          : instantiate(library, rand() < 0.5 ? "rockA" : "rockB", 2 + rand() * 4);
+        const lateral = side * (ROAD_HALF_WIDTH + 8 + rand() * 45);
+        const p = track.pointAt(d + rand() * 4, lateral);
+        obj.position.set(p.x, p.y + (rand() - 0.5) * 70, p.z);
+        obj.rotation.set(rand() * Math.PI * 2, rand() * Math.PI * 2, rand() * Math.PI * 2);
+        this.scene.add(obj);
+      }
+    }
+  }
+
   // --- game loop -----------------------------------------------------------
 
   private frame = (now: number) => {
@@ -450,7 +488,19 @@ export class Game {
     let max = MAX_SPEED;
     if (this.transformed) max *= TRANSFORM_SPEED_FACTOR;
     if (this.nitroT > 0) max *= NITRO_SPEED_FACTOR;
+    if (this.driftBoostT > 0) max *= DRIFT_BOOST_FACTOR;
     return max;
+  }
+
+  private endDrift() {
+    if (this.driftCharge > DRIFT_MIN_CHARGE) {
+      const charge = Math.min(this.driftCharge, 2.5);
+      this.driftBoostT = 0.4 + charge * 0.35;
+      this.sound.play("nitro");
+      this.toast("DRIFT BOOST!", "#67e8f9");
+    }
+    this.drifting = false;
+    this.driftCharge = 0;
   }
 
   private playerProgress() {
@@ -539,24 +589,58 @@ export class Game {
     const speedPercent = Math.min(this.speed / MAX_SPEED, 1);
     const airborne = this.alt > 0.15;
 
-    // steering / spinning
+    // steering / drift / air tricks
     this.steer = this.input.left ? -1 : this.input.right ? 1 : 0;
-    const dx = dt * 2.2 * speedPercent;
+    this.driftBoostT = Math.max(0, this.driftBoostT - dt);
     if (!airborne) {
-      this.playerX += this.steer * dx;
-      this.playerX -= this.track.curvatureAt(this.position) * this.speed * dt * CENTRIFUGAL * speedPercent;
+      // lateral-velocity model: the car carries sideways momentum, so you
+      // steer *through* a corner and slide if you don't. Curves push you out.
+      const curve = this.track.curvatureAt(this.position);
+      const centri = curve * this.speed * CENTRIFUGAL * speedPercent;
+
+      // drift: brake + steer at speed → slide and build a boost charge
+      const wantDrift = this.input.brake && this.steer !== 0 && speedPercent > 0.35;
+      if (wantDrift && !this.drifting) {
+        this.drifting = true;
+        this.driftDir = this.steer;
+        this.driftCharge = 0;
+      }
+      if (this.drifting && (!this.input.brake || speedPercent < 0.18 || this.steer === 0)) {
+        this.endDrift();
+      }
+
+      const grip = this.drifting ? DRIFT_GRIP : GRIP;
+      const steerPow = this.drifting ? STEER_ACCEL * 1.6 : STEER_ACCEL;
+      const targetVX = this.steer * steerPow * speedPercent;
+      this.playerVX += (targetVX - centri - this.playerVX) * Math.min(1, dt * grip);
+      this.playerX += this.playerVX * dt;
+      if (this.drifting) this.driftCharge += dt;
+
+      // car body yaws toward the steer, and kicks out further while drifting
+      const yawTarget = this.steer * 0.24 + (this.drifting ? this.driftDir * 0.55 : 0);
+      this.carYaw += (yawTarget - this.carYaw) * Math.min(1, dt * 8);
     } else if (this.stuntAir) {
-      this.spin += this.steer * 1.1 * dt;
-      this.playerX += this.steer * dx * 0.2;
+      // mid-air: left/right = barrel roll, up/down = flips
+      this.spin += this.steer * 1.25 * dt;
+      const pitchIn = this.input.accelerate ? 1 : this.input.brake ? -1 : 0;
+      this.flip += pitchIn * 1.25 * dt;
+      this.playerX += this.steer * dt * 0.4 * speedPercent;
+      this.carYaw += (0 - this.carYaw) * Math.min(1, dt * 6);
     } else {
-      this.playerX += this.steer * dx * 0.7;
+      // flying mech steers freely
+      this.playerX += this.steer * dt * 1.5 * speedPercent;
+      this.carYaw += (this.steer * 0.2 - this.carYaw) * Math.min(1, dt * 6);
     }
 
     // throttle
+    const boosting = this.nitroT > 0 || this.driftBoostT > 0;
     if (this.transformed) {
       this.speed += ACCEL * 1.5 * dt;
+    } else if (this.drifting) {
+      // hold speed through the slide instead of braking hard
+      this.speed += (this.input.accelerate ? ACCEL * 0.6 : DECEL * 0.5) * dt;
     } else if (this.input.accelerate) {
-      this.speed += ACCEL * (this.nitroT > 0 ? 2 : 1) * dt;
+      this.speed += ACCEL * (boosting ? 2 : 1) * dt;
     } else if (this.input.brake) {
       this.speed += BRAKING * dt;
     } else {
@@ -700,20 +784,39 @@ export class Game {
 
   private land() {
     this.stuntAir = false;
-    const revs = Math.round(Math.abs(this.spin));
-    const wobble = Math.abs(Math.abs(this.spin) - revs);
-    if (revs >= 1 && wobble < 0.2) {
-      const bonus = SCORE_STUNT * revs;
+    const rollAmt = Math.abs(this.spin);
+    const flipAmt = Math.abs(this.flip);
+    const rollRevs = Math.round(rollAmt);
+    const flipRevs = Math.round(flipAmt);
+    const attempted = rollAmt > 0.25 || flipAmt > 0.25;
+    const rollOk = rollAmt <= 0.25 || Math.abs(rollAmt - rollRevs) < 0.25;
+    const flipOk = flipAmt <= 0.25 || Math.abs(flipAmt - flipRevs) < 0.25;
+
+    if (attempted && rollOk && flipOk && (rollRevs >= 1 || flipRevs >= 1)) {
+      const tricks: string[] = [];
+      let bonus = 0;
+      if (flipRevs >= 1) {
+        tricks.push((this.flip > 0 ? "FRONTFLIP" : "BACKFLIP") + (flipRevs > 1 ? ` x${flipRevs}` : ""));
+        bonus += SCORE_STUNT * flipRevs;
+      }
+      if (rollRevs >= 1) {
+        tricks.push("BARREL ROLL" + (rollRevs > 1 ? ` x${rollRevs}` : ""));
+        bonus += SCORE_STUNT * rollRevs;
+      }
+      if (tricks.length === 2) bonus = Math.round(bonus * 1.5); // combo bonus
       this.score += bonus;
-      this.stunts++;
+      this.stunts += tricks.length;
       this.sound.play("stunt");
-      this.toast(`STUNT x${revs} +${bonus}`, "#fbbf24");
-    } else if (Math.abs(this.spin) > 0.25) {
-      this.speed *= 0.6;
+      const label = (tricks.length === 2 ? "COMBO! " : "") + tricks.join(" + ");
+      this.toast(`${label} +${bonus}`, "#fbbf24");
+    } else if (attempted) {
+      this.speed *= 0.55;
+      this.crashFlash = 0.4;
       this.sound.play("land");
-      this.toast("ROUGH LANDING", "#f87171");
+      this.toast("WIPEOUT!", "#f87171");
     }
     this.spin = 0;
+    this.flip = 0;
   }
 
   private updateMonsters(dt: number) {
@@ -890,8 +993,11 @@ export class Game {
       const tan = track.tangentAt(this.position);
       this.playerRoot.rotation.y = Math.atan2(tan.x, tan.z);
 
-      this.playerBody.rotation.z = -this.steer * 0.16 + this.spin * Math.PI * 2;
-      this.playerBody.rotation.x = clamp(-this.vAlt * 0.03, -0.35, 0.35);
+      // pitch = flips + air tilt, yaw = steer/drift heading, roll = barrel roll + lean
+      this.playerBody.rotation.x = this.flip * Math.PI * 2 + clamp(-this.vAlt * 0.03, -0.35, 0.35);
+      this.playerBody.rotation.y = this.carYaw;
+      this.playerBody.rotation.z =
+        this.spin * Math.PI * 2 - this.steer * 0.16 - (this.drifting ? this.driftDir * 0.14 : 0);
 
       // form swap + effects
       if (this.carModel) this.carModel.visible = !this.transformed;
@@ -918,7 +1024,7 @@ export class Game {
           this.slash.rotation.z = -t * 2.2;
         }
       }
-      const boosting = this.nitroT > 0 || (this.transformed && this.alt > 0.15);
+      const boosting = this.nitroT > 0 || this.driftBoostT > 0 || (this.transformed && this.alt > 0.15);
       for (const flame of this.flames) {
         flame.visible = boosting;
         const flick = 1 + Math.sin(this.time * 40 + flame.position.x) * 0.3;

@@ -160,6 +160,50 @@ export class Track {
     return new THREE.Mesh(geo, mat);
   }
 
+  /** Translucent glass tube enclosing the road (anti-gravity void realm). */
+  buildTube(): THREE.Group {
+    const g = new THREE.Group();
+    const geo = new THREE.TubeGeometry(this.curve, 500, ROAD_HALF_WIDTH * 1.8, 14, true);
+    const fill = new THREE.Mesh(
+      geo,
+      new THREE.MeshBasicMaterial({
+        color: 0x0e7490, transparent: true, opacity: 0.09,
+        side: THREE.BackSide, depthWrite: false,
+      })
+    );
+    const wire = new THREE.LineSegments(
+      new THREE.WireframeGeometry(geo),
+      new THREE.LineBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.28 })
+    );
+    g.add(fill, wire);
+    return g;
+  }
+
+  /** Glowing neon rails running along both road edges. */
+  buildRails(color = 0x22d3ee): THREE.Group {
+    const g = new THREE.Group();
+    const edge = ROAD_HALF_WIDTH * 1.25;
+    const n = 220;
+    for (const side of [-1, 1]) {
+      const pts: THREE.Vector3[] = [];
+      for (let i = 0; i < n; i++) {
+        const t = i / n;
+        const p = this.curve.getPointAt(t);
+        const tan = this.curve.getTangentAt(t);
+        pts.push(new THREE.Vector3(
+          p.x + -tan.z * edge * side,
+          p.y + 0.35,
+          p.z + tan.x * edge * side
+        ));
+      }
+      const railCurve = new THREE.CatmullRomCurve3(pts, true);
+      const geo = new THREE.TubeGeometry(railCurve, 320, 0.35, 6, true);
+      const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.5 });
+      g.add(new THREE.Mesh(geo, mat));
+    }
+    return g;
+  }
+
   buildStartLine(texture: THREE.Texture): THREE.Mesh {
     const geo = new THREE.PlaneGeometry(ROAD_HALF_WIDTH * 2, 4);
     const mat = new THREE.MeshBasicMaterial({ map: texture });

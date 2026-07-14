@@ -44,6 +44,8 @@ export interface RealmSpec {
   id: RealmId;
   name: string;
   blurb: string;
+  /** "ground" = grass verges + terrain; "void" = floating glass-tube track */
+  style?: "ground" | "void";
   /** [x, elevation, z] control points of the closed loop (meters) */
   controlPoints: [number, number, number][];
   palette: RealmPalette;
@@ -57,9 +59,9 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     name: "Enchanted Forest",
     blurb: "Moonlit woods, glowing mushrooms, gentle rolling hills.",
     controlPoints: [
-      [0, 0, 0], [70, 2, -12], [150, 6, 10], [195, 4, 70], [175, 8, 140],
-      [110, 3, 165], [60, 0, 130], [-10, 5, 150], [-70, 7, 195],
-      [-140, 3, 170], [-170, 0, 95], [-135, 4, 25], [-70, 1, -5],
+      [0, 0, 0], [70, 4, -12], [150, 11, 10], [195, 7, 70], [175, 15, 140],
+      [110, 5, 165], [60, 0, 130], [-10, 9, 150], [-70, 13, 195],
+      [-140, 4, 170], [-170, 0, 95], [-135, 7, 25], [-70, 2, -5],
     ],
     palette: {
       sky: ["#0d0821", "#1a1033", "#4a2d6e", "#6d4a9e"],
@@ -90,9 +92,9 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     name: "Ember Wastes",
     blurb: "Volcanic flats — long straights, sweeping fast bends, ash sky.",
     controlPoints: [
-      [0, 0, 0], [95, 0, -25], [175, 3, -70], [165, 6, -160], [90, 5, -205],
-      [5, 1, -165], [-25, 0, -85], [-95, 2, -60], [-175, 5, -105],
-      [-215, 3, -195], [-200, 0, -55], [-120, 2, 30], [-45, 0, 15],
+      [0, 0, 0], [95, 0, -25], [175, 6, -70], [165, 12, -160], [90, 9, -205],
+      [5, 2, -165], [-25, 0, -85], [-95, 4, -60], [-175, 10, -105],
+      [-215, 6, -195], [-200, 0, -55], [-120, 4, 30], [-45, 0, 15],
     ],
     palette: {
       sky: ["#1a0805", "#3b1206", "#7c2d12", "#b45309"],
@@ -119,9 +121,9 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     name: "Crystal Peaks",
     blurb: "High icy mountains — steep climbs, tight twists, thin air.",
     controlPoints: [
-      [0, 0, 0], [60, 5, 34], [122, 11, 22], [150, 13, 92], [100, 9, 150],
-      [30, 12, 142], [-34, 13, 182], [-104, 8, 150], [-142, 5, 82],
-      [-112, 8, 12], [-162, 3, -58], [-92, 0, -72], [-32, 2, -30],
+      [0, 0, 0], [60, 8, 34], [122, 18, 22], [150, 24, 92], [100, 14, 150],
+      [30, 20, 142], [-34, 26, 182], [-104, 14, 150], [-142, 8, 82],
+      [-112, 14, 12], [-162, 5, -58], [-92, 0, -72], [-32, 3, -30],
     ],
     palette: {
       sky: ["#081428", "#0e2540", "#2a5a8a", "#7ec8e8"],
@@ -141,6 +143,32 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       { kind: "rockB", weight: 3 }, { kind: "treeA", weight: 1 },
       { kind: "treeB", weight: 1 },
     ],
+  },
+
+  void: {
+    id: "void",
+    name: "Void Circuit",
+    blurb: "Anti-gravity glass tube through deep space — huge climbs and drops.",
+    style: "void",
+    controlPoints: [
+      [0, 0, 0], [80, 18, -20], [150, 40, 20], [170, 20, 100], [110, 55, 160],
+      [20, 30, 150], [-60, 60, 190], [-150, 35, 150], [-180, 15, 70],
+      [-150, 45, 0], [-180, 20, -80], [-90, 0, -70], [-30, 8, -25],
+    ],
+    palette: {
+      sky: ["#02010a", "#070218", "#0d0a2e", "#1a1040"],
+      stars: true,
+      moons: [{ x: 780, y: 90, r: 22, tint: "#a5b4fc" }],
+      fog: 0x0a0820, fogNear: 120, fogFar: 720,
+      hemiSky: 0x6070c0, hemiGround: 0x101030, hemiInt: 0.9,
+      sun: 0xa0b0ff, sunInt: 1.2,
+      groundBase: "#0a0820", groundSpeck: "#1a1040", groundDark: "#050312",
+      road: "#161a33", roadDark: "#101026", rumbleA: "#0891b2", rumbleB: "#22d3ee",
+      laneLine: "#67e8f9", edgeLine: "#a5f3fc",
+      crystalColors: [0x22d3ee, 0x818cf8, 0xf0abfc],
+      mountain: 0x1a1040, mountainDark: 0x0d0a2e, clutter: 0x1a1040, gem: 0xf0abfc,
+    },
+    scenery: [{ kind: "crystal", weight: 1 }],
   },
 };
 

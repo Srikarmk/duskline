@@ -18,7 +18,7 @@ import {
 } from "./render";
 
 export type GameMode = "classic" | "timetrial" | "nitro" | "transform" | "grandprix";
-export type RealmId = "forest" | "ember" | "peaks";
+export type RealmId = "forest" | "ember" | "peaks" | "void";
 
 export interface RaceStanding {
   name: string;

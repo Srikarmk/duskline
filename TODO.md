@@ -72,7 +72,19 @@
       next deploy (no code change). Until then it falls back to per-instance
       memory and the home screen shows a hint.
 
+## Drift, stunts, tube tracks, textures (done)
+- [x] Drift model: lateral-velocity inertia (you steer through corners, slide
+      if you don't), brake+steer to drift, release for a drift boost; car body
+      yaws/kicks out visually instead of auto-rotating on rails
+- [x] Stunt variety: barrel rolls (L/R) + flips (U/D) mid-air, named tricks,
+      combos (1.5×), wipeouts on sloppy landings
+- [x] Void Circuit realm: anti-gravity glass tube + neon rails + floating
+      asteroids in deep space, dramatic climbs/drops
+- [x] More elevation on all tracks (bigger up/down)
+- [x] Textured car (real Kenney colormap atlas via a dedicated loader)
+
 ## Next up
-- [ ] Playtest & tune: centrifugal, ramp launch, transform duration, AI skill
-- [ ] Monsters that attack back with real damage / a health bar
+- [ ] Textured trees/rocks (nature kit ships no atlas — needs custom UVs/maps)
+- [ ] Banked curves (roll the road cross-section into turns)
+- [ ] Playtest & tune: drift grip/boost, ramp launch, AI skill
 - [ ] Touch controls (mobile), desktop wrap (Tauri/Electron)
