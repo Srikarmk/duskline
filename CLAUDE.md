@@ -11,20 +11,29 @@ Canvas 2D. No game engine, no runtime dependencies beyond React/Next.
 
 ## Architecture
 
-The core rule: **game logic never imports React, and React never touches game
-state.** React/Next is only the shell that mounts the canvas.
+The core rule: **game logic never imports React, and React never touches
+in-race state.** React owns the menus (home screen, leaderboard); the engine
+owns the race. They communicate only via `GameOptions` (mode + `onFinish`
+callback, which delivers a `GameResult`).
 
-- `app/` — Next.js App Router shell. `app/components/GameCanvas.tsx` is the
-  only client component; it instantiates `Game` in a `useEffect` and calls
-  `game.stop()` on unmount.
+- `app/` — Next.js App Router shell (all client components):
+  - `GameApp.tsx` — screen state machine: home ↔ race
+  - `HomeScreen.tsx` — name entry, mode select, leaderboard display
+  - `GameCanvas.tsx` — mounts `Game` in a `useEffect`, stops it on unmount
 - `src/game/` — framework-agnostic engine, plain TypeScript:
   - `engine.ts` — `Game` class: fixed-timestep loop (60 Hz update, rAF render),
-    player driving state (position, playerX, speed)
-  - `road.ts` — track as a list of segments; `project()` does the
-    world→camera→screen perspective math
-  - `render.ts` — all canvas drawing (background, road segments, player, HUD)
-  - `input.ts` — keyboard state (arrows + WASD)
+    driving/altitude/nitro/transform state, collisions, scoring, laps
+  - `road.ts` — segment list with curves + hills, track builder, sprite
+    placement (deterministic PRNG), `project()` perspective math
+  - `sprites.ts` — procedural sprite drawing + per-type scale/collision widths
+  - `render.ts` — canvas drawing: parallax background, segments, sprites,
+    player (kart + mech), HUD, toasts
+  - `input.ts` — keyboard state (arrows/WASD, Shift = nitro, Space = fly)
   - `constants.ts` — tuning values and realm color palettes; tweak feel here
+- `src/ui/leaderboard.ts` — localStorage score table + last-used name
+
+In dev builds the running `Game` instance is exposed as `window.__frGame` for
+debugging (all fields are TS-private but reachable from the console).
 
 ## Rendering model (pseudo-3D)
 

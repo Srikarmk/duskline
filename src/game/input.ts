@@ -1,13 +1,20 @@
 export class Input {
-  private keys = new Set<string>();
+  private down = new Set<string>();
+  private justPressed = new Set<string>();
+
+  private normalize(key: string) {
+    return key.length === 1 ? key.toLowerCase() : key;
+  }
 
   private onKeyDown = (e: KeyboardEvent) => {
-    if (e.key.startsWith("Arrow")) e.preventDefault();
-    this.keys.add(e.key);
+    if (e.key.startsWith("Arrow") || e.key === " ") e.preventDefault();
+    const key = this.normalize(e.key);
+    if (!e.repeat) this.justPressed.add(key);
+    this.down.add(key);
   };
 
   private onKeyUp = (e: KeyboardEvent) => {
-    this.keys.delete(e.key);
+    this.down.delete(this.normalize(e.key));
   };
 
   attach() {
@@ -18,19 +25,33 @@ export class Input {
   detach() {
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("keyup", this.onKeyUp);
-    this.keys.clear();
+    this.down.clear();
+    this.justPressed.clear();
+  }
+
+  /** True once per key press; consumed on read. */
+  consumePress(key: string) {
+    const had = this.justPressed.has(key);
+    this.justPressed.delete(key);
+    return had;
   }
 
   get accelerate() {
-    return this.keys.has("ArrowUp") || this.keys.has("w");
+    return this.down.has("ArrowUp") || this.down.has("w");
   }
   get brake() {
-    return this.keys.has("ArrowDown") || this.keys.has("s");
+    return this.down.has("ArrowDown") || this.down.has("s");
   }
   get left() {
-    return this.keys.has("ArrowLeft") || this.keys.has("a");
+    return this.down.has("ArrowLeft") || this.down.has("a");
   }
   get right() {
-    return this.keys.has("ArrowRight") || this.keys.has("d");
+    return this.down.has("ArrowRight") || this.down.has("d");
+  }
+  get fly() {
+    return this.down.has(" ");
+  }
+  get nitroPressed() {
+    return this.consumePress("Shift");
   }
 }
