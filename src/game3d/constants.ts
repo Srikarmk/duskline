@@ -55,11 +55,16 @@ export const SCORE_FINISH = 1000;
 export const LANE_BONUS_SECONDS = 4;
 
 // AI opponents
-export const OPPONENT_COUNT = 3;
+export const OPPONENT_COUNT = 8;
 export const OPPONENTS: { name: string; color: number; skill: number }[] = [
-  { name: "Vex", color: 0xef4444, skill: 0.99 },
-  { name: "Nyx", color: 0x22c55e, skill: 0.96 },
-  { name: "Zir", color: 0xf59e0b, skill: 0.93 },
+  { name: "Vex", color: 0xef4444, skill: 1.0 },
+  { name: "Nyx", color: 0x22c55e, skill: 0.99 },
+  { name: "Zir", color: 0xf59e0b, skill: 0.98 },
+  { name: "Kai", color: 0x3b82f6, skill: 0.97 },
+  { name: "Rok", color: 0xec4899, skill: 0.96 },
+  { name: "Ash", color: 0xa855f7, skill: 0.95 },
+  { name: "Jet", color: 0x14b8a6, skill: 0.94 },
+  { name: "Bo", color: 0xf97316, skill: 0.93 },
 ];
 
 // sword swing (transformer melee)

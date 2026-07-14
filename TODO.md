@@ -83,6 +83,16 @@
 - [x] More elevation on all tracks (bigger up/down)
 - [x] Textured car (real Kenney colormap atlas via a dedicated loader)
 
+## Grid, opponents, varied tracks, full-width (done)
+- [x] 8 AI opponents; player starts mid-pack (P5 of 9) via a proper grid
+- [x] Fixed race-position bug (opponents no longer get a phantom lap lead)
+- [x] Softer rubber-band + gentler centrifugal + wider out-of-bounds
+- [x] Tracks generated as smooth "wobbly circle" loops with bounded curvature
+      (no cusps/pinching); each realm distinct — ember long/fast (130m radius),
+      peaks twisty+high (34m, 44m climbs), void dramatic (77m climbs), forest
+      rolling
+- [x] Full-width home layout
+
 ## Next up
 - [ ] Textured trees/rocks (nature kit ships no atlas — needs custom UVs/maps)
 - [ ] Banked curves (roll the road cross-section into turns)

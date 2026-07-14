@@ -284,17 +284,24 @@ export class Game {
   }
 
   private spawnOpponents(library: ModelLibrary) {
+    // grid start with the player mid-pack: slots are staggered along the track,
+    // racers ahead of the line have positive dist (lap 1), racers behind wrap
+    // to the end of the loop on lap 0 so ranking-by-progress reads them as
+    // behind (negative progress) rather than a whole lap ahead.
+    const total = OPPONENTS.length + 1;
+    const playerSlot = Math.floor(total / 2);
+    const rowGap = 5;
     for (let i = 0; i < OPPONENTS.length; i++) {
       const spec = OPPONENTS[i];
+      const slot = i < playerSlot ? i : i + 1; // skip the player's slot
+      const gridDist = (playerSlot - slot) * rowGap; // ahead > 0, behind < 0
       const car = instantiate(library, "racer", 4.2);
       tintModel(car, spec.color);
       this.scene.add(car);
-      // start on the grid just ahead of the player (small positive distance so
-      // ranking-by-progress is correct — a wrapped-negative dist would read as
-      // a whole lap ahead and leave the player stuck in last)
-      const startDist = 2 + i * 3;
+      const startDist = gridDist >= 0 ? gridDist : this.track.wrap(gridDist);
       const opp = new Opponent(car, spec.color, spec.name, spec.skill, startDist);
-      opp.lane = LANE_CENTERS[i % 3];
+      opp.lane = LANE_CENTERS[slot % 3];
+      opp.lap = gridDist >= 0 ? 1 : 0;
       this.opponents.push(opp);
     }
   }

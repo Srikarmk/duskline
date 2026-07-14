@@ -53,16 +53,51 @@ export interface RealmSpec {
   scenery: { kind: SceneryKind; weight: number }[];
 }
 
+interface Harm {
+  k: number;
+  amp: number;
+  phase: number;
+}
+
+/**
+ * Build a smooth closed loop as a "wobbly circle": radius and elevation vary
+ * with angle via a few sine harmonics. Because radius stays well above the road
+ * width, curvature is bounded — no cusps or self-overlaps, unlike hand-placed
+ * hairpins. Variety comes from the harmonics (lobes) and elevation profile.
+ */
+function loopTrack(
+  n: number,
+  base: number,
+  shape: Harm[],
+  baseY: number,
+  elev: Harm[]
+): [number, number, number][] {
+  const pts: [number, number, number][] = [];
+  for (let i = 0; i < n; i++) {
+    const t = (i / n) * Math.PI * 2;
+    let r = base;
+    for (const h of shape) r += h.amp * Math.sin(h.k * t + h.phase);
+    let y = baseY;
+    for (const e of elev) y += e.amp * Math.sin(e.k * t + e.phase);
+    pts.push([
+      Math.round(r * Math.cos(t)),
+      Math.round(Math.max(0, y)),
+      Math.round(r * Math.sin(t)),
+    ]);
+  }
+  return pts;
+}
+
 export const REALMS: Record<RealmId, RealmSpec> = {
   forest: {
     id: "forest",
     name: "Enchanted Forest",
     blurb: "Moonlit woods, glowing mushrooms, gentle rolling hills.",
-    controlPoints: [
-      [0, 0, 0], [70, 4, -12], [150, 11, 10], [195, 7, 70], [175, 15, 140],
-      [110, 5, 165], [60, 0, 130], [-10, 9, 150], [-70, 13, 195],
-      [-140, 4, 170], [-170, 0, 95], [-135, 7, 25], [-70, 2, -5],
-    ],
+    controlPoints: loopTrack(
+      18, 175,
+      [{ k: 2, amp: 38, phase: 0.3 }, { k: 3, amp: 18, phase: 1.0 }],
+      9, [{ k: 2, amp: 9, phase: 0 }, { k: 4, amp: 6, phase: 1.5 }]
+    ),
     palette: {
       sky: ["#0d0821", "#1a1033", "#4a2d6e", "#6d4a9e"],
       stars: true,
@@ -91,11 +126,11 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     id: "ember",
     name: "Ember Wastes",
     blurb: "Volcanic flats — long straights, sweeping fast bends, ash sky.",
-    controlPoints: [
-      [0, 0, 0], [95, 0, -25], [175, 6, -70], [165, 12, -160], [90, 9, -205],
-      [5, 2, -165], [-25, 0, -85], [-95, 4, -60], [-175, 10, -105],
-      [-215, 6, -195], [-200, 0, -55], [-120, 4, 30], [-45, 0, 15],
-    ],
+    controlPoints: loopTrack(
+      16, 225,
+      [{ k: 1, amp: 60, phase: 0.5 }, { k: 2, amp: 20, phase: 0 }],
+      3, [{ k: 2, amp: 7, phase: 0.5 }]
+    ),
     palette: {
       sky: ["#1a0805", "#3b1206", "#7c2d12", "#b45309"],
       stars: false,
@@ -120,11 +155,11 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     id: "peaks",
     name: "Crystal Peaks",
     blurb: "High icy mountains — steep climbs, tight twists, thin air.",
-    controlPoints: [
-      [0, 0, 0], [60, 8, 34], [122, 18, 22], [150, 24, 92], [100, 14, 150],
-      [30, 20, 142], [-34, 26, 182], [-104, 14, 150], [-142, 8, 82],
-      [-112, 14, 12], [-162, 5, -58], [-92, 0, -72], [-32, 3, -30],
-    ],
+    controlPoints: loopTrack(
+      20, 170,
+      [{ k: 3, amp: 30, phase: 0.2 }, { k: 5, amp: 13, phase: 0.8 }],
+      18, [{ k: 3, amp: 16, phase: 0 }, { k: 2, amp: 11, phase: 1.0 }]
+    ),
     palette: {
       sky: ["#081428", "#0e2540", "#2a5a8a", "#7ec8e8"],
       stars: true,
@@ -150,11 +185,11 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     name: "Void Circuit",
     blurb: "Anti-gravity glass tube through deep space — huge climbs and drops.",
     style: "void",
-    controlPoints: [
-      [0, 0, 0], [80, 18, -20], [150, 40, 20], [170, 20, 100], [110, 55, 160],
-      [20, 30, 150], [-60, 60, 190], [-150, 35, 150], [-180, 15, 70],
-      [-150, 45, 0], [-180, 20, -80], [-90, 0, -70], [-30, 8, -25],
-    ],
+    controlPoints: loopTrack(
+      18, 200,
+      [{ k: 2, amp: 45, phase: 0.6 }, { k: 3, amp: 24, phase: 2.0 }],
+      35, [{ k: 2, amp: 26, phase: 0 }, { k: 3, amp: 18, phase: 1.2 }, { k: 1, amp: 14, phase: 0.5 }]
+    ),
     palette: {
       sky: ["#02010a", "#070218", "#0d0a2e", "#1a1040"],
       stars: true,
