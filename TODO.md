@@ -83,6 +83,14 @@
 - [x] More elevation on all tracks (bigger up/down)
 - [x] Textured car (real Kenney colormap atlas via a dedicated loader)
 
+## Visual glow-up + pause/settings + devlog (done)
+- [x] Bloom post-processing (gems/rails/crystals/nitro/sword glow)
+- [x] Brighter, warmer lighting + fill light (no more black-silhouette trees)
+- [x] Rebuilt glowing jump ramp; props conform to road slope on hills
+- [x] Pause menu (Esc/P): Resume / Settings / Restart / Quit
+- [x] Settings: music & SFX volume, glow toggle, default camera (persisted)
+- [x] Progress devlog at docs/PROGRESS.md with captured screenshots
+
 ## Grid, opponents, varied tracks, full-width (done)
 - [x] 8 AI opponents; player starts mid-pack (P5 of 9) via a proper grid
 - [x] Fixed race-position bug (opponents no longer get a phantom lap lead)

@@ -1,4 +1,7 @@
 import * as THREE from "three";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import {
   WIDTH, HEIGHT, STEP,
   ROAD_HALF_WIDTH, LANE_CENTERS,
@@ -25,6 +28,7 @@ import { REALMS, pickScenery, type RealmSpec, type SceneryKind } from "./realms"
 import { Opponent } from "./ai";
 import { Minimap } from "./minimap";
 import { Sound } from "./sound";
+import { loadSetting, loadSettings, type Settings } from "../ui/settings";
 import { Input } from "../game/input";
 import { drawHud, drawToasts, drawCenterText, type Toast } from "../game/render";
 import type { GameMode, GameResult, GameOptions, RaceStanding } from "../game/engine";
@@ -85,6 +89,8 @@ function mulberry32(seed: number) {
 export class Game {
   private container: HTMLElement;
   private renderer: THREE.WebGLRenderer;
+  private composer!: EffectComposer;
+  private bloomPass!: UnrealBloomPass;
   private hudCtx: CanvasRenderingContext2D;
   private scene = new THREE.Scene();
   private camera: THREE.PerspectiveCamera;
@@ -104,6 +110,7 @@ export class Game {
   private accumulator = 0;
   private time = 0;
   private stopped = false;
+  private paused = false;
 
   // world objects
   private entities: Entity[] = [];
@@ -177,7 +184,7 @@ export class Game {
     this.lap = 1;
     this.nitroCharges = this.cfg.startNitro;
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     this.renderer.setSize(WIDTH, HEIGHT, false);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.domElement.className = "game-layer";
@@ -198,6 +205,18 @@ export class Game {
     this.camera = new THREE.PerspectiveCamera(CAMERA_PRESETS[0].fov, WIDTH / HEIGHT, 0.1, 1600);
     this.scene.fog = new THREE.Fog(pal.fog, pal.fogNear, pal.fogFar);
 
+    // bloom post-processing so emissive gems / rails / crystals / nitro glow
+    this.composer = new EffectComposer(this.renderer);
+    this.composer.setSize(WIDTH, HEIGHT);
+    this.composer.setPixelRatio(this.renderer.getPixelRatio());
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(WIDTH, HEIGHT), 0.9, 0.5, 0.68);
+    this.composer.addPass(this.bloomPass);
+    this.bloomPass.enabled = loadSetting("bloom", true);
+    this.cameraIndex = loadSetting("camera", 0) % CAMERA_PRESETS.length;
+    this.camera.fov = CAMERA_PRESETS[this.cameraIndex].fov;
+    this.camera.updateProjectionMatrix();
+
     if (process.env.NODE_ENV !== "production") {
       (window as unknown as { __frGame?: Game }).__frGame = this;
     }
@@ -206,6 +225,8 @@ export class Game {
   start() {
     this.input.attach();
     this.sound.unlock();
+    const s = loadSettings();
+    this.sound.setVolumes(s.musicVolume, s.sfxVolume);
     this.last = performance.now();
     this.rafId = requestAnimationFrame(this.frame);
     void this.init();
@@ -216,6 +237,7 @@ export class Game {
     cancelAnimationFrame(this.rafId);
     this.input.detach();
     this.sound.dispose();
+    this.composer.dispose();
     this.renderer.dispose();
     this.container.replaceChildren();
   }
@@ -245,10 +267,14 @@ export class Game {
       scene.add(makeMountainRing(pal, cx, cz, radius));
     }
 
-    scene.add(new THREE.HemisphereLight(pal.hemiSky, pal.hemiGround, pal.hemiInt));
-    const sun = new THREE.DirectionalLight(pal.sun, pal.sunInt);
+    scene.add(new THREE.HemisphereLight(pal.hemiSky, pal.hemiGround, pal.hemiInt * 1.4));
+    const sun = new THREE.DirectionalLight(pal.sun, pal.sunInt * 1.2);
     sun.position.set(80, 130, 40);
     scene.add(sun);
+    // cool fill from the opposite side so nothing reads as a black silhouette
+    const fill = new THREE.DirectionalLight(pal.hemiSky, 0.45);
+    fill.position.set(-70, 45, -90);
+    scene.add(fill);
 
     if (!isVoid) scene.add(track.buildVergeMesh(makeGrassTexture(pal)));
     scene.add(track.buildRoadMesh(makeRoadTexture(pal)));
@@ -324,7 +350,15 @@ export class Game {
     const p = this.track.pointAt(d, lateral * ROAD_HALF_WIDTH);
     obj.position.set(p.x, p.y + extraY, p.z);
     const tan = this.track.tangentAt(d);
+    obj.rotation.order = "YXZ";
     obj.rotation.y = Math.atan2(tan.x, tan.z);
+    // ramps/rocks sit on the road, so pitch them to match its slope on hills
+    if (type === "ramp" || type === "rock") {
+      const a = this.track.pointAt(d - 2);
+      const b = this.track.pointAt(d + 2);
+      const horiz = Math.hypot(b.x - a.x, b.z - a.z) || 4;
+      obj.rotation.x = -Math.atan2(b.y - a.y, horiz);
+    }
     this.scene.add(obj);
     const entity: Entity = {
       type, dist: d, lateral, collectedLap: 0, obj,
@@ -479,6 +513,11 @@ export class Game {
 
   private frame = (now: number) => {
     if (this.stopped) return;
+    if (this.paused) {
+      this.last = now; // hold time still so dt doesn't jump on resume
+      this.rafId = requestAnimationFrame(this.frame);
+      return;
+    }
     this.accumulator += Math.min(now - this.last, 250) / 1000;
     this.last = now;
     while (this.accumulator >= STEP) {
@@ -488,6 +527,25 @@ export class Game {
     this.render();
     this.rafId = requestAnimationFrame(this.frame);
   };
+
+  pause() {
+    this.paused = true;
+    this.sound.setEngine(0, false);
+  }
+
+  resume() {
+    this.paused = false;
+    this.last = performance.now();
+  }
+
+  applySettings(s: Settings) {
+    this.bloomPass.enabled = s.bloom;
+    this.sound.setVolumes(s.musicVolume, s.sfxVolume);
+    this.cameraIndex = s.camera % CAMERA_PRESETS.length;
+    this.camera.fov = CAMERA_PRESETS[this.cameraIndex].fov;
+    this.camera.updateProjectionMatrix();
+    this.camSnap = true;
+  }
 
   private toast(text: string, color = "#e8e0ff") {
     this.toasts.unshift({ text, color, t: 2 });
@@ -1070,7 +1128,7 @@ export class Game {
       lookAt.y += preset.lookHeight + this.alt * 0.8;
       this.camera.lookAt(lookAt);
 
-      this.renderer.render(this.scene, this.camera);
+      this.composer.render();
     }
 
     this.renderHud();

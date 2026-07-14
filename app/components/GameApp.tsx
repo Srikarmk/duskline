@@ -100,7 +100,17 @@ export default function GameApp() {
   };
 
   if (screen === "race") {
-    return <GameCanvas mode={mode} realm={realm} onFinish={handleFinish} />;
+    return (
+      <GameCanvas
+        mode={mode}
+        realm={realm}
+        onFinish={handleFinish}
+        onQuit={() => {
+          setGp(null);
+          setScreen("home");
+        }}
+      />
+    );
   }
 
   if (screen === "intermission" && gp) {

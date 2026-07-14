@@ -219,23 +219,60 @@ export function makeOrb(): THREE.Group {
   return wrapper;
 }
 
-export function makeRamp(): THREE.Mesh {
-  const w = 1.6, l = 2.8, h = 1.5;
-  const geo = new THREE.BufferGeometry();
+export function makeRamp(): THREE.Group {
+  const group = new THREE.Group();
+  const w = 2.3, l = 3.0, h = 2.0;
+
+  // solid wedge body (slope rises toward +z / the direction of travel)
   const verts = new Float32Array([
-    -w, 0, -l,  w, 0, -l,  w, h, l,
-    -w, 0, -l,  w, h, l,  -w, h, l,
-    -w, 0, l,  -w, h, l,  w, h, l,
-    -w, 0, l,  w, h, l,  w, 0, l,
-    -w, 0, -l,  -w, h, l,  -w, 0, l,
-    w, 0, -l,  w, 0, l,  w, h, l,
+    -w, 0, -l, w, 0, -l, w, h, l, -w, 0, -l, w, h, l, -w, h, l, // slope
+    -w, 0, l, -w, h, l, w, h, l, -w, 0, l, w, h, l, w, 0, l,     // back wall
+    -w, 0, -l, -w, 0, l, w, 0, l, -w, 0, -l, w, 0, l, w, 0, -l,   // bottom
+    -w, 0, -l, -w, h, l, -w, 0, l,                                // left side
+    w, 0, -l, w, 0, l, w, h, l,                                   // right side
   ]);
+  const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.BufferAttribute(verts, 3));
   geo.computeVertexNormals();
-  const mat = new THREE.MeshStandardMaterial({
-    color: 0xd97706, emissive: 0x92400e, emissiveIntensity: 0.5,
+  const body = new THREE.Mesh(
+    geo,
+    new THREE.MeshStandardMaterial({ color: 0x5a2c0e, metalness: 0.4, roughness: 0.6 })
+  );
+  group.add(body);
+
+  const pitch = Math.atan2(h, 2 * l);
+  const slopeLen = Math.hypot(2 * l, h);
+  const glow = new THREE.MeshStandardMaterial({
+    color: 0xfde68a, emissive: 0xf59e0b, emissiveIntensity: 1.3,
   });
-  return new THREE.Mesh(geo, mat);
+
+  // glowing launch strip down the middle of the slope
+  const strip = new THREE.Mesh(new THREE.BoxGeometry(w * 0.55, 0.14, slopeLen * 0.96), glow);
+  strip.position.set(0, h / 2 + 0.12, 0);
+  strip.rotation.x = -pitch;
+  group.add(strip);
+
+  // glowing chevrons pointing up the ramp
+  const chevMat = new THREE.MeshStandardMaterial({
+    color: 0xfef3c7, emissive: 0xfbbf24, emissiveIntensity: 1.6,
+  });
+  for (let i = 0; i < 3; i++) {
+    const t = 0.28 + i * 0.22;
+    const chev = new THREE.Mesh(new THREE.ConeGeometry(w * 0.4, 0.5, 3), chevMat);
+    chev.position.set(0, h * t + 0.22, -l + 2 * l * t);
+    chev.rotation.x = -pitch; // lie on the slope, tip pointing up-ramp
+    group.add(chev);
+  }
+
+  // glowing side rails
+  for (const sx of [-1, 1]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, slopeLen), glow);
+    rail.position.set(sx * w, h / 2 + 0.06, 0);
+    rail.rotation.x = -pitch;
+    group.add(rail);
+  }
+
+  return group;
 }
 
 export function makeCrystalCluster(rand: () => number, colors: number[]): THREE.Group {

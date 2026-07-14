@@ -27,6 +27,8 @@ export class Sound {
 
   private muted = false;
   private started = false;
+  private musicVol = 0.7;
+  private sfxVol = 0.9;
 
   constructor() {
     if (typeof window !== "undefined") {
@@ -48,11 +50,11 @@ export class Sound {
         this.master.connect(this.ctx.destination);
 
         this.sfxBus = this.ctx.createGain();
-        this.sfxBus.gain.value = 0.7;
+        this.sfxBus.gain.value = 0.85 * this.sfxVol;
         this.sfxBus.connect(this.master);
 
         this.musicBus = this.ctx.createGain();
-        this.musicBus.gain.value = 0.16;
+        this.musicBus.gain.value = 0.22 * this.musicVol;
         this.musicBus.connect(this.master);
 
         this.engineBus = this.ctx.createGain();
@@ -71,6 +73,15 @@ export class Sound {
 
   get isMuted() {
     return this.muted;
+  }
+
+  setVolumes(music: number, sfx: number) {
+    this.musicVol = music;
+    this.sfxVol = sfx;
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.musicBus?.gain.setTargetAtTime(0.22 * music, t, 0.05);
+    this.sfxBus?.gain.setTargetAtTime(0.85 * sfx, t, 0.05);
   }
 
   toggleMute() {
