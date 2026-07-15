@@ -37,9 +37,10 @@ const MODE_LABEL: Record<GameMode, string> = {
 };
 
 const STEPS: { n: number; label: string; hint: string }[] = [
-  { n: 1, label: "REALM", hint: "Choose the world you'll tear through." },
-  { n: 2, label: "MACHINE", hint: "Pick the kart that fits your style." },
-  { n: 3, label: "RACE", hint: "Name your racer, set the rules, launch." },
+  { n: 1, label: "REALM", hint: "Choose your world." },
+  { n: 2, label: "MACHINE", hint: "Pick your kart." },
+  { n: 3, label: "MODE", hint: "How do you want to race?" },
+  { n: 4, label: "RACE", hint: "Name in, lights out." },
 ];
 
 function formatTime(ms: number) {
@@ -84,21 +85,22 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
   }, []);
 
   const realmIds = (Object.keys(REALMS) as RealmId[]).filter((id) => !REALMS[id].hidden);
-  const isGP = mode === "grandprix";
   const isSpace = mode === "spacewars";
   const shownScores = board === "global" ? globalScores ?? [] : localScores;
   const canStart = name.trim().length > 0 && realmPicked && carPicked;
 
-  // Which steps the breadcrumb lets you jump to.
+  // Which steps the breadcrumb lets you jump to (mode always has a default).
   const reachable = (n: number) =>
-    n === 1 || (n === 2 && realmPicked) || (n === 3 && realmPicked && carPicked);
+    n === 1 ||
+    (n === 2 && realmPicked) ||
+    (n >= 3 && realmPicked && carPicked);
 
   const goStep = (n: number) => {
     if (reachable(n)) setStep(n);
   };
 
   const launch = () => {
-    if (canStart) onStart(name.trim(), mode, realm, car, isGP ? 3 : laps);
+    if (canStart) onStart(name.trim(), mode, realm, car, laps);
   };
 
   const nextDisabled = (step === 1 && !realmPicked) || (step === 2 && !carPicked);
@@ -108,10 +110,9 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
       <div className="hero hero-compact">
         <div className="hero-glow" />
         <h1 className="title">FANTASY RACER</h1>
-        <p className="subtitle">drift · boost · jump · transform — a 3D magic kart racer</p>
+        <p className="subtitle">drift · boost · jump · blast</p>
         <div className="hero-tags">
-          <span>8 REALMS</span><span>8 KARTS</span><span>8-CAR GRID</span>
-          <span>POWER-UPS</span><span>GRAND PRIX</span>
+          <span>8 WORLDS</span><span>8 KARTS</span><span>5 MODES</span>
         </div>
       </div>
 
@@ -233,27 +234,50 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
           )}
 
           {step === 3 && (
+            <div className="modes-step">
+              <div className="modes">
+                {MODES.map((m) => (
+                  <button
+                    key={m.id}
+                    className={`mode-card ${mode === m.id ? "selected" : ""}`}
+                    onClick={() => setMode(m.id)}
+                  >
+                    <strong>{m.name}</strong>
+                    <span>{m.blurb}</span>
+                  </button>
+                ))}
+              </div>
+
+              {isSpace && (
+                <div className="gp-note">
+                  Space Wars is fought in deep space — your realm pick is swapped
+                  for one of two battle tubes. You start armed; item boxes and
+                  enemy mines are everywhere. Press <b>E</b> to fire.
+                </div>
+              )}
+            </div>
+          )}
+
+          {step === 4 && (
             <div className="race-step">
               <div className="loadout">
                 <button className="loadout-chip" onClick={() => goStep(1)}>
                   <em>REALM</em>
-                  <b>{isGP ? "ALL 3 REALMS" : REALMS[realm].name}</b>
+                  <b>{isSpace ? "DEEP SPACE" : REALMS[realm].name}</b>
                 </button>
                 <button className="loadout-chip" onClick={() => goStep(2)}>
                   <em>MACHINE</em>
                   <b style={{ color: carColorHex(car) }}>{CAR_SPECS[car].name}</b>
                 </button>
+                <button className="loadout-chip" onClick={() => goStep(3)}>
+                  <em>MODE</em>
+                  <b>{MODE_LABEL[mode]}</b>
+                </button>
               </div>
 
               <div className="realm-lore">
-                <em>{isGP ? "GRAND PRIX" : isSpace ? "DEEP SPACE" : REALMS[realm].name}</em>
-                <p>
-                  {isGP
-                    ? "Three worlds back to back — moonlit forest, volcanic wastes, then the icy peaks. Points across all three crown the champion."
-                    : isSpace
-                      ? REALM_LORE.void
-                      : REALM_LORE[realm]}
-                </p>
+                <em>{isSpace ? "DEEP SPACE" : REALMS[realm].name}</em>
+                <p>{isSpace ? REALM_LORE.void : REALM_LORE[realm]}</p>
               </div>
 
               <label className="field">
@@ -269,37 +293,7 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
                 />
               </label>
 
-              <div className="section-label">MODE</div>
-              <div className="modes">
-                {MODES.map((m) => (
-                  <button
-                    key={m.id}
-                    className={`mode-card ${mode === m.id ? "selected" : ""}`}
-                    onClick={() => setMode(m.id)}
-                  >
-                    <strong>{m.name}</strong>
-                    <span>{m.blurb}</span>
-                  </button>
-                ))}
-              </div>
-
-              {isGP && (
-                <div className="gp-note">
-                  Grand Prix ignores the realm pick and runs all three worlds in
-                  order: Enchanted Forest → Ember Wastes → Crystal Peaks.
-                  Championship points each round.
-                </div>
-              )}
-
-              {isSpace && (
-                <div className="gp-note">
-                  Space Wars is fought in deep space — your realm pick is swapped
-                  for one of two battle tubes. You start armed; item boxes and
-                  enemy mines are everywhere. Press <b>E</b> to fire.
-                </div>
-              )}
-
-              {!isGP && mode !== "nitro" && (
+              {mode !== "nitro" && (
                 <>
                   <div className="section-label">LAPS</div>
                   <div className="laps">
@@ -318,13 +312,12 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
 
               <button className="start" disabled={!canStart} onClick={launch}>
                 {canStart
-                  ? (isGP ? "▸ START GRAND PRIX" : isSpace ? "▸ START SPACE WARS" : `▸ START RACE — ${mode === "nitro" ? 1 : laps} LAP${(mode === "nitro" ? 1 : laps) > 1 ? "S" : ""}`)
+                  ? (isSpace ? "▸ START SPACE WARS" : `▸ START RACE — ${mode === "nitro" ? 1 : laps} LAP${(mode === "nitro" ? 1 : laps) > 1 ? "S" : ""}`)
                   : "ENTER A RACER NAME"}
               </button>
 
               <p className="controls-help">
-                drive: ARROWS / WASD · nitro: SPACE · use item: E · fly (mech): SHIFT ·
-                camera: C · sound: M · pause: ESC · spin mid-air for stunts
+                arrows / WASD · SPACE nitro · E item · SHIFT fly · C camera
               </p>
             </div>
           )}
@@ -339,13 +332,13 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
           >
             ◂ BACK
           </button>
-          {step < 3 ? (
+          {step < 4 ? (
             <button
               className="wiz-btn next"
-              onClick={() => setStep((s) => Math.min(3, s + 1))}
+              onClick={() => setStep((s) => Math.min(4, s + 1))}
               disabled={nextDisabled}
             >
-              {step === 1 ? "NEXT — MACHINE ▸" : "NEXT — RACE ▸"}
+              {step === 1 ? "NEXT — MACHINE ▸" : step === 2 ? "NEXT — MODE ▸" : "NEXT — RACE ▸"}
             </button>
           ) : (
             <span className="wiz-nav-note">
@@ -355,7 +348,7 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
         </div>
       </div>
 
-      {step === 3 && (
+      {step === 4 && (
         <div className="leaderboard">
           <div className="board-head">
             <h2>HALL OF LEGENDS</h2>

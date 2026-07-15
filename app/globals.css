@@ -1,3 +1,10 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700;900&family=Rajdhani:wght@400;500;600;700&display=swap');
+
+:root {
+  --font-display: "Orbitron", "Arial Black", sans-serif;
+  --font-body: "Rajdhani", "Segoe UI", system-ui, sans-serif;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -13,7 +20,8 @@ body {
     radial-gradient(900px 600px at 5% 30%, rgba(217, 70, 239, 0.14), transparent 55%),
     #07061a;
   color: #e8e0ff;
-  font-family: "Courier New", monospace;
+  font-family: var(--font-body);
+  font-weight: 500;
   overflow: hidden;
 }
 
@@ -154,8 +162,9 @@ main {
 
 .title {
   position: relative;
-  font-size: clamp(38px, 7vw, 68px);
-  letter-spacing: 8px;
+  font-family: var(--font-display);
+  font-size: clamp(34px, 6.2vw, 62px);
+  letter-spacing: 3px;
   font-weight: 900;
   background: linear-gradient(180deg, #fdf4ff 0%, #e9a5ff 45%, #a855f7 100%);
   -webkit-background-clip: text;
@@ -1146,3 +1155,23 @@ main {
   color: #cdc6e6;
   font-style: italic;
 }
+
+/* --- display font on headings + machine/realm/mode names --- */
+.step-title,
+.result-title,
+.result-score strong,
+.realm-body strong,
+.car-head strong,
+.mode-card strong,
+.showroom-name strong,
+.gpresult .title,
+h1.title {
+  font-family: var(--font-display);
+  letter-spacing: 1.5px;
+}
+.step-title { letter-spacing: 3px; }
+
+/* --- dedicated MODE step (step 3) --- */
+.modes-step { width: 100%; display: flex; flex-direction: column; gap: 14px; }
+.modes-step .mode-card { padding: 18px 16px; min-height: 96px; }
+.modes-step .mode-card strong { font-size: 17px; }
