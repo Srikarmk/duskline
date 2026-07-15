@@ -38,7 +38,7 @@ import {
 import { makeWeather, type WeatherSystem } from "./weather";
 import { makeTunnelArch, makeTunnelPortal } from "./setpieces";
 import { makeBoostGate, makeRingArch } from "./props/gates";
-import { makeArrowSign, makeForkArrowSign, makeBlimp, makeCheckerBoard } from "./props/signage";
+import { makeForkArrowSign, makeBlimp } from "./props/signage";
 import { BranchPath } from "./branch";
 import { loadPBR } from "./textures";
 import { makeKart, CAR_SPECS, CAR_IDS, type CarStat } from "./cars";
@@ -673,17 +673,48 @@ export class Game {
       const startDist = s.at * len;
       const endDist = startDist + s.len;
       this.splits.push({ d0: this.track.wrap(startDist), d1: this.track.wrap(endDist) });
-      const side: 1 | -1 = fi % 2 === 0 ? 1 : -1;
-      const bulge = Math.min(46, 22 + s.len * 0.16);
-      const rise = fi % 2 === 0 ? 6 : 0; // every other branch lifts into a gentle overpass
-      const branch = new BranchPath(sampleP, sampleT, startDist, endDist, { side, bulge, rise, seed: 100 + fi });
+      // which way the lens bows — varied per realm so it's not always the same side
+      const side: 1 | -1 = (this.realm.id.charCodeAt(0) + fi) % 2 === 0 ? 1 : -1;
+      // a wide lens (so the two roads clearly separate around the island), flat so
+      // the island reads cleanly between them
+      const bulge = clamp(28 + s.len * 0.08, 30, 42);
+      const branch = new BranchPath(sampleP, sampleT, startDist, endDist, { side, bulge, rise: 0, seed: 100 + fi });
       this.scene.add(branch.buildRoad(roadMat, ROAD_HALF_WIDTH));
       this.branches.push({ path: branch, side });
+      // the island sitting in the pocket between the main road and the branch
+      this.placeSplitIsland((startDist + endDist) / 2, side, bulge);
       // big fork sign at the mouth, facing oncoming cars
       const sign = makeForkArrowSign(pal);
       this.placeOnTrack(sign, startDist);
       this.scene.add(sign);
     }
+  }
+
+  /** A scenic island in the pocket of a fork — a themed mound topped by a glowing
+   *  beacon, so the split reads as "two roads around an island" (see the sketch). */
+  private placeSplitIsland(midDist: number, side: number, bulge: number) {
+    const pal = this.realm.palette;
+    const r = clamp((bulge - 16) / 2, 5, 10);
+    const island = new THREE.Group();
+    const mound = new THREE.Mesh(
+      new THREE.ConeGeometry(r, r * 0.55, 8),
+      new THREE.MeshStandardMaterial({ color: new THREE.Color(pal.groundBase), flatShading: true, roughness: 1 }),
+    );
+    mound.position.y = r * 0.275; // base sits on the ground
+    mound.rotation.y = Math.random() * Math.PI;
+    island.add(mound);
+    const col = new THREE.Color(pal.gem);
+    const beacon = new THREE.Mesh(
+      new THREE.ConeGeometry(r * 0.3, r * 1.5, 5),
+      new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 0.6, flatShading: true }),
+    );
+    beacon.position.y = r * 0.55 + r * 0.75; // perched on top of the mound
+    island.add(beacon);
+    // pocket centre: halfway between the main road centre and the branch apex,
+    // which bows ~`bulge` metres out — pointAt takes a lateral offset in metres
+    const p = this.track.pointAt(this.track.wrap(midDist), (side * bulge) / 2, undefined, true);
+    island.position.set(p.x, p.y, p.z);
+    this.scene.add(island);
   }
 
   /** Enter a branch if we're at its fork mouth and leaning toward its side. */
@@ -729,42 +760,15 @@ export class Game {
     return false;
   }
 
-  /** Bold arcade signage: big directional arrow boards on the outside of sharp
-   *  corners (warning which way the road bends), checkered apex markers on the
-   *  inside, and a couple of blimps drifting overhead — the Hotshot/SEGA look. */
-  private placeCornerSigns() {
+  /** A blimp or two drifting high over the track — the only bit of the old
+   *  "signage everywhere" that stays (the scattered corner boards were removed). */
+  private placeSkyProps() {
     const len = this.track.length;
     const pal = this.realm.palette;
-    let lastD = -1e9;
-    for (let d = 24; d < len - 24; d += 10) {
-      const t0 = this.track.tangentAt(this.track.wrap(d));
-      const t1 = this.track.tangentAt(this.track.wrap(d + 26));
-      let dh = Math.atan2(t1.x, t1.z) - Math.atan2(t0.x, t0.z);
-      while (dh > Math.PI) dh -= Math.PI * 2;
-      while (dh < -Math.PI) dh += Math.PI * 2;
-      if (Math.abs(dh) < 0.26 || d - lastD < 82 || this.inSplitZone(d)) continue;
-      lastD = d;
-      const dir = dh > 0 ? 1 : -1;            // arrow points the way the road bends
-      const tan = this.track.tangentAt(this.track.wrap(d));
-      const yaw = Math.atan2(tan.x, tan.z);
-      // big arrow board on the OUTSIDE of the corner
-      const sign = makeArrowSign(dir, pal);
-      const po = this.track.pointAt(this.track.wrap(d), -dir * 1.8, undefined, true);
-      sign.position.set(po.x, po.y, po.z);
-      sign.rotation.y = yaw;
-      this.scene.add(sign);
-      // checkered apex marker on the inside
-      const chk = makeCheckerBoard(pal);
-      const pi = this.track.pointAt(this.track.wrap(d + 28), dir * 1.5, undefined, true);
-      chk.position.set(pi.x, pi.y, pi.z);
-      chk.rotation.y = yaw;
-      this.scene.add(chk);
-    }
-    // a couple of blimps drifting high over the track
-    for (const at of [0.24, 0.68]) {
+    for (const at of [0.3, 0.72]) {
       const blimp = makeBlimp(pal);
       const p = this.track.pointAt(this.track.wrap(at * len), 0, undefined, true);
-      blimp.position.set(p.x + 34, p.y + 58, p.z + 22);
+      blimp.position.set(p.x + 34, p.y + 60, p.z + 22);
       blimp.rotation.y = Math.random() * Math.PI * 2;
       this.scene.add(blimp);
     }
@@ -778,7 +782,7 @@ export class Game {
     this.placeTunnels();
     this.placeRivers();
     this.placeBranches();
-    this.placeCornerSigns();
+    this.placeSkyProps();
     this.treeMats = makeTreeMaterials(pal); // shared bark/foliage tree materials
     const lane = () => LANE_CENTERS[Math.floor(rand() * 3)];
     // big monuments/buildings shouldn't hug the verge (they'd overhang the road)
