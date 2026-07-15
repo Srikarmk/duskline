@@ -81,7 +81,7 @@ export const SCORE_FINISH = 1000;
 export const LANE_BONUS_SECONDS = 4;
 
 // AI opponents
-export const OPPONENT_COUNT = 8;
+export const OPPONENT_COUNT = 7; // 7 rivals + you = an 8-car grid
 export const OPPONENTS: { name: string; color: number; skill: number }[] = [
   { name: "Vex", color: 0xef4444, skill: 1.0 },
   { name: "Nyx", color: 0x22c55e, skill: 0.99 },

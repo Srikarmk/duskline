@@ -25,7 +25,7 @@ function stars(n: number) {
 }
 
 const MODES: { id: GameMode; name: string; blurb: string }[] = [
-  { id: "classic", name: "CLASSIC CIRCUIT", blurb: "Race 8 AI rivals. Gems, stunts, nitro, power-ups." },
+  { id: "classic", name: "CLASSIC CIRCUIT", blurb: "Race 7 AI rivals. Gems, stunts, nitro, power-ups." },
   { id: "timetrial", name: "TIME TRIAL", blurb: "Solo run — beat the clock over clean laps." },
   { id: "nitro", name: "NITRO SPRINT", blurb: "1 lap, full nitro, all-out sprint vs the pack." },
   { id: "transform", name: "TRANSFORMER RUSH", blurb: "Morph into a sword-mech — slash monsters and fly." },
@@ -111,7 +111,7 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
         <h1 className="title">FANTASY RACER</h1>
         <p className="subtitle">drift · boost · jump · transform — a 3D magic kart racer</p>
         <div className="hero-tags">
-          <span>8 REALMS</span><span>8 KARTS</span><span>9-RACER GRID</span>
+          <span>8 REALMS</span><span>8 KARTS</span><span>8-CAR GRID</span>
           <span>POWER-UPS</span><span>GRAND PRIX</span>
         </div>
       </div>

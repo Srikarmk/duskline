@@ -247,7 +247,9 @@ export class Opponent {
     }
   }
 
-  private place(track: Track, spinning = false) {
+  /** Position + orient the car mesh on the track from its current dist/lane.
+   *  Public so the engine can snap the field onto the grid before the lights. */
+  place(track: Track, spinning = false) {
     const p = track.pointAt(this.dist, this.lane * ROAD_HALF_WIDTH * 0.9);
     this.obj.position.set(p.x, p.y + this.alt + CAR_LIFT, p.z);
     if (!spinning) {

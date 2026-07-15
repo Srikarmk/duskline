@@ -16,7 +16,7 @@ import {
   TRANSFORM_DURATION, TRANSFORM_SPEED_FACTOR,
   SCORE_GEM, SCORE_AIR_GEM, SCORE_STUNT, SCORE_LANE_BONUS, SCORE_SMASH,
   SCORE_MONSTER, SCORE_FINISH, LANE_BONUS_SECONDS,
-  OPPONENTS, CAMERA_PRESETS, SWING_DURATION,
+  OPPONENTS, OPPONENT_COUNT, CAMERA_PRESETS, SWING_DURATION,
   PAD_BOOST_DURATION,
   ITEM_BOOST_DURATION, ITEM_BOOST_FACTOR, ITEM_SHIELD_DURATION,
   MISSILE_SPEED, MISSILE_MAX_DIST, STUN_DURATION, ITEM_LATERAL_TOL,
@@ -449,29 +449,21 @@ export class Game {
   }
 
   private spawnOpponents() {
-    // Clean starting grid: 3 columns (lanes) × rows, staggered so no two karts
-    // overlap. The grid is shifted so the PLAYER's cell sits on the start line
-    // (dist 0, lap 1). Karts in rows ahead get positive dist (also lap 1); karts
-    // behind wrap to the end of the loop on lap 0 so ranking-by-progress reads
-    // them as behind rather than a whole lap ahead. Each opponent drives a
-    // different kart type, so the grid shows real variety.
-    const cols = 3;
-    const rowGap = 8;        // meters between grid rows
-    const colStagger = 2.6;  // dist offset per column within a row
-    const total = OPPONENTS.length + 1;
-    const playerPos = Math.floor(total / 2); // mid-pack (P5 of 9)
+    // F1-style standing grid: two staggered columns, cars lined up one behind
+    // the other. The player starts at the BACK on the start line (dist 0), so
+    // the whole field is arrayed ahead — a proper grid you launch from, not
+    // karts that pop in mid-race. Slot 0 = pole (front, fastest qualifier);
+    // higher slots sit further back; the player is the backmost slot. Each rival
+    // drives a different kart type for real variety.
+    const rowStep = 5.0;    // metres each grid slot sits ahead of the one behind
+    const colLane = 0.34;   // the two staggered columns, ± this in playerX units
+    const gridN = Math.min(OPPONENT_COUNT, OPPONENTS.length);
+    const playerSlot = gridN;                 // player is last (behind every rival)
+    const slotDist = (slot: number) => (playerSlot - slot) * rowStep; // ahead > 0
+    const slotLane = (slot: number) => (slot % 2 === 0 ? -colLane : colLane);
 
-    const cellDist = (pos: number) =>
-      -(Math.floor(pos / cols) * rowGap + (pos % cols) * colStagger);
-    const cellLane = (pos: number) => LANE_CENTERS[pos % cols];
-    const playerRef = cellDist(playerPos); // shift so the player's cell => 0
-
-    const n = OPPONENTS.length;
-    let pos = 0;
-    for (let i = 0; i < n; i++) {
-      if (pos === playerPos) pos++; // reserve the player's grid slot
+    for (let i = 0; i < gridN; i++) {
       const spec = OPPONENTS[i];
-      const gridDist = cellDist(pos) - playerRef; // ahead > 0, behind < 0
       const car = makeKart(CAR_IDS[i % CAR_IDS.length], spec.color);
       // rear nitro flames (shown when the opponent boosts)
       const flames: THREE.Mesh[] = [];
@@ -484,16 +476,15 @@ export class Game {
         flames.push(fl);
       }
       this.scene.add(car);
-      const startDist = gridDist >= 0 ? gridDist : this.track.wrap(gridDist);
-      const opp = new Opponent(car, spec.color, spec.name, spec.skill, startDist);
-      opp.lane = cellLane(pos);
-      opp.lap = gridDist >= 0 ? 1 : 0;
+      const opp = new Opponent(car, spec.color, spec.name, spec.skill, slotDist(i));
+      opp.lane = slotLane(i);
+      opp.lap = 1;
       opp.flames = flames;
-      // spread the field: distinct top-speed pace from fastest (1.02) to
-      // slowest (0.86), so racers string out instead of clustering
-      opp.pace = 1.02 - (i / Math.max(1, n - 1)) * 0.16;
+      // spread the field: pole is quickest (1.02) down to the tail (0.86), so
+      // racers string out instead of clustering
+      opp.pace = 1.02 - (i / Math.max(1, gridN - 1)) * 0.16;
+      opp.place(this.track); // snap onto the grid now so the field lines up during the countdown
       this.opponents.push(opp);
-      pos++;
     }
   }
 
@@ -1730,7 +1721,12 @@ export class Game {
       drawSpeedFx(ctx, vw, vh, this.speed / MAX_SPEED, boosting, this.time);
     }
 
-    const position = this.opponents.length ? this.computePosition() : undefined;
+    // once finished, freeze the position at the placement taken at the line —
+    // the car keeps coasting past it, so a live recompute would drift (e.g. creep
+    // to "1st") as you roll on
+    const position = this.opponents.length
+      ? (this.phase === "finished" ? this.finalPosition : this.computePosition())
+      : undefined;
     drawHud(ctx, {
       mph: Math.round((this.speed / MAX_SPEED) * 180),
       score: Math.max(0, Math.round(this.score)),
