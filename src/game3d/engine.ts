@@ -38,7 +38,8 @@ import {
 import { makeWeather, type WeatherSystem } from "./weather";
 import { makeTunnelArch, makeTunnelPortal } from "./setpieces";
 import { makeBoostGate, makeRingArch } from "./props/gates";
-import { makeSplitMedian, makeForkSign } from "./props/split";
+import { makeSplitMedian } from "./props/split";
+import { makeArrowSign, makeForkArrowSign, makeBlimp, makeCheckerBoard } from "./props/signage";
 import { loadPBR } from "./textures";
 import { makeKart, CAR_SPECS, CAR_IDS, type CarStat } from "./cars";
 import { REALMS, pickScenery, REALM_WEATHER, REALM_AMBIENCE, REALM_TUNNELS, REALM_RIVERS, REALM_SPLITS, type RealmSpec, type SceneryKind } from "./realms";
@@ -59,6 +60,8 @@ import type { GameMode, GameResult, GameOptions, RaceStanding, CarId } from "../
 type Phase = "loading" | "countdown" | "racing" | "finished";
 
 type EntityType = "gem" | "airGem" | "nitro" | "orb" | "ramp" | "rock" | "monster" | "itembox" | "boostpad" | "boostgate";
+/** what a fork route offers: a speed gate, a jump ramp, or a power-up box */
+type ForkReward = "gate" | "ramp" | "box";
 
 type ItemKind = "boost" | "shield" | "missile" | "mine";
 const ITEM_LABEL: Record<ItemKind, string> = {
@@ -651,30 +654,56 @@ export class Game {
     const pal = this.realm.palette;
     const len = this.track.length;
     const rand = mulberry32(9001);
-    const SEG = 4; // median segment length (m) — tiled to fill the fork
-    for (const s of REALM_SPLITS[this.realm.id] ?? []) {
+    const SEG = 8; // median segment length (m) — 4m mesh stretched x2 to halve draw calls
+    // each fork offers a DIFFERENT pair of rewards on its two routes, cycled so
+    // no two forks feel the same (gate = surge, ramp = jump, box = power-up)
+    const variants: Array<[ForkReward, ForkReward]> = [
+      ["gate", "ramp"],
+      ["ramp", "box"],
+      ["box", "gate"],
+      ["ramp", "gate"],
+    ];
+    const forks = REALM_SPLITS[this.realm.id] ?? [];
+    for (let fi = 0; fi < forks.length; fi++) {
+      const s = forks[fi];
       const d0 = s.at * len;
       const d1 = d0 + s.len;
       this.splits.push({ d0: this.track.wrap(d0), d1: this.track.wrap(d1) });
-      // fork sign at the mouth, facing the oncoming cars
-      const sign = makeForkSign(pal);
+      // big fork sign at the mouth, facing the oncoming cars
+      const sign = makeForkArrowSign(pal);
       this.placeOnTrack(sign, d0);
       this.scene.add(sign);
       // tile the central median down the middle of the fork
       for (let d = d0 + SEG * 0.5; d < d1 - SEG * 0.5; d += SEG) {
         const seg = makeSplitMedian(pal);
+        seg.scale.z = 2; // stretch the 4m segment to 8m so half as many are needed
         this.placeOnTrack(seg, d);
         this.scene.add(seg);
       }
-      // the choice that matters: LEFT route = boost gate, RIGHT route = jump ramp
+      // the choice that matters — a distinct reward on each route
       const mid = (d0 + d1) / 2;
-      this.addEntity("boostgate", mid, -0.72, makeBoostGate(rand), 0.1);
-      const spec = RAMP_SPECS.wide;
-      this.addEntity("ramp", mid - 6, 0.72, makeRamp("wide"), 0, spec.power);
-      this.ramps.push({ dist: this.track.wrap(mid - 6), power: spec.power, lane: 0.72, len: spec.l, height: spec.h });
-      for (const off of [12, 18]) this.addEntity("airGem", mid + off, 0.72, makeGem(0xfbbf24, true), AIR_GEM_ALT);
-      // trailing gems on the left route so both sides are worth taking
-      for (const off of [-8, -2, 6, 12]) this.addEntity("gem", mid + off, -0.72, makeGem(pal.gem, false), 0.8);
+      const [leftKind, rightKind] = variants[fi % variants.length];
+      this.placeForkReward(-0.72, leftKind, mid, rand);
+      this.placeForkReward(0.72, rightKind, mid, rand);
+    }
+  }
+
+  /** Drop one route's reward (a surge gate / a jump ramp / a power-up box) onto a
+   *  lane of a fork, with a matching gem trail so both sides are worth taking. */
+  private placeForkReward(lane: number, kind: ForkReward, mid: number, rand: () => number) {
+    const pal = this.realm.palette;
+    if (kind === "gate") {
+      this.addEntity("boostgate", mid, lane, makeBoostGate(rand), 0.1);
+      for (const off of [-8, 6, 14]) this.addEntity("gem", mid + off, lane, makeGem(pal.gem, false), 0.8);
+    } else if (kind === "ramp") {
+      const rk: RampKind = rand() < 0.5 ? "wide" : "kicker";
+      const spec = RAMP_SPECS[rk];
+      this.addEntity("ramp", mid - 6, lane, makeRamp(rk), 0, spec.power);
+      this.ramps.push({ dist: this.track.wrap(mid - 6), power: spec.power, lane, len: spec.l, height: spec.h });
+      for (const off of [12, 18]) this.addEntity("airGem", mid + off, lane, makeGem(0xfbbf24, true), AIR_GEM_ALT);
+    } else {
+      this.addEntity("itembox", mid - 4, lane, makeItemBox(), 0.2);
+      for (const off of [6, 12, 18]) this.addEntity("gem", mid + off, lane, makeGem(pal.gem, false), 0.8);
     }
   }
 
@@ -686,6 +715,47 @@ export class Game {
     return false;
   }
 
+  /** Bold arcade signage: big directional arrow boards on the outside of sharp
+   *  corners (warning which way the road bends), checkered apex markers on the
+   *  inside, and a couple of blimps drifting overhead — the Hotshot/SEGA look. */
+  private placeCornerSigns() {
+    const len = this.track.length;
+    const pal = this.realm.palette;
+    let lastD = -1e9;
+    for (let d = 24; d < len - 24; d += 10) {
+      const t0 = this.track.tangentAt(this.track.wrap(d));
+      const t1 = this.track.tangentAt(this.track.wrap(d + 26));
+      let dh = Math.atan2(t1.x, t1.z) - Math.atan2(t0.x, t0.z);
+      while (dh > Math.PI) dh -= Math.PI * 2;
+      while (dh < -Math.PI) dh += Math.PI * 2;
+      if (Math.abs(dh) < 0.26 || d - lastD < 82 || this.inSplitZone(d)) continue;
+      lastD = d;
+      const dir = dh > 0 ? 1 : -1;            // arrow points the way the road bends
+      const tan = this.track.tangentAt(this.track.wrap(d));
+      const yaw = Math.atan2(tan.x, tan.z);
+      // big arrow board on the OUTSIDE of the corner
+      const sign = makeArrowSign(dir, pal);
+      const po = this.track.pointAt(this.track.wrap(d), -dir * 1.8, undefined, true);
+      sign.position.set(po.x, po.y, po.z);
+      sign.rotation.y = yaw;
+      this.scene.add(sign);
+      // checkered apex marker on the inside
+      const chk = makeCheckerBoard(pal);
+      const pi = this.track.pointAt(this.track.wrap(d + 28), dir * 1.5, undefined, true);
+      chk.position.set(pi.x, pi.y, pi.z);
+      chk.rotation.y = yaw;
+      this.scene.add(chk);
+    }
+    // a couple of blimps drifting high over the track
+    for (const at of [0.24, 0.68]) {
+      const blimp = makeBlimp(pal);
+      const p = this.track.pointAt(this.track.wrap(at * len), 0, undefined, true);
+      blimp.position.set(p.x + 34, p.y + 58, p.z + 22);
+      blimp.rotation.y = Math.random() * Math.PI * 2;
+      this.scene.add(blimp);
+    }
+  }
+
   private decorate(library: ModelLibrary) {
     const rand = mulberry32(1337);
     const { track, realm } = this;
@@ -694,6 +764,7 @@ export class Game {
     this.placeTunnels();
     this.placeRivers();
     this.placeSplits();
+    this.placeCornerSigns();
     this.treeMats = makeTreeMaterials(pal); // shared bark/foliage tree materials
     const lane = () => LANE_CENTERS[Math.floor(rand() * 3)];
     // big monuments/buildings shouldn't hug the verge (they'd overhang the road)
@@ -764,14 +835,16 @@ export class Game {
       }
     }
 
-    // boost pads — drive over the arrows for a speed surge (something to aim for)
-    for (let d = 170; d < len - 50; d += 300) {
+    // boost pads (flat escalator strip) — sparse now, and never inside a fork
+    // (forks and gates carry the surges, so the pads don't pile on redundantly)
+    for (let d = 200; d < len - 50; d += 540) {
+      if (this.inSplitZone(d)) continue;
       this.addEntity("boostpad", d, 0, makeBoostPad(), 0.02);
     }
 
-    // boost gates — a glowing ring in ONE lane; thread it for a strong surge
-    // (reward for committing to the line, a distinct quirk from the flat pads)
-    for (let d = 330; d < len - 60; d += 460) {
+    // a few free-standing boost gates on the straights (the forks carry their own)
+    for (let d = 400; d < len - 60; d += 840) {
+      if (this.inSplitZone(d)) continue;
       const l = LANE_CENTERS[Math.floor(rand() * 3)];
       this.addEntity("boostgate", d, l, makeBoostGate(rand), 0.1);
     }

@@ -83,13 +83,13 @@ export const REALM_RIVERS: Record<RealmId, number[]> = {
  *  the start fraction (0..1) of the lap; `len` is the fork length in metres.
  *  Placed to steer clear of each realm's tunnels and river crossings. */
 export const REALM_SPLITS: Record<RealmId, { at: number; len: number }[]> = {
-  forest: [{ at: 0.78, len: 88 }],
-  ember: [{ at: 0.24, len: 112 }],
-  peaks: [], // too twisty — no room for a clean fork
-  void: [], // single glass tube
-  sands: [{ at: 0.68, len: 120 }],
+  forest: [{ at: 0.12, len: 88 }, { at: 0.80, len: 80 }],
+  ember: [{ at: 0.22, len: 110 }, { at: 0.72, len: 92 }],
+  peaks: [{ at: 0.56, len: 70 }],
+  void: [{ at: 0.5, len: 90 }],
+  sands: [{ at: 0.16, len: 110 }, { at: 0.7, len: 118 }],
   castle: [{ at: 0.44, len: 84 }],
-  circuit: [{ at: 0.55, len: 110 }],
+  circuit: [{ at: 0.28, len: 96 }, { at: 0.6, len: 108 }],
   metro: [{ at: 0.55, len: 92 }],
   nebula: [],
 };

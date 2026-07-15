@@ -460,18 +460,34 @@ The driving had three long-standing bugs; this pass fixed the *feel*.
 island splitting the road, and the right route rejoining ahead](screenshots/branching.jpg)
 
 - **Branching routes** — at set points the road **splits around a central
-  island** into a LEFT and a RIGHT route that rejoin, Mario-Kart style. Each side
-  carries a different quirk — **left = a boost gate, right = a jump ramp** — so
-  the line you pick actually matters. A soft barrier down the middle makes you
-  commit to a side; rivals spread across both routes instead of ploughing the
-  island. Six of the eight realms get a fork (placed clear of their tunnels and
-  river crossings).
+  island** into a LEFT and a RIGHT route that rejoin, Mario-Kart style. A soft
+  barrier down the middle makes you commit to a side; rivals spread across both
+  routes instead of ploughing the island.
 - **Boost gates** — a new drive-**through** speed ring: thread it on its lane for
   a strong surge (it's lane-specific — the wrong lane does nothing), alongside
   decorative checkpoint hoops for set-dressing.
 - **Calmer glow** — the "odd glow" on the bright maps is gone: exposure and bloom
   strength came down and the bloom threshold went up, so only the genuinely bright
   things bloom.
+
+## Forks everywhere + arcade signage (this pass)
+
+![Every map now forks — a big Y split-sign, a blimp overhead, a boost-gate on one
+route and a ramp on the other, over a striped central island](screenshots/forks-signage.jpg)
+
+- **A fork on every map** — all eight realms now split (the longer ones twice),
+  each fronted by a big, unmissable **Y-shaped split sign** so you see the choice
+  coming.
+- **Varied route rewards** — no two forks feel the same: the two routes are dealt
+  from a rotating set of **speed gate / jump ramp / power-up box**, so sometimes
+  you're choosing boost-vs-jump, sometimes jump-vs-item.
+- **Less boost spam** — the flat boost pads and free-standing gates were thinned
+  right down (and never spawn inside a fork), so the surges feel earned instead of
+  constant.
+- **Hotshot-style signage** — bold red **directional arrow boards** stand on the
+  outside of every sharp corner (pointing the way the road bends), **checkered
+  apex markers** on the inside, and **blimps** drift over the track — the SEGA /
+  Hotshot Racing arcade look.
 
 ---
 
