@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { GameMode, RealmId, CarId, GameResult } from "@/src/game/engine";
-import { REALMS } from "@/src/game3d/realms";
+import { REALMS, REALM_LORE } from "@/src/game3d/realms";
 import { CAR_SPECS, CAR_IDS, carColorHex } from "@/src/game3d/carData";
 import dynamic from "next/dynamic";
 import {
@@ -244,6 +244,17 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
                   <em>MACHINE</em>
                   <b style={{ color: carColorHex(car) }}>{CAR_SPECS[car].name}</b>
                 </button>
+              </div>
+
+              <div className="realm-lore">
+                <em>{isGP ? "GRAND PRIX" : isSpace ? "DEEP SPACE" : REALMS[realm].name}</em>
+                <p>
+                  {isGP
+                    ? "Three worlds back to back — moonlit forest, volcanic wastes, then the icy peaks. Points across all three crown the champion."
+                    : isSpace
+                      ? REALM_LORE.void
+                      : REALM_LORE[realm]}
+                </p>
               </div>
 
               <label className="field">

@@ -384,6 +384,26 @@ atmospheric perspective.
 
 ---
 
+## Track identity — no two laps feel the same
+
+Every circuit was redrawn longer and busier (more, sharper, distinct turns
+instead of "a circle with two bends"), and the space tubes got **rollercoaster
+elevation** — huge climbs and dives through the void.
+
+On top of the layouts:
+
+- **Tunnels** — realm-tinted vaulted **tunnel** runs (a colonnade of arches with
+  glowing crown light strips + decorated entry/exit portals) that hug the track
+  curve. The castle plunges into a long red-lit tunnel; the city dives through
+  cyan underpasses.
+- **Lore** — every world now has a line of flavour, shown on the loadout before
+  you launch.
+- **Ambient audio** — each realm has its own procedural sound bed: forest breeze,
+  a volcanic rumble, mountain wind, a city hum, a deep-space drone, eerie castle
+  mist.
+
+---
+
 ## Where it stands now
 
 - **8 realms**: Enchanted Forest, Ember Wastes, Crystal Peaks, Void Circuit,

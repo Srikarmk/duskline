@@ -4,7 +4,23 @@ export type Sfx =
   | "transform" | "powerDown" | "slash" | "smash" | "monsterHit"
   | "lap" | "finish" | "bump";
 
+/** Per-realm background atmosphere loops. */
+export type AmbientKind =
+  | "none" | "wind" | "lava" | "city" | "space" | "forest" | "mist";
+
 const MUTE_KEY = "fantasy-racer-muted";
+
+/**
+ * A running ambience graph. Every long-lived node is tracked so the whole
+ * thing can be crossfaded out and stopped/disconnected on demand. `gain` is
+ * the crossfade node (0..1) that all of this ambience's voices feed into.
+ */
+interface AmbientGraph {
+  gain: GainNode;
+  oscillators: OscillatorNode[];
+  sources: AudioBufferSourceNode[];
+  timers: ReturnType<typeof setInterval>[];
+}
 
 /**
  * Procedural audio via Web Audio — no external assets. A continuous engine
@@ -17,6 +33,10 @@ export class Sound {
   private sfxBus: GainNode | null = null;
   private musicBus: GainNode | null = null;
   private engineBus: GainNode | null = null;
+  private ambientBus: GainNode | null = null;
+
+  private ambientKind: AmbientKind = "none";
+  private ambient: AmbientGraph | null = null;
 
   private engineA: OscillatorNode | null = null;
   private engineB: OscillatorNode | null = null;
@@ -61,6 +81,12 @@ export class Sound {
         this.engineBus.gain.value = 0;
         this.engineBus.connect(this.master);
 
+        // Ambience sits well under music/engine and is tied to the music
+        // volume in setVolumes. Under master, so mute affects it too.
+        this.ambientBus = this.ctx.createGain();
+        this.ambientBus.gain.value = 0.18 * this.musicVol;
+        this.ambientBus.connect(this.master);
+
         this.startEngine();
         this.startMusic();
       }
@@ -82,6 +108,7 @@ export class Sound {
     const t = this.ctx.currentTime;
     this.musicBus?.gain.setTargetAtTime(0.22 * music, t, 0.05);
     this.sfxBus?.gain.setTargetAtTime(0.85 * sfx, t, 0.05);
+    this.ambientBus?.gain.setTargetAtTime(0.18 * music, t, 0.05);
   }
 
   toggleMute() {
@@ -249,8 +276,297 @@ export class Sound {
     osc.stop(t + dur + 0.02);
   }
 
+  /**
+   * Crossfade the background ambience to a new realm atmosphere. Fades the
+   * running ambience out (~0.6s) while fading the replacement in over the same
+   * window. Passing the current kind is a no-op; "none" fades to silence.
+   */
+  setAmbient(kind: AmbientKind) {
+    if (kind === this.ambientKind) return;
+    if (!this.ctx || !this.ambientBus) return; // context not ready; ignore
+    const t = this.ctx.currentTime;
+
+    // Retire whatever is currently playing.
+    if (this.ambient) {
+      this.stopAmbientGraph(this.ambient, 0.6);
+      this.ambient = null;
+    }
+
+    this.ambientKind = kind;
+    if (kind === "none") return;
+
+    const graph = this.buildAmbient(kind);
+    if (!graph) return;
+    this.ambient = graph;
+    graph.gain.gain.setValueAtTime(0.0001, t);
+    graph.gain.gain.setTargetAtTime(1, t, 0.2); // ~0.6s fade-in
+  }
+
+  /** Fade the current ambience out to silence. */
+  stopAmbient() {
+    this.setAmbient("none");
+  }
+
+  /** Fill a mono AudioBuffer with white (or integrated "brown") noise. */
+  private makeNoiseBuffer(seconds: number, brown = false): AudioBuffer | null {
+    if (!this.ctx) return null;
+    const len = Math.floor(this.ctx.sampleRate * seconds);
+    const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    if (brown) {
+      let last = 0;
+      for (let i = 0; i < len; i++) {
+        const white = Math.random() * 2 - 1;
+        last = (last + 0.02 * white) / 1.02;
+        data[i] = Math.max(-1, Math.min(1, last * 3.5));
+      }
+    } else {
+      for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+    }
+    return buf;
+  }
+
+  /** Build a small looping procedural graph for one ambience, routed to ambientBus. */
+  private buildAmbient(kind: AmbientKind): AmbientGraph | null {
+    if (!this.ctx || !this.ambientBus || kind === "none") return null;
+    const ctx = this.ctx;
+    const oscillators: OscillatorNode[] = [];
+    const sources: AudioBufferSourceNode[] = [];
+    const timers: ReturnType<typeof setInterval>[] = [];
+
+    // Crossfade node; every voice for this ambience feeds into it.
+    const top = ctx.createGain();
+    top.gain.value = 0.0001;
+    top.connect(this.ambientBus);
+
+    // A looping noise bed.
+    const noiseSource = (seconds: number, brownNoise = false) => {
+      const buf = this.makeNoiseBuffer(seconds, brownNoise);
+      const src = ctx.createBufferSource();
+      if (buf) src.buffer = buf;
+      src.loop = true;
+      src.start();
+      sources.push(src);
+      return src;
+    };
+
+    // A low-frequency oscillator modulating some AudioParam (gusts/tremolo/drift).
+    const lfo = (freq: number, depth: number, target: AudioParam) => {
+      const o = ctx.createOscillator();
+      o.frequency.value = freq;
+      const g = ctx.createGain();
+      g.gain.value = depth;
+      o.connect(g);
+      g.connect(target);
+      o.start();
+      oscillators.push(o);
+    };
+
+    // A sustained tone (drone/hum) feeding straight into `top`.
+    const drone = (freq: number, detune: number, type: OscillatorType, level: number) => {
+      const o = ctx.createOscillator();
+      o.type = type;
+      o.frequency.value = freq;
+      o.detune.value = detune;
+      const g = ctx.createGain();
+      g.gain.value = level;
+      o.connect(g);
+      g.connect(top);
+      o.start();
+      oscillators.push(o);
+      return { osc: o, gain: g };
+    };
+
+    switch (kind) {
+      case "wind": {
+        // Filtered noise with slow gusting on filter cutoff and level.
+        const bp = ctx.createBiquadFilter();
+        bp.type = "bandpass";
+        bp.frequency.value = 500;
+        bp.Q.value = 0.9;
+        const g = ctx.createGain();
+        g.gain.value = 0.22;
+        const src = noiseSource(3);
+        src.connect(bp);
+        bp.connect(g);
+        g.connect(top);
+        lfo(0.08, 260, bp.frequency); // sweep the passband -> gusts
+        lfo(0.05, 0.14, g.gain);      // swell the level -> gusts
+        break;
+      }
+      case "lava": {
+        // Low brown-noise rumble + slow tremolo, with occasional soft bloops.
+        const lp = ctx.createBiquadFilter();
+        lp.type = "lowpass";
+        lp.frequency.value = 80;
+        const g = ctx.createGain();
+        g.gain.value = 0.32;
+        const src = noiseSource(3, true);
+        src.connect(lp);
+        lp.connect(g);
+        g.connect(top);
+        lfo(0.15, 0.1, g.gain); // tremolo
+        timers.push(setInterval(() => {
+          if (this.muted) return;
+          this.ambBloop(top, 50 + Math.random() * 10, 0.9);
+        }, 5300));
+        break;
+      }
+      case "city": {
+        // Two detuned low hums + faint highpassed distant traffic.
+        drone(55, 0, "triangle", 0.11);
+        drone(55, 9, "triangle", 0.09);
+        const hp = ctx.createBiquadFilter();
+        hp.type = "highpass";
+        hp.frequency.value = 2200;
+        const g = ctx.createGain();
+        g.gain.value = 0.05;
+        const src = noiseSource(3);
+        src.connect(hp);
+        hp.connect(g);
+        g.connect(top);
+        lfo(0.06, 0.03, g.gain); // distant traffic ebb and flow
+        break;
+      }
+      case "space": {
+        // Deep detuned drone + a slow shimmering high sine.
+        drone(40, 0, "sine", 0.16);
+        drone(40, -11, "sine", 0.13);
+        const shimmer = ctx.createOscillator();
+        shimmer.type = "sine";
+        shimmer.frequency.value = 1180;
+        const sg = ctx.createGain();
+        sg.gain.value = 0.02;
+        shimmer.connect(sg);
+        sg.connect(top);
+        shimmer.start();
+        oscillators.push(shimmer);
+        lfo(0.07, 0.018, sg.gain);        // shimmer swell
+        lfo(0.05, 6, shimmer.frequency);  // slow pitch drift
+        break;
+      }
+      case "forest": {
+        // Airy highpassed breeze + very occasional short high chirps.
+        const hp = ctx.createBiquadFilter();
+        hp.type = "highpass";
+        hp.frequency.value = 1600;
+        const g = ctx.createGain();
+        g.gain.value = 0.06;
+        const src = noiseSource(3);
+        src.connect(hp);
+        hp.connect(g);
+        g.connect(top);
+        lfo(0.09, 0.03, g.gain); // breeze swell
+        timers.push(setInterval(() => {
+          if (this.muted) return;
+          this.ambChirp(top);
+        }, 7000));
+        break;
+      }
+      case "mist": {
+        // Soft, low, very slow wind pad + a faint eerie low drone.
+        const lp = ctx.createBiquadFilter();
+        lp.type = "lowpass";
+        lp.frequency.value = 300;
+        const g = ctx.createGain();
+        g.gain.value = 0.14;
+        const src = noiseSource(4);
+        src.connect(lp);
+        lp.connect(g);
+        g.connect(top);
+        lfo(0.03, 90, lp.frequency); // very slow cutoff drift
+        lfo(0.04, 0.06, g.gain);     // slow swell
+        drone(70, 4, "sine", 0.04);  // faint low presence
+        break;
+      }
+    }
+
+    return { gain: top, oscillators, sources, timers };
+  }
+
+  /** One soft, downward "bloop" for the lava ambience. */
+  private ambBloop(dest: GainNode, freq: number, dur: number) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(freq, t);
+    o.frequency.exponentialRampToValueAtTime(Math.max(1, freq * 0.6), t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.16, t + 0.08);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g);
+    g.connect(dest);
+    o.start(t);
+    o.stop(t + dur + 0.02);
+  }
+
+  /** A short cluster of high blips for the forest ambience. */
+  private ambChirp(dest: GainNode) {
+    if (!this.ctx) return;
+    const t0 = this.ctx.currentTime;
+    const n = 2 + Math.floor(Math.random() * 2);
+    for (let i = 0; i < n; i++) {
+      const t = t0 + i * 0.09;
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = "sine";
+      const f = 2600 + Math.random() * 900;
+      o.frequency.setValueAtTime(f, t);
+      o.frequency.exponentialRampToValueAtTime(f * 1.15, t + 0.05);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.05, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
+      o.connect(g);
+      g.connect(dest);
+      o.start(t);
+      o.stop(t + 0.1);
+    }
+  }
+
+  /** Fade an ambience graph out and stop/clear all of its nodes and timers. */
+  private stopAmbientGraph(graph: AmbientGraph, fade: number) {
+    for (const timer of graph.timers) clearInterval(timer);
+    graph.timers.length = 0;
+    if (!this.ctx) {
+      try {
+        for (const o of graph.oscillators) o.stop();
+        for (const s of graph.sources) s.stop();
+      } catch {
+        // already stopped
+      }
+      return;
+    }
+    const t = this.ctx.currentTime;
+    graph.gain.gain.setTargetAtTime(0.0001, t, Math.max(0.02, fade / 3));
+    const stopAt = t + fade + 0.3;
+    try {
+      for (const o of graph.oscillators) o.stop(stopAt);
+      for (const s of graph.sources) s.stop(stopAt);
+    } catch {
+      // already stopped
+    }
+  }
+
   dispose() {
     if (this.musicTimer) clearInterval(this.musicTimer);
+    if (this.ambient) {
+      for (const timer of this.ambient.timers) clearInterval(timer);
+      try {
+        for (const o of this.ambient.oscillators) o.stop();
+        for (const s of this.ambient.sources) s.stop();
+      } catch {
+        // already stopped
+      }
+      try {
+        this.ambient.gain.disconnect();
+      } catch {
+        // ignore
+      }
+      this.ambient = null;
+    }
+    this.ambientKind = "none";
     try {
       this.engineA?.stop();
       this.engineB?.stop();

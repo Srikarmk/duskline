@@ -1122,3 +1122,27 @@ main {
   transition: border-color 0.15s, color 0.15s;
 }
 .result-menu:hover { border-color: #7c3aed; color: #fff; }
+
+/* --- realm lore card on the loadout --- */
+.realm-lore {
+  width: 100%;
+  background: linear-gradient(180deg, rgba(26, 22, 54, 0.55), rgba(18, 15, 38, 0.55));
+  border: 1px solid #2c264a;
+  border-left: 3px solid #a855f7;
+  border-radius: 10px;
+  padding: 11px 16px;
+  text-align: left;
+}
+.realm-lore em {
+  font-style: normal;
+  font-size: 11px;
+  letter-spacing: 3px;
+  color: #67e8f9;
+}
+.realm-lore p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #cdc6e6;
+  font-style: italic;
+}

@@ -31,6 +31,57 @@ export const REALM_WEATHER: Record<RealmId, WeatherKind> = {
   nebula: "none",
 };
 
+/** Per-realm ambient sound bed (procedural). */
+export type AmbienceKind = "none" | "wind" | "lava" | "city" | "space" | "forest" | "mist";
+export const REALM_AMBIENCE: Record<RealmId, AmbienceKind> = {
+  forest: "forest",
+  ember: "lava",
+  peaks: "wind",
+  void: "space",
+  sands: "wind",
+  castle: "mist",
+  circuit: "city",
+  metro: "city",
+  nebula: "space",
+};
+
+/** Tunnel set-pieces per realm: `at` is a fraction (0..1) of the lap where the
+ *  tunnel starts, `len` its length in metres. Ground realms only (space tubes
+ *  and the open stadium get none). */
+export const REALM_TUNNELS: Record<RealmId, { at: number; len: number }[]> = {
+  forest: [{ at: 0.34, len: 78 }],
+  ember: [{ at: 0.52, len: 68 }],
+  peaks: [{ at: 0.26, len: 96 }, { at: 0.72, len: 58 }],
+  void: [],
+  sands: [{ at: 0.42, len: 74 }],
+  castle: [{ at: 0.2, len: 112 }],
+  circuit: [],
+  metro: [{ at: 0.36, len: 98 }, { at: 0.74, len: 66 }],
+  nebula: [],
+};
+
+/** A line of flavour for each world — shown on the loadout before a race. */
+export const REALM_LORE: Record<RealmId, string> = {
+  forest:
+    "Long before the circuits, these woods raced with will-o'-wisps. Drivers who chase the glow swear the trees lean in to watch.",
+  ember:
+    "A dead volcano's caldera, paved over the old lava roads. The embers never fully cooled — and neither did the rivalries forged here.",
+  peaks:
+    "Thin air, thinner margins. The ice remembers every racer who mistook a sweeper for a straight.",
+  void:
+    "An anti-gravity ribbon strung between dead stars. There is no down out here — only forward, and the long fall if you lift.",
+  sands:
+    "The pharaohs built monuments to outlast time; racers built a track to outrun it. The storm keeps the finish line honest.",
+  castle:
+    "They say the Keep's last lord never left. On a misty lap you'll see torchlight move along the walls — pay it no mind and hold your line.",
+  circuit:
+    "The only purpose-built speedway in the realms. No monsters, no magic — just apex, throttle, and ninety thousand voices.",
+  metro:
+    "Downtown after midnight, when the grid belongs to whoever's fastest. Wet asphalt, neon, and no speed limit the law can catch.",
+  nebula:
+    "Deeper than the Void, where the war-tubes coil through a living green cloud. Weapons hot, no rules, no witnesses.",
+};
+
 export interface RealmPalette {
   // sky gradient stops, top -> bottom (canvas)
   sky: [string, string, string, string];
@@ -124,9 +175,9 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     name: "Enchanted Forest",
     blurb: "Moonlit woods, glowing mushrooms, gentle rolling hills.",
     controlPoints: loopTrack(
-      24, 175,
-      [{ k: 2, amp: 38, phase: 0.3 }, { k: 3, amp: 18, phase: 1.0 }, { k: 5, amp: 11, phase: 2.0 }],
-      1.5, [{ k: 2, amp: 3, phase: 0 }, { k: 4, amp: 2, phase: 1.5 }]
+      30, 205,
+      [{ k: 2, amp: 46, phase: 0.3 }, { k: 3, amp: 26, phase: 1.0 }, { k: 5, amp: 15, phase: 2.0 }],
+      1.6, [{ k: 2, amp: 4, phase: 0 }, { k: 4, amp: 2.6, phase: 1.5 }, { k: 6, amp: 1.6, phase: 0.5 }]
     ),
     palette: {
       sky: ["#0d0821", "#1a1033", "#4a2d6e", "#6d4a9e"],
@@ -157,9 +208,9 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     name: "Ember Wastes",
     blurb: "Volcanic flats — long straights, sweeping fast bends, ash sky.",
     controlPoints: loopTrack(
-      22, 225,
-      [{ k: 1, amp: 60, phase: 0.5 }, { k: 2, amp: 20, phase: 0 }, { k: 4, amp: 15, phase: 1.6 }],
-      1, [{ k: 2, amp: 2.5, phase: 0.5 }]
+      28, 255,
+      [{ k: 1, amp: 74, phase: 0.5 }, { k: 2, amp: 30, phase: 0 }, { k: 4, amp: 20, phase: 1.6 }],
+      1, [{ k: 2, amp: 3, phase: 0.5 }, { k: 3, amp: 2, phase: 2.0 }]
     ),
     palette: {
       sky: ["#1a0805", "#3b1206", "#7c2d12", "#b45309"],
@@ -186,9 +237,9 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     name: "Crystal Peaks",
     blurb: "High icy mountains — steep climbs, tight twists, thin air.",
     controlPoints: loopTrack(
-      20, 170,
-      [{ k: 3, amp: 30, phase: 0.2 }, { k: 5, amp: 13, phase: 0.8 }],
-      2, [{ k: 3, amp: 4, phase: 0 }, { k: 2, amp: 2.5, phase: 1.0 }]
+      28, 195,
+      [{ k: 3, amp: 40, phase: 0.2 }, { k: 5, amp: 18, phase: 0.8 }, { k: 6, amp: 9, phase: 1.4 }],
+      2.2, [{ k: 3, amp: 5.5, phase: 0 }, { k: 2, amp: 3.5, phase: 1.0 }, { k: 5, amp: 2.2, phase: 0.5 }]
     ),
     palette: {
       sky: ["#081428", "#0e2540", "#2a5a8a", "#7ec8e8"],
@@ -216,9 +267,9 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     blurb: "Anti-gravity glass tube through deep space — huge climbs and drops.",
     style: "void",
     controlPoints: loopTrack(
-      18, 200,
-      [{ k: 2, amp: 45, phase: 0.6 }, { k: 3, amp: 24, phase: 2.0 }],
-      35, [{ k: 2, amp: 26, phase: 0 }, { k: 3, amp: 18, phase: 1.2 }, { k: 1, amp: 14, phase: 0.5 }]
+      22, 230,
+      [{ k: 2, amp: 54, phase: 0.6 }, { k: 3, amp: 30, phase: 2.0 }],
+      52, [{ k: 2, amp: 34, phase: 0 }, { k: 3, amp: 24, phase: 1.2 }, { k: 1, amp: 20, phase: 0.5 }, { k: 4, amp: 13, phase: 1.8 }]
     ),
     palette: {
       sky: ["#02010a", "#070218", "#0d0a2e", "#1a1040"],
@@ -241,9 +292,9 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     name: "Sunspire Sands",
     blurb: "Blazing desert circuit — vast dunes, ancient monuments, long sun-baked straights.",
     controlPoints: loopTrack(
-      22, 215,
-      [{ k: 1, amp: 58, phase: 0.2 }, { k: 2, amp: 24, phase: 1.1 }, { k: 3, amp: 12, phase: 2.3 }],
-      1.2, [{ k: 1, amp: 4, phase: 0 }, { k: 3, amp: 2.5, phase: 1.0 }]
+      28, 260,
+      [{ k: 1, amp: 78, phase: 0.2 }, { k: 2, amp: 32, phase: 1.1 }, { k: 3, amp: 17, phase: 2.3 }],
+      1.2, [{ k: 1, amp: 5, phase: 0 }, { k: 3, amp: 3, phase: 1.0 }]
     ),
     palette: {
       sky: ["#2f6bb0", "#5f97cc", "#b8d6e6", "#f2e2b8"],
@@ -271,9 +322,9 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     name: "Ravenspire Keep",
     blurb: "A twisting run through a haunted castle — torchlit walls, banners, misty ramparts.",
     controlPoints: loopTrack(
-      24, 168,
-      [{ k: 3, amp: 34, phase: 0.4 }, { k: 4, amp: 16, phase: 1.2 }, { k: 6, amp: 8, phase: 0.6 }],
-      2, [{ k: 2, amp: 5, phase: 0.5 }, { k: 4, amp: 3, phase: 1.4 }]
+      30, 190,
+      [{ k: 3, amp: 42, phase: 0.4 }, { k: 4, amp: 22, phase: 1.2 }, { k: 6, amp: 10, phase: 0.6 }],
+      2.2, [{ k: 2, amp: 6, phase: 0.5 }, { k: 4, amp: 3.5, phase: 1.4 }]
     ),
     palette: {
       sky: ["#0b1020", "#161e33", "#2c3350", "#4a4a6e"],
@@ -300,9 +351,9 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     name: "Apex Speedway",
     blurb: "A real grand-prix stadium — grandstands, floodlights, flat-out sweepers and a stadium roar.",
     controlPoints: loopTrack(
-      26, 220,
-      [{ k: 2, amp: 46, phase: 0.5 }, { k: 3, amp: 20, phase: 2.4 }, { k: 5, amp: 10, phase: 1.0 }],
-      1, [{ k: 2, amp: 2, phase: 0 }]
+      34, 250,
+      [{ k: 2, amp: 56, phase: 0.5 }, { k: 3, amp: 27, phase: 2.4 }, { k: 5, amp: 14, phase: 1.0 }, { k: 7, amp: 7, phase: 0.2 }],
+      1, [{ k: 2, amp: 2.5, phase: 0 }]
     ),
     palette: {
       sky: ["#1c3a6e", "#2f5a9e", "#6a9ad0", "#cfe4f5"],
@@ -329,8 +380,8 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     name: "Neon Metro",
     blurb: "A midnight street circuit through the city — glass towers, neon billboards, wet asphalt.",
     controlPoints: loopTrack(
-      22, 188,
-      [{ k: 2, amp: 40, phase: 1.2 }, { k: 4, amp: 18, phase: 0.3 }, { k: 1, amp: 22, phase: 2.0 }],
+      28, 215,
+      [{ k: 2, amp: 50, phase: 1.2 }, { k: 4, amp: 24, phase: 0.3 }, { k: 1, amp: 30, phase: 2.0 }, { k: 3, amp: 12, phase: 0.9 }],
       1, [{ k: 2, amp: 3, phase: 0.5 }]
     ),
     palette: {
@@ -362,9 +413,9 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     hidden: true,
     style: "void",
     controlPoints: loopTrack(
-      18, 210,
-      [{ k: 2, amp: 40, phase: 1.4 }, { k: 3, amp: 26, phase: 0.4 }],
-      35, [{ k: 2, amp: 24, phase: 0.6 }, { k: 3, amp: 16, phase: 2.0 }, { k: 1, amp: 12, phase: 1.0 }]
+      22, 235,
+      [{ k: 2, amp: 48, phase: 1.4 }, { k: 3, amp: 30, phase: 0.4 }],
+      50, [{ k: 2, amp: 32, phase: 0.6 }, { k: 3, amp: 22, phase: 2.0 }, { k: 1, amp: 18, phase: 1.0 }, { k: 4, amp: 12, phase: 0.4 }]
     ),
     palette: {
       sky: ["#02060a", "#05131a", "#0a2630", "#124036"],

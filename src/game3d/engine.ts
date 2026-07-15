@@ -36,9 +36,10 @@ import {
   type MechRig, type Placement, type TreeMats,
 } from "./objects";
 import { makeWeather, type WeatherSystem } from "./weather";
+import { makeTunnelArch, makeTunnelPortal } from "./setpieces";
 import { loadPBR } from "./textures";
 import { makeKart, CAR_SPECS, CAR_IDS, type CarStat } from "./cars";
-import { REALMS, pickScenery, REALM_WEATHER, type RealmSpec, type SceneryKind } from "./realms";
+import { REALMS, pickScenery, REALM_WEATHER, REALM_AMBIENCE, REALM_TUNNELS, type RealmSpec, type SceneryKind } from "./realms";
 import { makePyramid, makeObelisk, makeSphinx, makePalm, makeSandRock } from "./props/egyptian";
 import { makeTower, makeGatehouse, makeCastleWall, makeBanner, makeTorch } from "./props/castle";
 import { makeGrandstand, makeTyreStack, makeFloodlight, makePitBuilding, makeMarshalBoard } from "./props/circuit";
@@ -330,6 +331,7 @@ export class Game {
   start() {
     this.input.attach();
     this.sound.unlock();
+    this.sound.setAmbient(REALM_AMBIENCE[this.realm.id]); // per-realm ambient bed
     const s = loadSettings();
     this.sound.setVolumes(s.musicVolume, s.sfxVolume);
     this.last = performance.now();
@@ -577,11 +579,49 @@ export class Game {
     }
   }
 
+  /** Sit an oriented object on the road centreline at `dist`, yawed to the
+   *  track tangent and pitched to its slope (like ramps). */
+  private placeOnTrack(obj: THREE.Object3D, dist: number, extraYaw = 0) {
+    const d = this.track.wrap(dist);
+    const p = this.track.pointAt(d, 0);
+    obj.position.set(p.x, p.y + 0.05, p.z);
+    const tan = this.track.tangentAt(d);
+    obj.rotation.order = "YXZ";
+    obj.rotation.y = Math.atan2(tan.x, tan.z) + extraYaw;
+    const a = this.track.pointAt(d - 2);
+    const b = this.track.pointAt(d + 2);
+    const horiz = Math.hypot(b.x - a.x, b.z - a.z) || 4;
+    obj.rotation.x = -Math.atan2(b.y - a.y, horiz);
+  }
+
+  /** Build tunnel runs (entry/exit portals + a colonnade of arches) that hug
+   *  the track curve, from the per-realm REALM_TUNNELS config. */
+  private placeTunnels() {
+    const pal = this.realm.palette;
+    const len = this.track.length;
+    for (const t of REALM_TUNNELS[this.realm.id] ?? []) {
+      const d0 = t.at * len;
+      const d1 = d0 + t.len;
+      const entry = makeTunnelPortal(pal);
+      this.placeOnTrack(entry, d0);
+      this.scene.add(entry);
+      const exit = makeTunnelPortal(pal);
+      this.placeOnTrack(exit, d1, Math.PI); // flip so its face points back out
+      this.scene.add(exit);
+      for (let d = d0 + 3; d < d1 - 3; d += 2.6) {
+        const arch = makeTunnelArch(pal);
+        this.placeOnTrack(arch, d);
+        this.scene.add(arch);
+      }
+    }
+  }
+
   private decorate(library: ModelLibrary) {
     const rand = mulberry32(1337);
     const { track, realm } = this;
     const len = track.length;
     const pal = realm.palette;
+    this.placeTunnels();
     this.treeMats = makeTreeMaterials(pal); // shared bark/foliage tree materials
     const lane = () => LANE_CENTERS[Math.floor(rand() * 3)];
     // big monuments/buildings shouldn't hug the verge (they'd overhang the road)
