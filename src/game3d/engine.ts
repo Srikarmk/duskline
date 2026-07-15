@@ -39,11 +39,13 @@ import { makeWeather, type WeatherSystem } from "./weather";
 import { makeTunnelArch, makeTunnelPortal } from "./setpieces";
 import { loadPBR } from "./textures";
 import { makeKart, CAR_SPECS, CAR_IDS, type CarStat } from "./cars";
-import { REALMS, pickScenery, REALM_WEATHER, REALM_AMBIENCE, REALM_TUNNELS, type RealmSpec, type SceneryKind } from "./realms";
+import { REALMS, pickScenery, REALM_WEATHER, REALM_AMBIENCE, REALM_TUNNELS, REALM_RIVERS, type RealmSpec, type SceneryKind } from "./realms";
 import { makePyramid, makeObelisk, makeSphinx, makePalm, makeSandRock } from "./props/egyptian";
 import { makeTower, makeGatehouse, makeCastleWall, makeBanner, makeTorch } from "./props/castle";
 import { makeGrandstand, makeTyreStack, makeFloodlight, makePitBuilding, makeMarshalBoard } from "./props/circuit";
 import { makeSkyscraper, makeBrownstone, makeStreetlight, makeBillboard, makeWaterTower } from "./props/metro";
+import { makeHogwartsCastle, makeHogwartsExpress, makeQuidditchHoop, makeFloatingCandle, makeGoldenSnitch, makeWhompingWillow } from "./props/hogwarts";
+import { makeWaterfall, makeRiverBridge } from "./props/water";
 import { Opponent } from "./ai";
 import { Minimap } from "./minimap";
 import { Sound } from "./sound";
@@ -519,6 +521,13 @@ export class Game {
       case "streetlight": return makeStreetlight(rand);
       case "billboard": return makeBillboard(rand);
       case "waterTower": return makeWaterTower(rand);
+      case "hogwartsCastle": return makeHogwartsCastle(rand);
+      case "hogwartsExpress": return makeHogwartsExpress(rand);
+      case "quidditchHoop": return makeQuidditchHoop(rand);
+      case "floatingCandle": return makeFloatingCandle(rand);
+      case "goldenSnitch": return makeGoldenSnitch(rand);
+      case "whompingWillow": return makeWhompingWillow(rand);
+      case "waterfall": return makeWaterfall(rand);
     }
     let obj: THREE.Object3D;
     switch (kind) {
@@ -607,17 +616,39 @@ export class Game {
     }
   }
 
+  /** River crossings: a railed bridge over water, with a mega jump ramp just
+   *  before it and an air-gem arc across the gap. */
+  private placeRivers() {
+    const pal = this.realm.palette;
+    const len = this.track.length;
+    for (const at of REALM_RIVERS[this.realm.id] ?? []) {
+      const d = at * len;
+      const bridge = makeRiverBridge(pal);
+      this.placeOnTrack(bridge, d);
+      this.scene.add(bridge);
+      // launch ramp a bit before the bridge, so you jump the river
+      const rampD = this.track.wrap(d - 18);
+      this.addEntity("ramp", rampD, 0, makeRamp("mega"), 0, RAMP_SPECS.mega.power);
+      this.ramps.push({ dist: rampD, power: RAMP_SPECS.mega.power });
+      for (const off of [16, 22, 28]) {
+        this.addEntity("airGem", rampD + off, 0, makeGem(0xfbbf24, true), AIR_GEM_ALT);
+      }
+    }
+  }
+
   private decorate(library: ModelLibrary) {
     const rand = mulberry32(1337);
     const { track, realm } = this;
     const len = track.length;
     const pal = realm.palette;
     this.placeTunnels();
+    this.placeRivers();
     this.treeMats = makeTreeMaterials(pal); // shared bark/foliage tree materials
     const lane = () => LANE_CENTERS[Math.floor(rand() * 3)];
     // big monuments/buildings shouldn't hug the verge (they'd overhang the road)
     const LANDMARK_KINDS = new Set<SceneryKind>([
       "pyramid", "tower", "gatehouse", "grandstand", "floodlight", "pitBuilding", "skyscraper",
+      "hogwartsCastle", "waterfall", "quidditchHoop",
     ]);
 
     if (realm.style === "void") {

@@ -12,7 +12,11 @@ export type SceneryKind =
   // f1 stadium
   | "grandstand" | "tyreStack" | "floodlight" | "pitBuilding" | "marshalBoard"
   // nyc
-  | "skyscraper" | "brownstone" | "streetlight" | "billboard" | "waterTower";
+  | "skyscraper" | "brownstone" | "streetlight" | "billboard" | "waterTower"
+  // hogwarts
+  | "hogwartsCastle" | "hogwartsExpress" | "quidditchHoop" | "floatingCandle" | "goldenSnitch" | "whompingWillow"
+  // water
+  | "waterfall";
 
 /** Per-realm atmosphere. Kept here (three-free) so both the UI and the weather
  *  module can read it. The renderer maps each kind to a particle behaviour. */
@@ -60,6 +64,20 @@ export const REALM_TUNNELS: Record<RealmId, { at: number; len: number }[]> = {
   nebula: [],
 };
 
+/** River crossings per realm: fractions (0..1) of the lap where the track
+ *  crosses a river on a railed bridge (with a jump ramp just before it). */
+export const REALM_RIVERS: Record<RealmId, number[]> = {
+  forest: [0.58],
+  ember: [],
+  peaks: [0.44],
+  void: [],
+  sands: [],
+  castle: [0.66],
+  circuit: [],
+  metro: [],
+  nebula: [],
+};
+
 /** A line of flavour for each world — shown on the loadout before a race. */
 export const REALM_LORE: Record<RealmId, string> = {
   forest:
@@ -73,7 +91,7 @@ export const REALM_LORE: Record<RealmId, string> = {
   sands:
     "The pharaohs built monuments to outlast time; racers built a track to outrun it. The storm keeps the finish line honest.",
   castle:
-    "They say the Keep's last lord never left. On a misty lap you'll see torchlight move along the walls — pay it no mind and hold your line.",
+    "Mind the Whomping Willow on the back straight, and don't chase the Snitch — the Express waits for no racer. Boarding at the third pillar past nine and three-quarters.",
   circuit:
     "The only purpose-built speedway in the realms. No monsters, no magic — just apex, throttle, and ninety thousand voices.",
   metro:
@@ -200,6 +218,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       { kind: "treeDark", weight: 2 }, { kind: "mushroom", weight: 2 },
       { kind: "mushroomTall", weight: 1 }, { kind: "crystal", weight: 2 },
       { kind: "rockA", weight: 1 }, { kind: "rockB", weight: 1 },
+      { kind: "waterfall", weight: 1 },
     ],
   },
 
@@ -257,7 +276,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     scenery: [
       { kind: "crystal", weight: 5 }, { kind: "rockA", weight: 3 },
       { kind: "rockB", weight: 3 }, { kind: "treeA", weight: 1 },
-      { kind: "treeB", weight: 1 },
+      { kind: "treeB", weight: 1 }, { kind: "waterfall", weight: 1 },
     ],
   },
 
@@ -319,8 +338,8 @@ export const REALMS: Record<RealmId, RealmSpec> = {
 
   castle: {
     id: "castle",
-    name: "Ravenspire Keep",
-    blurb: "A twisting run through a haunted castle — torchlit walls, banners, misty ramparts.",
+    name: "Hogwarts",
+    blurb: "A twisting lap around the wizarding castle — turrets, the Express, floating candles and a Whomping Willow.",
     controlPoints: loopTrack(
       30, 190,
       [{ k: 3, amp: 42, phase: 0.4 }, { k: 4, amp: 22, phase: 1.2 }, { k: 6, amp: 10, phase: 0.6 }],
@@ -340,9 +359,11 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       mountain: 0x2a2c40, mountainDark: 0x1c1e2e, clutter: 0x4c505a, gem: 0xa78bfa,
     },
     scenery: [
-      { kind: "castleWall", weight: 4 }, { kind: "torch", weight: 3 },
-      { kind: "banner", weight: 2 }, { kind: "tower", weight: 1 },
-      { kind: "gatehouse", weight: 1 }, { kind: "treeDark", weight: 2 },
+      { kind: "hogwartsCastle", weight: 1 }, { kind: "quidditchHoop", weight: 1 },
+      { kind: "whompingWillow", weight: 1 }, { kind: "hogwartsExpress", weight: 1 },
+      { kind: "floatingCandle", weight: 3 }, { kind: "goldenSnitch", weight: 1 },
+      { kind: "castleWall", weight: 2 }, { kind: "torch", weight: 3 },
+      { kind: "tower", weight: 1 }, { kind: "treeDark", weight: 2 },
     ],
   },
 
