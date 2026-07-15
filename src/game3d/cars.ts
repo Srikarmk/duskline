@@ -44,18 +44,48 @@ function box(
   return m;
 }
 
-/** A wheel: dark low-poly tyre + a subtle metallic rim (no glow). Axle along X. */
-function wheel(
-  x: number, z: number,
-  tireGeo: THREE.BufferGeometry, rimGeo: THREE.BufferGeometry,
-  tireMat: THREE.Material, rimMat: THREE.Material, radius: number
+/** Shared dark hub/lug material sitting behind the alloy spokes. One instance
+ *  for every car — the colour is constant, so sharing keeps setup cheap. */
+let _hubMat: THREE.MeshStandardMaterial | null = null;
+function hubMat(): THREE.MeshStandardMaterial {
+  return (_hubMat ??= new THREE.MeshStandardMaterial({ color: 0x0d0d13, metalness: 0.8, roughness: 0.35 }));
+}
+
+/**
+ * A wheel with real rim detail: a dark low-poly tyre, a dished rim barrel, and —
+ * on the OUTBOARD face (toward `outSign`) — a multi-spoke alloy face (dark hub +
+ * five crossed spokes + a bright lip ring) in the livery accent. Axle along X;
+ * the group is positioned so the tyre rests on y=0. Detailing only the shown
+ * face keeps four alloy wheels cheap enough for a full eight-car grid.
+ */
+function makeWheel(
+  x: number, z: number, radius: number, treadW: number,
+  tireMat: THREE.Material, rimMat: THREE.Material, outSign = 1
 ): THREE.Group {
   const g = new THREE.Group();
-  const tire = new THREE.Mesh(tireGeo, tireMat);
+  const tire = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, treadW, 16), tireMat);
   tire.rotation.z = Math.PI / 2;
-  const rim = new THREE.Mesh(rimGeo, rimMat);
-  rim.rotation.z = Math.PI / 2;
-  g.add(tire, rim);
+  g.add(tire);
+  // dished rim barrel just inside the tyre
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.64, radius * 0.64, treadW * 1.02, 8), rimMat);
+  barrel.rotation.z = Math.PI / 2;
+  g.add(barrel);
+  // alloy face (hub + crossed spokes + lip ring) on the visible outboard side
+  const face = new THREE.Group();
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.26, radius * 0.24, 0.05, 12), hubMat());
+  hub.rotation.z = Math.PI / 2;
+  face.add(hub);
+  const spokeGeo = new THREE.BoxGeometry(0.035, radius * 1.26, radius * 0.13);
+  for (let i = 0; i < 5; i++) {
+    const s = new THREE.Mesh(spokeGeo, rimMat);
+    s.rotation.x = (i / 5) * Math.PI; // five crossed bars → a ten-arm alloy
+    face.add(s);
+  }
+  const lip = new THREE.Mesh(new THREE.TorusGeometry(radius * 0.86, radius * 0.09, 4, 18), rimMat);
+  lip.rotation.y = Math.PI / 2;
+  face.add(lip);
+  face.position.x = outSign * (treadW / 2 + 0.01);
+  g.add(face);
   g.position.set(x, radius, z);
   return g;
 }
@@ -93,14 +123,23 @@ function panelBetween(
   return m;
 }
 
-/** A faceted flared wheel arch (fender eyebrow) that frames a tyre. Axle X. */
-function fenderArch(radius: number, mat: THREE.Material, x: number, y: number, z: number): THREE.Mesh {
-  const geo = new THREE.TorusGeometry(radius * 1.12, radius * 0.17, 5, 10, Math.PI);
-  geo.rotateY(Math.PI / 2);            // arch spans Z (over the tyre), peak +Y
-  const m = new THREE.Mesh(geo, mat);
-  m.position.set(x, y, z);
-  m.scale.x = 2.7;                     // give the fender girth (flare outward in X)
-  return m;
+/** A SOLID faceted fender haunch: a filled semicircle disc (flat base just below
+ *  the axle) extruded across the wheel width, so it reads as body sheet-metal
+ *  wrapping the tyre — not a floating hoop. It overlaps the flank inboard and is
+ *  the car's widest point outboard; the tyre's lower half shows in the arch
+ *  opening. Axle along X. `y` is the wheel-centre height; `girth` scales the
+ *  fender's width across the tyre. */
+function fenderArch(radius: number, mat: THREE.Material, x: number, y: number, z: number, girth = 1.1): THREE.Mesh {
+  const rOut = radius * 1.24;
+  const s = new THREE.Shape();
+  s.moveTo(rOut, 0);
+  s.absarc(0, 0, rOut, 0, Math.PI, false); // top semicircle: (rOut,0) → (-rOut,0)
+  s.closePath();                           // flat base along y=0
+  const depth = radius * 0.86 * girth;     // fender width across the tyre (X)
+  const geo = new THREE.ExtrudeGeometry(s, { depth, bevelEnabled: false, steps: 1, curveSegments: 8 });
+  geo.rotateY(-Math.PI / 2);               // shape X→Z (over tyre), depth→X (width)
+  geo.translate(x + depth / 2, y - radius * 0.3, z); // centre on the wheel, base below the axle
+  return new THREE.Mesh(geo, mat);
 }
 
 /** A seated racing driver: faceted helmet + dark visor + shoulders. Origin at
@@ -150,9 +189,9 @@ function buildKart(color: number, p: KartParams): THREE.Group {
   const dark = base.clone().offsetHSL(0, -0.04, -0.22);
   const accentHex = accent.getHex();
 
-  // --- shared materials -----------------------------------------------------
-  const bodyMat = paint(base.getHex(), { metal: 0.5, rough: 0.4, flat: true });
-  const darkMat = paint(dark.getHex(), { metal: 0.55, rough: 0.45, flat: true });
+  // --- shared materials (glossier body for the arcade sheen) ----------------
+  const bodyMat = paint(base.getHex(), { metal: 0.55, rough: 0.28, flat: true });
+  const darkMat = paint(dark.getHex(), { metal: 0.55, rough: 0.42, flat: true });
   const trimMat = paint(accentHex, { emissive: accentHex, ei: 0.4, metal: 0.6, rough: 0.3 });
   // real CC0 metal-plate normal (panel/scratch relief) tints nothing — we keep
   // the bright livery colour instead of the dark plate albedo. Falls back to the
@@ -180,61 +219,65 @@ function buildKart(color: number, p: KartParams): THREE.Group {
   const rimMat = paint(accentHex, { metal: 0.9, rough: 0.25 });
   const chromeMat = paint(0x2a2a33, { metal: 0.9, rough: 0.3 });
   const grilleMat = paint(0x14141a, { metal: 0.7, rough: 0.4 });
-  const headMat = paint(0xfff6d5, { emissive: 0xffe6a0, ei: 0.55 });
-  const tailMat = paint(0x2a0000, { emissive: 0xff2626, ei: 0.5 });
+  const headMat = paint(0xfff6d5, { emissive: 0xffe6a0, ei: 0.7 });
+  const lensMat = paint(0xcdeeff, { emissive: 0x9fdcff, ei: 0.5, metal: 0.4, rough: 0.14 });
+  const tailMat = paint(0x2a0000, { emissive: 0xff2626, ei: 0.65 });
 
   const { length: L, width: W, ride: H, wheelR: R } = p;
   const hl = L / 2;
-  const floor = R * 0.40;                // ground clearance under the tub
-  const bodyH = H * 0.60;                // solid lower body height (belt over floor)
+  const floor = R * 0.34;                // ground clearance under the tub (low)
+  const bodyH = H * 0.56;                // solid lower body height (belt over floor)
   const cabH = H * (p.cabin ?? 0.55);    // greenhouse height above the beltline
   const beltY = floor + bodyH;           // world height of the deck / beltline
-  const coreW = W * 0.78;                // body core is narrower than the fenders
-  const wx = W * 0.48;                   // wheel centreline (fenders flare over it)
+  const coreW = W * 0.88;                // wide tub so the fenders sit on its shoulder
+  const wx = W * 0.5;                    // wheel centreline (fenders flare over it)
   const rf = R, rr = R * 1.06;           // front / rear tyre radius
   const wzF = L * 0.32, wzR = L * 0.33;  // wheel positions along the length
 
   // === lower body: a crisp stepped hull (all straight creases) ==============
-  // Side profile (x = length, y = height): low nose face → short low hood →
-  // SHARP cowl step up to the beltline → flat rear deck → tail drop. Extruded
-  // at a constant (narrow) width; the fenders and cabin do the shaping, so the
-  // silhouette stays sharp and unmistakably car-like rather than a smooth blob.
+  // Side profile (x = length, y = height): low pointed nose → long low hood →
+  // SHARP cowl step up to the beltline → flat rear deck → fastback tail drop.
+  // Extruded at a wide width so the flanks reach the wheels and the fenders read
+  // as part of the body; the cabin does the rest of the shaping.
   const P: [number, number][] = [
-    [-hl,       0],
-    [ hl,       0],
-    [ hl,       bodyH * 0.34],   // front bumper / nose face
-    [ hl * 0.82, bodyH * 0.48],  // nose top crease
-    [ hl * 0.44, bodyH * 0.48],  // end of the low flat hood
-    [ hl * 0.28, bodyH * 1.00],  // cowl: sharp step up to the beltline
-    [-hl * 0.46, bodyH * 1.00],  // flat rear deck
-    [-hl * 0.78, bodyH * 0.88],  // tail begins to drop
-    [-hl,        bodyH * 0.50],  // tail bottom crease
+    [-hl,        bodyH * 0.06],
+    [ hl,        bodyH * 0.02],
+    [ hl,        bodyH * 0.30],   // low front bumper / nose face
+    [ hl * 0.9,  bodyH * 0.44],   // nose top crease
+    [ hl * 0.42, bodyH * 0.44],   // long low hood
+    [ hl * 0.26, bodyH * 1.00],   // cowl: sharp step up to the beltline
+    [-hl * 0.5,  bodyH * 1.00],   // flat rear deck
+    [-hl * 0.82, bodyH * 0.86],   // fastback tail begins to drop
+    [-hl,        bodyH * 0.48],   // tail bottom crease
   ];
   const hull = hullPiece(P, coreW, bodyMat);
   hull.position.y = floor;
   g.add(hull);
 
-  // side character line (beltline crease) + rocker sill — sharp two-tone panels
+  // shoulder crease + a body-colour sill that fills the flank between the front
+  // and rear fenders, so the side reads as one continuous flowing panel
   for (const sx of [-1, 1]) {
-    g.add(box(0.05, 0.05, L * 0.56, darkMat, sx * coreW * 0.5, floor + bodyH * 0.82, -L * 0.02)); // beltline crease
+    g.add(box(0.05, 0.06, L * 0.6, darkMat, sx * coreW * 0.5, floor + bodyH * 0.86, -L * 0.02)); // shoulder crease
     if (!p.bulky) // (the bruiser's side pods take the place of a rocker)
-      g.add(box(0.06, bodyH * 0.3, L * 0.5, darkMat, sx * coreW * 0.5, floor + bodyH * 0.24, -L * 0.02)); // rocker sill
+      g.add(box(0.09, bodyH * 0.52, L * 0.5, bodyMat, sx * coreW * 0.5, floor + bodyH * 0.3, -L * 0.02)); // sill/flank
+    g.add(box(0.06, bodyH * 0.22, L * 0.46, darkMat, sx * coreW * 0.5 + 0.02, floor + bodyH * 0.16, -L * 0.02)); // rocker shadow
   }
 
   // === flared wheel arches (body-colour fenders framing every tyre) =========
   for (const sx of [-1, 1]) {
-    g.add(fenderArch(rf, bodyMat, sx * wx, rf, wzF));
-    g.add(fenderArch(rr, bodyMat, sx * wx, rr, -wzR));
+    g.add(fenderArch(rf, bodyMat, sx * wx, rf, wzF, 1.45));
+    g.add(fenderArch(rr, bodyMat, sx * wx, rr, -wzR, 1.6));
   }
 
-  // === front end: bumper + grille + stepped hood + headlights ===============
-  g.add(box(W * 0.9, bodyH * 0.34, L * 0.08, darkMat, 0, floor + bodyH * 0.2, hl * 0.97)); // bumper
-  g.add(box(W * 0.42, bodyH * 0.22, 0.06, grilleMat, 0, floor + bodyH * 0.26, hl * 1.0));   // grille
-  const lampGeo = new THREE.BoxGeometry(W * 0.14, 0.08, 0.05);
+  // === front end: splitter + bumper + grille + headlight clusters ===========
+  g.add(box(W * 0.98, 0.06, L * 0.1, darkMat, 0, floor + 0.03, hl * 0.92));   // splitter lip
+  g.add(box(W * 0.9, bodyH * 0.3, L * 0.08, darkMat, 0, floor + bodyH * 0.18, hl * 0.96)); // bumper
+  g.add(box(W * 0.4, bodyH * 0.2, 0.06, grilleMat, 0, floor + bodyH * 0.24, hl * 1.0));    // grille
   for (const sx of [-1, 1]) {
-    const lamp = new THREE.Mesh(lampGeo, headMat);
-    lamp.position.set(sx * W * 0.3, floor + bodyH * 0.44, hl * 0.9);
-    g.add(lamp);
+    g.add(box(W * 0.22, 0.13, 0.06, chromeMat, sx * W * 0.3, floor + bodyH * 0.44, hl * 0.9)); // lamp housing
+    const lens = new THREE.Mesh(new THREE.BoxGeometry(W * 0.16, 0.09, 0.05), lensMat);
+    lens.position.set(sx * W * 0.3, floor + bodyH * 0.44, hl * 0.93);
+    g.add(lens);
   }
   if (p.scoop) {
     // muscle-car hood scoop: a raised block with a dark forward intake mouth
@@ -244,17 +287,21 @@ function buildKart(color: number, p: KartParams): THREE.Group {
 
   // === rear end: diffuser + taillight bar + exhausts ========================
   g.add(box(W * 0.86, bodyH * 0.3, L * 0.08, darkMat, 0, floor + bodyH * 0.18, -hl * 0.96)); // rear bumper
-  if (!p.bulky) // diffuser strakes (the bruiser's twin exhausts fill this space)
-    for (const sx of [-1, 1])
-      g.add(box(0.05, bodyH * 0.22, L * 0.1, chromeMat, sx * W * 0.2, floor + bodyH * 0.12, -hl * 0.99));
-  g.add(box(W * 0.66, 0.08, 0.05, tailMat, 0, floor + bodyH * 0.56, -hl * 0.99)); // taillight bar
+  if (!p.bulky) { // diffuser strakes (the bruiser's twin exhausts fill this space)
+    g.add(box(W * 0.62, bodyH * 0.22, L * 0.06, grilleMat, 0, floor + bodyH * 0.1, -hl * 0.98)); // diffuser recess
+    for (const sx of [-1, 0, 1])
+      g.add(box(0.05, bodyH * 0.22, L * 0.1, chromeMat, sx * W * 0.22, floor + bodyH * 0.12, -hl * 0.99));
+  }
+  g.add(box(W * 0.66, 0.11, 0.05, tailMat, 0, floor + bodyH * 0.62, -hl * 0.99)); // brake-light bar
+  for (const sx of [-1, 1]) // outboard brake-light blocks
+    g.add(box(W * 0.16, 0.13, 0.05, tailMat, sx * W * 0.32, floor + bodyH * 0.52, -hl * 0.99));
 
   // === greenhouse ===========================================================
-  const wsBaseZ = hl * 0.30;                       // windshield foot (near the cowl)
-  const roofFrontZ = hl * 0.30 - L * (p.open ? 0.12 : 0.18);
-  const roofBackZ = -hl * 0.30;
-  const backBaseZ = -hl * 0.50;                    // backlight foot on the rear deck
-  const cabW = W * 0.58;
+  const wsBaseZ = hl * 0.34;                       // windshield foot (near the cowl)
+  const roofFrontZ = hl * 0.34 - L * (p.open ? 0.12 : 0.2);
+  const roofBackZ = -hl * 0.34;
+  const backBaseZ = -hl * 0.54;                    // backlight foot on the rear deck
+  const cabW = W * 0.62;
   const roofY = beltY + cabH;
 
   if (p.open) {
@@ -271,21 +318,21 @@ function buildKart(color: number, p: KartParams): THREE.Group {
     drv.position.set(0, beltY - 0.02, -L * 0.02);
     g.add(drv);
   } else {
-    // closed greenhouse: slanted windshield + backlight, side glass, a roof
-    // panel and body-colour A/C pillars framing the windows.
-    g.add(panelBetween(0, wsBaseZ, beltY, roofFrontZ, roofY, cabW * 0.9, 0.03, glass));    // windshield
-    g.add(panelBetween(0, backBaseZ, beltY, roofBackZ, roofY, cabW * 0.9, 0.03, glass));   // backlight
-    g.add(box(cabW * 0.9, 0.05, roofFrontZ - roofBackZ, bodyMat, 0, roofY, (roofFrontZ + roofBackZ) / 2)); // roof
+    // closed greenhouse: a big raked windshield + fastback backlight, side
+    // glass, a roof panel and body-colour A/C pillars framing the windows.
+    g.add(panelBetween(0, wsBaseZ, beltY, roofFrontZ, roofY, cabW * 0.92, 0.03, glass));   // windshield
+    g.add(panelBetween(0, backBaseZ, beltY, roofBackZ, roofY, cabW * 0.92, 0.03, glass));  // backlight
+    g.add(box(cabW * 0.92, 0.05, roofFrontZ - roofBackZ, bodyMat, 0, roofY, (roofFrontZ + roofBackZ) / 2)); // roof
     const winMidZ = (wsBaseZ + backBaseZ) / 2;
     for (const sx of [-1, 1]) {
       // side glass (the caged stock car runs an open, netted window instead)
       if (!p.cage)
-        g.add(box(0.03, cabH * 0.5, (wsBaseZ - backBaseZ) * 0.62, glass, sx * cabW * 0.5, beltY + cabH * 0.42, winMidZ));
-      g.add(panelBetween(sx * cabW * 0.46, wsBaseZ, beltY, roofFrontZ, roofY, 0.07, 0.05, bodyMat)); // A-pillar
-      g.add(panelBetween(sx * cabW * 0.46, backBaseZ, beltY, roofBackZ, roofY, 0.07, 0.05, bodyMat)); // C-pillar
+        g.add(box(0.03, cabH * 0.52, (wsBaseZ - backBaseZ) * 0.64, glass, sx * cabW * 0.5, beltY + cabH * 0.44, winMidZ));
+      g.add(panelBetween(sx * cabW * 0.47, wsBaseZ, beltY, roofFrontZ, roofY, 0.07, 0.05, bodyMat)); // A-pillar
+      g.add(panelBetween(sx * cabW * 0.47, backBaseZ, beltY, roofBackZ, roofY, 0.07, 0.05, bodyMat)); // C-pillar
     }
     const drv = makeDriver(dark.getHex());
-    drv.position.set(0, beltY - 0.2, wsBaseZ - L * 0.18);
+    drv.position.set(0, beltY - 0.2, wsBaseZ - L * 0.2);
     g.add(drv);
   }
 
@@ -304,8 +351,10 @@ function buildKart(color: number, p: KartParams): THREE.Group {
 
   // side mirrors (small, but they sell "this is a car")
   if (p.mirrors) {
-    for (const sx of [-1, 1])
-      g.add(box(0.1, 0.06, 0.1, bodyMat, sx * (cabW * 0.5 + 0.11), beltY + cabH * 0.32, wsBaseZ * 0.5));
+    for (const sx of [-1, 1]) {
+      g.add(box(0.05, 0.05, 0.11, chromeMat, sx * (cabW * 0.5 + 0.08), beltY + cabH * 0.34, wsBaseZ * 0.6)); // stalk
+      g.add(box(0.11, 0.07, 0.06, bodyMat, sx * (cabW * 0.5 + 0.15), beltY + cabH * 0.36, wsBaseZ * 0.6));   // housing
+    }
   }
 
   // === type-specific spoiler ================================================
@@ -359,16 +408,12 @@ function buildKart(color: number, p: KartParams): THREE.Group {
     }
   }
 
-  // === wheels (shared geometry per size) ====================================
-  const tireGeoF = new THREE.CylinderGeometry(rf, rf, rf * 0.72, 16);
-  const rimGeoF = new THREE.CylinderGeometry(rf * 0.58, rf * 0.58, rf * 0.74, 12);
-  const tireGeoR = new THREE.CylinderGeometry(rr, rr, rr * 0.78, 16);
-  const rimGeoR = new THREE.CylinderGeometry(rr * 0.58, rr * 0.58, rr * 0.8, 12);
+  // === wheels (alloy rims on the outboard face) =============================
   g.add(
-    wheel(-wx, wzF, tireGeoF, rimGeoF, tireMat, rimMat, rf),
-    wheel(wx, wzF, tireGeoF, rimGeoF, tireMat, rimMat, rf),
-    wheel(-wx, -wzR, tireGeoR, rimGeoR, tireMat, rimMat, rr),
-    wheel(wx, -wzR, tireGeoR, rimGeoR, tireMat, rimMat, rr)
+    makeWheel(-wx, wzF, rf, rf * 0.72, tireMat, rimMat, -1),
+    makeWheel(wx, wzF, rf, rf * 0.72, tireMat, rimMat, 1),
+    makeWheel(-wx, -wzR, rr, rr * 0.78, tireMat, rimMat, -1),
+    makeWheel(wx, -wzR, rr, rr * 0.78, tireMat, rimMat, 1)
   );
 
   return g;
@@ -443,16 +488,14 @@ function carMaterials(color: number): CarMaterials {
   };
 }
 
-/** A standard faceted road tyre (axle along X, bottom resting on y=0). `wide`
- *  scales the tread width as a fraction of the radius. */
+/** A standard faceted road tyre with an alloy face (axle along X, bottom resting
+ *  on y=0). `wide` scales the tread width as a fraction of the radius; the alloy
+ *  is built on the outboard face inferred from the sign of `x`. */
 function tyre(
   x: number, z: number, radius: number,
   tireMat: THREE.Material, rimMat: THREE.Material, wide = 0.72
 ): THREE.Group {
-  const w = radius * wide;
-  const tireGeo = new THREE.CylinderGeometry(radius, radius, w, 16);
-  const rimGeo = new THREE.CylinderGeometry(radius * 0.58, radius * 0.58, w * 1.03, 12);
-  return wheel(x, z, tireGeo, rimGeo, tireMat, rimMat, radius);
+  return makeWheel(x, z, radius, radius * wide, tireMat, rimMat, x < 0 ? -1 : 1);
 }
 
 /** An enormous knobbly monster-truck tyre: chunky faceted carcass + a raised
@@ -470,6 +513,19 @@ function monsterWheel(
   const hub = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.4, radius * 0.4, w * 1.04, 8), rimMat);
   hub.rotation.z = Math.PI / 2;
   g.add(carcass, tread, hub);
+  // spoked bead-lock face on the outboard side (dark centre cap + crossed spokes)
+  const outSign = x < 0 ? -1 : 1;
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.18, radius * 0.16, 0.06, 10), hubMat());
+  cap.rotation.z = Math.PI / 2;
+  cap.position.x = outSign * (w / 2 + 0.02);
+  g.add(cap);
+  const spokeGeo = new THREE.BoxGeometry(0.05, radius * 0.78, radius * 0.12);
+  for (let i = 0; i < 4; i++) {
+    const s = new THREE.Mesh(spokeGeo, rimMat);
+    s.rotation.x = (i / 4) * Math.PI;
+    s.position.x = outSign * (w / 2 + 0.01);
+    g.add(s);
+  }
   g.position.set(x, radius, z);
   return g;
 }

@@ -38,8 +38,8 @@ import {
 import { makeWeather, type WeatherSystem } from "./weather";
 import { makeTunnelArch, makeTunnelPortal } from "./setpieces";
 import { makeBoostGate, makeRingArch } from "./props/gates";
-import { makeSplitMedian } from "./props/split";
 import { makeArrowSign, makeForkArrowSign, makeBlimp, makeCheckerBoard } from "./props/signage";
+import { BranchPath } from "./branch";
 import { loadPBR } from "./textures";
 import { makeKart, CAR_SPECS, CAR_IDS, type CarStat } from "./cars";
 import { REALMS, pickScenery, REALM_WEATHER, REALM_AMBIENCE, REALM_TUNNELS, REALM_RIVERS, REALM_SPLITS, type RealmSpec, type SceneryKind } from "./realms";
@@ -60,8 +60,6 @@ import type { GameMode, GameResult, GameOptions, RaceStanding, CarId } from "../
 type Phase = "loading" | "countdown" | "racing" | "finished";
 
 type EntityType = "gem" | "airGem" | "nitro" | "orb" | "ramp" | "rock" | "monster" | "itembox" | "boostpad" | "boostgate";
-/** what a fork route offers: a speed gate, a jump ramp, or a power-up box */
-type ForkReward = "gate" | "ramp" | "box";
 
 type ItemKind = "boost" | "shield" | "missile" | "mine";
 const ITEM_LABEL: Record<ItemKind, string> = {
@@ -172,9 +170,16 @@ export class Game {
   private spinners: Entity[] = [];
   private monsters: Entity[] = [];
   private ramps: { dist: number; power: number; lane: number; len: number; height: number }[] = [];
-  /** fork zones: the road splits around a central island over [d0,d1] (wrapped
-   *  distances). A central soft barrier pushes you onto one side or the other. */
+  /** fork zones as main-track ranges [d0,d1] — used to keep boost pads/gates from
+   *  cluttering a fork mouth. */
   private splits: { d0: number; d1: number }[] = [];
+  /** true alternate routes: a separate drivable road you can peel onto at a fork
+   *  and rejoin later. `side` is which way it bows (used to decide entry). */
+  private branches: { path: BranchPath; side: number }[] = [];
+  /** the branch you're currently driving (null = on the main track), and how far
+   *  along it (arc-length metres). */
+  private onBranch: BranchPath | null = null;
+  private branchU = 0;
   private wasOnRamp = false;
   private lastRampPower = 1;
   private lastRampT = 0;
@@ -303,7 +308,9 @@ export class Game {
     this.composer.setPixelRatio(this.renderer.getPixelRatio());
     this.composer.setSize(w, h);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.11, 0.6, 0.95);
+    // bloom runs at half resolution — it's a soft blur anyway, so it looks the
+    // same but costs a quarter of the fill rate (keeps big retina buffers smooth)
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w / 2, h / 2), 0.11, 0.6, 0.95);
     this.composer.addPass(this.bloomPass);
     // final pass applies tone mapping + sRGB so the composed image is graded
     this.composer.addPass(new OutputPass());
@@ -331,7 +338,7 @@ export class Game {
     this.renderer.setSize(w, h, false);
     this.composer.setPixelRatio(dpr);
     this.composer.setSize(w, h);
-    this.bloomPass.setSize(w * dpr, h * dpr);
+    this.bloomPass.setSize((w * dpr) / 2, (h * dpr) / 2);
     this.camera.aspect = w / h;
     this.camera.fov = CAMERA_PRESETS[this.cameraIndex].fov;
     this.camera.updateProjectionMatrix();
@@ -647,64 +654,71 @@ export class Game {
     }
   }
 
-  /** Build the fork zones from REALM_SPLITS: a central island (tiled median) that
-   *  splits the road into a LEFT route (boost gate) and a RIGHT route (jump ramp),
-   *  fronted by a fork sign. Both routes rejoin where the island ends. */
-  private placeSplits() {
+  /** Build the TRUE fork routes from REALM_SPLITS: at each fork the road peels
+   *  onto a SEPARATE alternate road that bows away to one side (optionally rising
+   *  into an overpass) and rejoins the main track later. A big fork sign marks the
+   *  mouth; steering toward the branch side takes it (see maybeEnterBranch). */
+  private placeBranches() {
     const pal = this.realm.palette;
     const len = this.track.length;
-    const rand = mulberry32(9001);
-    const SEG = 8; // median segment length (m) — 4m mesh stretched x2 to halve draw calls
-    // each fork offers a DIFFERENT pair of rewards on its two routes, cycled so
-    // no two forks feel the same (gate = surge, ramp = jump, box = power-up)
-    const variants: Array<[ForkReward, ForkReward]> = [
-      ["gate", "ramp"],
-      ["ramp", "box"],
-      ["box", "gate"],
-      ["ramp", "gate"],
-    ];
+    const roadMat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(pal.road), roughness: 0.92, metalness: 0.0, flatShading: true,
+    });
+    // samplers give the branch the main road's flat centre + tangent at any dist
+    const sampleP = (dist: number, out?: THREE.Vector3) => this.track.pointAt(this.track.wrap(dist), 0, out, true);
+    const sampleT = (dist: number, out?: THREE.Vector3) => this.track.tangentAt(this.track.wrap(dist), out);
     const forks = REALM_SPLITS[this.realm.id] ?? [];
     for (let fi = 0; fi < forks.length; fi++) {
       const s = forks[fi];
-      const d0 = s.at * len;
-      const d1 = d0 + s.len;
-      this.splits.push({ d0: this.track.wrap(d0), d1: this.track.wrap(d1) });
-      // big fork sign at the mouth, facing the oncoming cars
+      const startDist = s.at * len;
+      const endDist = startDist + s.len;
+      this.splits.push({ d0: this.track.wrap(startDist), d1: this.track.wrap(endDist) });
+      const side: 1 | -1 = fi % 2 === 0 ? 1 : -1;
+      const bulge = Math.min(46, 22 + s.len * 0.16);
+      const rise = fi % 2 === 0 ? 6 : 0; // every other branch lifts into a gentle overpass
+      const branch = new BranchPath(sampleP, sampleT, startDist, endDist, { side, bulge, rise, seed: 100 + fi });
+      this.scene.add(branch.buildRoad(roadMat, ROAD_HALF_WIDTH));
+      this.branches.push({ path: branch, side });
+      // big fork sign at the mouth, facing oncoming cars
       const sign = makeForkArrowSign(pal);
-      this.placeOnTrack(sign, d0);
+      this.placeOnTrack(sign, startDist);
       this.scene.add(sign);
-      // tile the central median down the middle of the fork
-      for (let d = d0 + SEG * 0.5; d < d1 - SEG * 0.5; d += SEG) {
-        const seg = makeSplitMedian(pal);
-        seg.scale.z = 2; // stretch the 4m segment to 8m so half as many are needed
-        this.placeOnTrack(seg, d);
-        this.scene.add(seg);
-      }
-      // the choice that matters — a distinct reward on each route
-      const mid = (d0 + d1) / 2;
-      const [leftKind, rightKind] = variants[fi % variants.length];
-      this.placeForkReward(-0.72, leftKind, mid, rand);
-      this.placeForkReward(0.72, rightKind, mid, rand);
     }
   }
 
-  /** Drop one route's reward (a surge gate / a jump ramp / a power-up box) onto a
-   *  lane of a fork, with a matching gem trail so both sides are worth taking. */
-  private placeForkReward(lane: number, kind: ForkReward, mid: number, rand: () => number) {
-    const pal = this.realm.palette;
-    if (kind === "gate") {
-      this.addEntity("boostgate", mid, lane, makeBoostGate(rand), 0.1);
-      for (const off of [-8, 6, 14]) this.addEntity("gem", mid + off, lane, makeGem(pal.gem, false), 0.8);
-    } else if (kind === "ramp") {
-      const rk: RampKind = rand() < 0.5 ? "wide" : "kicker";
-      const spec = RAMP_SPECS[rk];
-      this.addEntity("ramp", mid - 6, lane, makeRamp(rk), 0, spec.power);
-      this.ramps.push({ dist: this.track.wrap(mid - 6), power: spec.power, lane, len: spec.l, height: spec.h });
-      for (const off of [12, 18]) this.addEntity("airGem", mid + off, lane, makeGem(0xfbbf24, true), AIR_GEM_ALT);
-    } else {
-      this.addEntity("itembox", mid - 4, lane, makeItemBox(), 0.2);
-      for (const off of [6, 12, 18]) this.addEntity("gem", mid + off, lane, makeGem(pal.gem, false), 0.8);
+  /** Enter a branch if we're at its fork mouth and leaning toward its side. */
+  private maybeEnterBranch() {
+    if (this.alt > 0.6 || this.transformed) return;
+    for (const br of this.branches) {
+      const b = br.path;
+      if (this.position >= b.startDist && this.position < b.startDist + 6 &&
+          Math.sign(this.playerX) === br.side && Math.abs(this.playerX) > 0.28) {
+        this.onBranch = b;
+        this.branchU = 0;
+        this.sound.play("nitro");
+        this.toast("ALT ROUTE!", "#67e8f9");
+        return;
+      }
     }
+  }
+
+  /** World point on the CURRENT path (branch or main), `offset` metres ahead of
+   *  the player, at lateral `lateralM` metres. */
+  private pathPoint(offset: number, lateralM: number, out?: THREE.Vector3): THREE.Vector3 {
+    if (this.onBranch) {
+      const u = clamp(this.branchU + offset, 0, this.onBranch.length);
+      return this.onBranch.pointAt(u, lateralM, out);
+    }
+    return this.track.pointAt(this.track.wrap(this.position + offset), lateralM, out);
+  }
+
+  /** Unit tangent on the current path `offset` metres ahead of the player. */
+  private pathTangent(offset: number, out?: THREE.Vector3): THREE.Vector3 {
+    if (this.onBranch) {
+      const u = clamp(this.branchU + offset, 0, this.onBranch.length);
+      return this.onBranch.tangentAt(u, out);
+    }
+    return this.track.tangentAt(this.track.wrap(this.position + offset), out);
   }
 
   /** true while `dist` falls inside a fork zone (used by the central soft barrier
@@ -763,7 +777,7 @@ export class Game {
     const pal = realm.palette;
     this.placeTunnels();
     this.placeRivers();
-    this.placeSplits();
+    this.placeBranches();
     this.placeCornerSigns();
     this.treeMats = makeTreeMaterials(pal); // shared bark/foliage tree materials
     const lane = () => LANE_CENTERS[Math.floor(rand() * 3)];
@@ -1203,18 +1217,6 @@ export class Game {
       this.playerVX *= 0.9;                                // and damp it
     }
 
-    // central fork island: while in a split zone, a soft barrier down the middle
-    // nudges you onto whichever side you're already leaning toward — commit to a
-    // route (left = boost gate, right = ramp). Airborne cars fly over it freely.
-    const ISLAND_HALF = 0.32;
-    if (!this.transformed && this.alt < 0.6 && Math.abs(this.playerX) < ISLAND_HALF && this.inSplitZone(this.position)) {
-      const side = this.playerX >= 0 ? 1 : -1;
-      const into = ISLAND_HALF - Math.abs(this.playerX);
-      this.playerX += side * into * Math.min(1, dt * 6);
-      this.playerVX += side * into * 40 * dt;
-      this.playerVX *= 0.9;
-    }
-
     // throttle (car type sets acceleration; boost/nitro still override)
     const boosting = this.nitroT > 0 || this.driftBoostT > 0 || this.boostT > 0;
     const accel = ACCEL * this.carStat.accel;
@@ -1271,7 +1273,7 @@ export class Game {
     // get a partial pop, not a clean launch (hit it sideways at your peril).
     let onRamp: (typeof this.ramps)[number] | null = null;
     let rampT = 0;
-    if (!this.transformed) {
+    if (!this.transformed && !this.onBranch) {
       const trackLen = this.track.length;
       for (const r of this.ramps) {
         if (Math.abs(this.playerX - r.lane) > 0.42) continue; // not in this ramp's lane
@@ -1369,15 +1371,33 @@ export class Game {
       this.laneT = 0;
     }
 
-    this.collide(speedPercent);
+    // main-track entities/monsters don't exist on a branch — skip them while on one
+    if (!this.onBranch) this.collide(speedPercent);
     if (this.cfg.monsters) {
       this.updateMonsters(dt);
-      this.collideMonsters();
+      if (!this.onBranch) this.collideMonsters();
     }
     this.sound.setEngine(this.speed / MAX_SPEED, this.nitroT > 0);
 
-    // advance & laps
-    this.position += this.speed * dt;
+    // advance & laps — on a branch we travel the alternate curve, mapping progress
+    // proportionally back onto the main track so laps + ranking stay correct
+    if (this.onBranch) {
+      const b = this.onBranch;
+      this.branchU += this.speed * dt;
+      if (this.branchU >= b.length) {
+        const over = this.branchU - b.length;
+        this.onBranch = null;
+        this.position = b.endDist + over;          // rejoin the main line
+        this.boostT = Math.max(this.boostT, PAD_BOOST_DURATION); // reward the detour
+        this.sound.play("nitro");
+        this.toast("REJOIN +BOOST", "#a7f3d0");
+      } else {
+        this.position = b.startDist + (this.branchU / b.length) * (b.endDist - b.startDist);
+      }
+    } else {
+      this.position += this.speed * dt;
+      this.maybeEnterBranch();
+    }
     if (this.position >= this.track.length) {
       this.position -= this.track.length;
       this.lap++;
@@ -1408,18 +1428,12 @@ export class Game {
   private updateOpponents(dt: number) {
     const mine = this.playerProgress();
     const len = this.track.length;
-    for (const [oi, o] of this.opponents.entries()) {
+    for (const o of this.opponents) {
       const gap = mine - o.progress(len); // + means player ahead
       // each racer holds its own pace so the field strings out; only a gentle
       // rubber-band keeps it competitive around the player
       const base = MAX_SPEED * o.pace * (1 + clamp(gap / 500, -0.05, 0.08));
       o.update(dt, this.track, base, this.cfg.laps);
-      // in fork zones (and ~40m before), opponents commit to a side — spread
-      // across both routes — instead of ploughing the central island. Set after
-      // update so it overrides the AI's own periodic lane picks.
-      if (o.alt < 0.5 && (this.inSplitZone(o.dist) || this.inSplitZone(this.track.wrap(o.dist + 40)))) {
-        o.targetLane = oi % 2 === 0 ? -0.72 : 0.72;
-      }
 
       // hop ramps (full-width, so any lane) when reaching one on the ground
       if (o.alt < 0.4 && !o.finished) {
@@ -1849,14 +1863,14 @@ export class Game {
 
     if (this.phase !== "loading") {
       const lateralM = this.playerX * ROAD_HALF_WIDTH * 0.9;
-      const p = track.pointAt(this.position, lateralM);
+      const p = this.pathPoint(0, lateralM);
       this.playerRoot.position.set(p.x, p.y + this.alt + CAR_LIFT, p.z);
-      const tan = track.tangentAt(this.position);
+      const tan = this.pathTangent(0);
       this.playerRoot.rotation.y = Math.atan2(tan.x, tan.z);
 
       // pitch = flips + air tilt, yaw = steer/drift heading, roll = barrel roll +
       // lean + the road's bank (so the car sits flat on banked corners)
-      const bankRoll = this.alt < 0.4 ? track.bankAt(this.position) : 0;
+      const bankRoll = (!this.onBranch && this.alt < 0.4) ? track.bankAt(this.position) : 0;
       this.playerBody.rotation.x = this.flip * Math.PI * 2 + clamp(-this.vAlt * 0.03, -0.35, 0.35);
       this.playerBody.rotation.y = this.carYaw;
       this.playerBody.rotation.z =
@@ -1922,14 +1936,14 @@ export class Game {
       // corners, looks ahead into the turn, and shakes on impacts.
       const preset = CAMERA_PRESETS[this.cameraIndex];
       const spd = this.speed / MAX_SPEED;
-      const curve = track.curvatureAt(this.position);
+      const curve = this.onBranch ? 0 : track.curvatureAt(this.position);
 
       // gentle speed/boost FOV kick — kept small to avoid motion sickness
       const targetFov = preset.fov + spd * 4 + (boosting ? 4 : 0);
       this.camera.fov += (targetFov - this.camera.fov) * 0.06;
       this.camera.updateProjectionMatrix();
 
-      const camAnchor = track.pointAt(this.position - preset.back, lateralM * 0.7);
+      const camAnchor = this.pathPoint(-preset.back, lateralM * 0.7);
       camAnchor.y += preset.height + this.alt * 0.55;
       if (this.camSnap) {
         this.camPos.copy(camAnchor);
@@ -1946,7 +1960,7 @@ export class Game {
       }
       // look slightly ahead into the corner (small, so the view doesn't swing)
       const aheadBias = clamp(curve * this.speed * 0.6, -1.0, 1.0);
-      const lookAt = track.pointAt(this.position + preset.ahead, lateralM * 0.5 + aheadBias);
+      const lookAt = this.pathPoint(preset.ahead, lateralM * 0.5 + aheadBias);
       lookAt.y += preset.lookHeight + this.alt * 0.8;
       this.camera.lookAt(lookAt);
       // slight bank into the corner
