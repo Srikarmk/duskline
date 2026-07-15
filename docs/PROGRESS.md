@@ -470,6 +470,27 @@ island splitting the road, and the right route rejoining ahead](screenshots/bran
   strength came down and the bloom threshold went up, so only the genuinely bright
   things bloom.
 
+## Real alternate routes (this pass)
+
+![A true fork — the main road runs ahead past the Y sign while a whole separate
+branch road peels off to the side and rejoins downstream](screenshots/branch-route.jpg)
+
+The earlier "fork" was one road divided by a central island — not what was asked
+for. This replaces it with **genuine branching**: at a fork the road **peels onto
+a separate alternate road** that bows away (some rise into a short overpass) and
+**rejoins the main track later**.
+
+- **A real second road** (`branch.ts` / `BranchPath`) with its own ribbon, edge
+  lines and dashed centre — you can see it run off to the side and loop back.
+- **You choose by steering**: lean toward the branch at the fork mouth and you
+  leave the main track onto it; stay centred and you keep the main line. Rejoining
+  hands you a **boost** for taking the detour. Progress maps back onto the main
+  track so laps and ranking stay fair.
+- **Every map** forks (the longer ones twice); rivals hold the main racing line.
+- **Perf**: bloom now renders at half resolution (a soft blur anyway, so it looks
+  the same) — the busiest map went from ~22 ms to ~14 ms a frame, back to a solid
+  60 fps.
+
 ## Forks everywhere + arcade signage (this pass)
 
 ![Every map now forks — a big Y split-sign, a blimp overhead, a boost-gate on one
