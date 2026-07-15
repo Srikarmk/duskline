@@ -242,7 +242,7 @@ export class Game {
     this.renderer.setClearColor(this.realm.palette.fog);
     // filmic tone mapping → richer colors + smooth highlight roll-off
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.1;
+    this.renderer.toneMappingExposure = 1.35;
 
     const hudCanvas = document.createElement("canvas");
     hudCanvas.className = "game-layer game-hud";
@@ -348,15 +348,16 @@ export class Game {
       scene.add(makeMountainRing(pal, cx, cz, radius));
     }
 
-    scene.add(new THREE.HemisphereLight(pal.hemiSky, pal.hemiGround, pal.hemiInt * 1.4));
+    scene.add(new THREE.HemisphereLight(pal.hemiSky, pal.hemiGround, pal.hemiInt * 1.7));
     // ambient lift so shadows aren't pure black — cuts the harsh neon-on-black
-    // contrast and lets the ground/scenery read clearly
-    scene.add(new THREE.AmbientLight(pal.hemiSky, 0.45));
-    const sun = new THREE.DirectionalLight(pal.sun, pal.sunInt * 1.2);
-    sun.position.set(80, 130, 40);
+    // contrast and lets the ground/scenery + their textures read clearly
+    scene.add(new THREE.AmbientLight(pal.hemiSky, 0.55));
+    // key light rakes across surfaces so the bump/texture detail catches light
+    const sun = new THREE.DirectionalLight(pal.sun, pal.sunInt * 1.9);
+    sun.position.set(60, 90, 50);
     scene.add(sun);
     // cool fill from the opposite side so nothing reads as a black silhouette
-    const fill = new THREE.DirectionalLight(pal.hemiSky, 0.5);
+    const fill = new THREE.DirectionalLight(pal.hemiSky, 0.7);
     fill.position.set(-70, 45, -90);
     scene.add(fill);
 
@@ -557,7 +558,7 @@ export class Game {
     const rampKinds: RampKind[] = ["standard", "mega", "kicker", "wide"];
     let ri = 0;
     for (let d = 200; d < len - 60; d += 340) {
-      const l = lane();
+      const l = 0; // centre lane so a launch always lands back on the road
       const kind = rampKinds[ri++ % rampKinds.length];
       const spec = RAMP_SPECS[kind];
       this.addEntity("ramp", d, l, makeRamp(kind), 0, spec.power);
@@ -841,11 +842,13 @@ export class Game {
       const yawTarget = this.steerInput * 0.13 + slipYaw + (this.drifting ? this.driftDir * 0.5 : 0);
       this.carYaw += (yawTarget - this.carYaw) * Math.min(1, dt * 9);
     } else if (this.stuntAir) {
-      // mid-air: left/right = barrel roll, up/down = flips
+      // mid-air: left/right = barrel roll, up/down = flips. Only a little lateral
+      // drift so a jump doesn't fling you off the track.
       this.spin += this.steer * 1.25 * dt;
       const pitchIn = this.input.accelerate ? 1 : this.input.brake ? -1 : 0;
       this.flip += pitchIn * 1.25 * dt;
-      this.playerX += this.steer * dt * 0.4 * speedPercent;
+      this.playerX += this.steer * dt * 0.15 * speedPercent;
+      this.playerVX = 0;
       this.carYaw += (0 - this.carYaw) * Math.min(1, dt * 6);
     } else {
       // flying mech steers freely
@@ -1200,6 +1203,8 @@ export class Game {
           this.vAlt = RAMP_LAUNCH * e.power * clamp(speedPercent, 0.4, 1);
           this.stuntAir = !this.transformed;
           this.spin = 0;
+          this.playerVX = 0;               // launch straight — no sideways carry
+          this.playerX += (e.lateral - this.playerX) * 0.5; // snap toward ramp centre
           this.sound.play("jump");
           this.toast(e.power > 1.3 ? "MEGA JUMP!" : "JUMP!", "#c084fc");
         }

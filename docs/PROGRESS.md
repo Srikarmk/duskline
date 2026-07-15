@@ -165,6 +165,30 @@ FOV kick, camera bank, look-ahead swing and shake are now gentle, and the speed
 streaks no longer strobe (re-seeded ~5 Hz, far fewer, faint), with bloom
 reduced so bright edges don't halo.
 
+### 14. Real textures, curved ramps & a brighter world (this pass)
+The long-standing ask: **texture**. Everything was flat-shaded solid colour, so
+nothing read as a real surface. Added a procedural texture module and wired it
+through:
+
+- **Cars** wear brushed-metal panelling (a grayscale map that multiplies the
+  livery colour, plus a bump map for seams + rivets that catch the light).
+- **Road** is proper asphalt now (colour map + aggregate bump — grain and
+  hairline relief), **ground** has terrain bump, and **rocks / crystals** get
+  cracked-stone colour + bump. The CC0 nature props (trees, mushrooms) were
+  switched to a lit, lightly bump-textured material so they stop looking flat.
+- **Curved ramps.** The ramps were straight wedges; they're now genuinely
+  **curved** surfaces (built from a slope profile) — a smooth standard, a
+  concave mega kicker, a sharp late-kick, and a quarter-pipe — with glowing
+  rails that follow the curve.
+- **Ramp launches no longer throw you off track** — you launch straight (no
+  sideways carry), snap toward the ramp's centre, and land back on the road.
+- **Brighter, clearer world.** The scenes were so dark the textures (and the
+  cars) were hard to see and everything read as harsh neon-on-black. Raised the
+  key light, ambient and exposure so surfaces and their texture actually read,
+  which also softened the contrast.
+
+![Textured asphalt, brushed-metal car, brighter readable world](screenshots/textured.jpg)
+
 ---
 
 ## Where it stands now

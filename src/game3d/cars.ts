@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { CarId } from "../game/engine";
+import { metalDetail } from "./textures";
 
 // A car type is a distinct hull silhouette + a set of driving stats. The livery
 // color is supplied at build time (the player's pick, or an opponent's team
@@ -76,6 +77,16 @@ function buildKart(color: number, p: KartParams): THREE.Group {
   const bodyMat = paint(base.getHex(), { metal: 0.6, rough: 0.32 });
   const darkMat = paint(dark.getHex(), { metal: 0.7, rough: 0.4 });
   const trimMat = paint(accentHex, { emissive: accentHex, ei: 0.7, metal: 0.6, rough: 0.3 });
+  // brushed-metal panel texture (grayscale map multiplies the livery colour;
+  // bump gives panel seams + rivets that catch the light)
+  const { map: metalMap, bump: metalBump } = metalDetail();
+  for (const mat of [bodyMat, darkMat]) {
+    mat.map = metalMap;
+    mat.bumpMap = metalBump;
+    mat.bumpScale = 0.03;
+  }
+  trimMat.bumpMap = metalBump;
+  trimMat.bumpScale = 0.02;
   const glass = new THREE.MeshStandardMaterial({
     color: 0x0a1a2a, metalness: 0.9, roughness: 0.08,
     emissive: 0x112233, emissiveIntensity: 0.4, transparent: true, opacity: 0.85,

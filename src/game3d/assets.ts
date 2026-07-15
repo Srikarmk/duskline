@@ -1,5 +1,14 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { terrainBump } from "./textures";
+
+// shared organic bump so the CC0 nature props (flat-shaded, no atlas) get some
+// surface relief and read as textured rather than solid colour
+let propBump: THREE.Texture | null = null;
+function getPropBump() {
+  if (!propBump) { propBump = terrainBump(3); propBump.needsUpdate = true; }
+  return propBump;
+}
 
 export type ModelName =
   | "racer"
@@ -38,21 +47,24 @@ function makeLoader(colormapUrl: string): GLTFLoader {
   return new GLTFLoader(manager);
 }
 
-/** Convert unlit (KHR_materials_unlit) meshes to lit ones, preserving texture. */
+/** Convert prop meshes to a lit, lightly textured material (bump relief) so the
+ *  flat CC0 nature kit reads as textured, preserving each part's colour. */
 function relight(group: THREE.Group) {
+  const bump = getPropBump();
   group.traverse((obj) => {
     if (obj instanceof THREE.Mesh) {
       const src = obj.material as THREE.Material & {
         color?: THREE.Color;
         map?: THREE.Texture | null;
-        isMeshBasicMaterial?: boolean;
       };
-      if (src.isMeshBasicMaterial) {
-        obj.material = new THREE.MeshLambertMaterial({
-          color: src.color ?? new THREE.Color(0xffffff),
-          map: src.map ?? null,
-        });
-      }
+      obj.material = new THREE.MeshStandardMaterial({
+        color: src.color ?? new THREE.Color(0xffffff),
+        map: src.map ?? null,
+        bumpMap: bump,
+        bumpScale: 0.25,
+        metalness: 0.05,
+        roughness: 0.9,
+      });
       obj.castShadow = false;
       obj.receiveShadow = false;
     }

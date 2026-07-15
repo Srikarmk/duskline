@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { ROAD_HALF_WIDTH } from "./constants";
+import { terrainBump, stoneMaps } from "./textures";
 import type { RealmPalette } from "./realms";
 import type { RealmId } from "../game/engine";
 
@@ -137,7 +138,10 @@ export function makeGrassTexture(pal: RealmPalette): THREE.Texture {
 
 export function makeGround(groundTex: THREE.Texture): THREE.Mesh {
   const geo = new THREE.CircleGeometry(1400, 64);
-  const mat = new THREE.MeshLambertMaterial({ map: groundTex });
+  const mat = new THREE.MeshStandardMaterial({
+    map: groundTex, bumpMap: terrainBump(120), bumpScale: 0.6,
+    metalness: 0, roughness: 1,
+  });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.rotation.x = -Math.PI / 2;
   mesh.position.y = -0.05;
@@ -172,7 +176,11 @@ export function makeGrassField(pal: RealmPalette, pts: Placement[]): THREE.Insta
 
 export function makeRockField(pal: RealmPalette, pts: Placement[]): THREE.InstancedMesh {
   const geo = new THREE.DodecahedronGeometry(0.4, 0);
-  const mat = new THREE.MeshLambertMaterial({ color: pal.mountainDark });
+  const stone = stoneMaps(pal.mountainDark);
+  const mat = new THREE.MeshStandardMaterial({
+    color: pal.mountainDark, map: stone.map, bumpMap: stone.bump, bumpScale: 0.15,
+    metalness: 0.1, roughness: 0.95,
+  });
   const mesh = new THREE.InstancedMesh(geo, mat, pts.length);
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
@@ -504,59 +512,69 @@ export const RAMP_SPECS: Record<RampKind, {
   wide:     { w: 2.8, l: 2.5, h: 1.7, body: 0x3b1046, glow: 0xd946ef, chev: 0xf5d0fe, power: 1.05 },
 };
 
+// curved slope profiles (t: 0 at entry → 1 at lip). All start flat at 0 and
+// rise to 1, but with different curvature so the ramps read as genuinely curved.
+const RAMP_PROFILE: Record<RampKind, (t: number) => number> = {
+  standard: (t) => t * t * (3 - 2 * t),        // smooth S-curve
+  mega:     (t) => Math.pow(t, 1.5),           // concave, kicks up hard at the lip
+  kicker:   (t) => Math.pow(t, 2.4),           // flat then a sharp late kick
+  wide:     (t) => 1 - Math.cos((t * Math.PI) / 2), // quarter-pipe (flat start, steep end)
+};
+
 export function makeRamp(kind: RampKind = "standard"): THREE.Group {
   const group = new THREE.Group();
   const spec = RAMP_SPECS[kind];
   const { w, l, h } = spec;
+  const profile = RAMP_PROFILE[kind];
+  const N = 20;
+  const yAt = (t: number) => h * profile(Math.max(0, Math.min(1, t)));
+  const zAt = (t: number) => -l + 2 * l * t;
+  const slopeAt = (t: number) => Math.atan2(yAt(t + 0.02) - yAt(t - 0.02), 0.04 * 2 * l);
 
-  // solid wedge body (slope rises toward +z / the direction of travel)
-  const verts = new Float32Array([
-    -w, 0, -l, w, 0, -l, w, h, l, -w, 0, -l, w, h, l, -w, h, l, // slope
-    -w, 0, l, -w, h, l, w, h, l, -w, 0, l, w, h, l, w, 0, l,     // back wall
-    -w, 0, -l, -w, 0, l, w, 0, l, -w, 0, -l, w, 0, l, w, 0, -l,   // bottom
-    -w, 0, -l, -w, h, l, -w, 0, l,                                // left side
-    w, 0, -l, w, 0, l, w, h, l,                                   // right side
-  ]);
+  // --- curved solid body -------------------------------------------------
+  const pos: number[] = [];
+  const tri = (a: number[], b: number[], c: number[]) => pos.push(...a, ...b, ...c);
+  const quad = (a: number[], b: number[], c: number[], d: number[]) => { tri(a, b, c); tri(a, c, d); };
+  for (let i = 0; i < N; i++) {
+    const t0 = i / N, t1 = (i + 1) / N;
+    const y0 = yAt(t0), y1 = yAt(t1), z0 = zAt(t0), z1 = zAt(t1);
+    quad([-w, y0, z0], [w, y0, z0], [w, y1, z1], [-w, y1, z1]);        // top (drive) surface
+    quad([-w, 0, z0], [-w, y0, z0], [-w, y1, z1], [-w, 0, z1]);        // left wall
+    quad([w, 0, z0], [w, 0, z1], [w, y1, z1], [w, y0, z0]);            // right wall
+  }
+  quad([-w, 0, -l], [-w, 0, l], [w, 0, l], [w, 0, -l]);                // bottom
+  quad([-w, 0, l], [-w, h, l], [w, h, l], [w, 0, l]);                  // back wall
   const geo = new THREE.BufferGeometry();
-  geo.setAttribute("position", new THREE.BufferAttribute(verts, 3));
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
   geo.computeVertexNormals();
   const body = new THREE.Mesh(
     geo,
-    new THREE.MeshStandardMaterial({ color: spec.body, metalness: 0.4, roughness: 0.6 })
+    new THREE.MeshStandardMaterial({ color: spec.body, metalness: 0.45, roughness: 0.55, side: THREE.DoubleSide })
   );
   group.add(body);
 
-  const pitch = Math.atan2(h, 2 * l);
-  const slopeLen = Math.hypot(2 * l, h);
-  const glow = new THREE.MeshStandardMaterial({
-    color: 0xfde68a, emissive: spec.glow, emissiveIntensity: 1.3,
-  });
+  const glow = new THREE.MeshStandardMaterial({ color: 0xfde68a, emissive: spec.glow, emissiveIntensity: 1.3 });
+  const chevMat = new THREE.MeshStandardMaterial({ color: 0xfef3c7, emissive: spec.chev, emissiveIntensity: 1.6 });
 
-  // glowing launch strip down the middle of the slope
-  const strip = new THREE.Mesh(new THREE.BoxGeometry(w * 0.55, 0.14, slopeLen * 0.96), glow);
-  strip.position.set(0, h / 2 + 0.12, 0);
-  strip.rotation.x = -pitch;
-  group.add(strip);
+  // glowing rails + centre strip as tubes that follow the curve
+  const railPts = (x: number) => {
+    const p: THREE.Vector3[] = [];
+    for (let i = 0; i <= N; i++) { const t = i / N; p.push(new THREE.Vector3(x, yAt(t) + 0.12, zAt(t))); }
+    return new THREE.CatmullRomCurve3(p);
+  };
+  for (const sx of [-1, 1]) {
+    group.add(new THREE.Mesh(new THREE.TubeGeometry(railPts(sx * w), N * 2, 0.13, 6, false), glow));
+  }
+  group.add(new THREE.Mesh(new THREE.TubeGeometry(railPts(0), N * 2, 0.16, 6, false), glow));
 
-  // glowing chevrons pointing up the ramp
-  const chevMat = new THREE.MeshStandardMaterial({
-    color: 0xfef3c7, emissive: spec.chev, emissiveIntensity: 1.6,
-  });
+  // glowing chevrons lying on the curved surface, pointing up-ramp
   const chevN = kind === "kicker" ? 2 : 3;
   for (let i = 0; i < chevN; i++) {
-    const t = 0.28 + i * 0.22;
+    const t = 0.32 + i * 0.2;
     const chev = new THREE.Mesh(new THREE.ConeGeometry(w * 0.4, 0.5, 3), chevMat);
-    chev.position.set(0, h * t + 0.22, -l + 2 * l * t);
-    chev.rotation.x = -pitch; // lie on the slope, tip pointing up-ramp
+    chev.position.set(0, yAt(t) + 0.24, zAt(t));
+    chev.rotation.x = -slopeAt(t);
     group.add(chev);
-  }
-
-  // glowing side rails
-  for (const sx of [-1, 1]) {
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, slopeLen), glow);
-    rail.position.set(sx * w, h / 2 + 0.06, 0);
-    rail.rotation.x = -pitch;
-    group.add(rail);
   }
 
   return group;
@@ -565,12 +583,14 @@ export function makeRamp(kind: RampKind = "standard"): THREE.Group {
 export function makeCrystalCluster(rand: () => number, colors: number[]): THREE.Group {
   const group = new THREE.Group();
   const shards = 2 + Math.floor(rand() * 3);
+  const facet = stoneMaps(0xbfc8ff).bump;
   for (let i = 0; i < shards; i++) {
     const height = 1.2 + rand() * 3;
     const geo = new THREE.ConeGeometry(0.35 + rand() * 0.3, height, 5);
     const shade = colors[Math.floor(rand() * colors.length)];
     const mat = new THREE.MeshStandardMaterial({
       color: shade, emissive: shade, emissiveIntensity: 0.6, roughness: 0.25, metalness: 0.2,
+      bumpMap: facet, bumpScale: 0.05,
     });
     const shard = new THREE.Mesh(geo, mat);
     shard.position.set((rand() - 0.5) * 1.6, height / 2, (rand() - 0.5) * 1.6);
