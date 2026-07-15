@@ -8,6 +8,12 @@ const VERGE_WIDTH = 18; // grass bank from road edge out to flat ground
 // The CatmullRom curve can undershoot below its control points in dips; keep the
 // road surface above this floor so the flat ground plane never pokes through it.
 const GROUND_FLOOR = 0.35;
+// banking: the road tilts INTO corners (velodrome-style). Bank angle is the
+// smoothed signed curvature scaled by BANK_K, capped at MAX_BANK.
+const BANK_K = 15;
+const MAX_BANK = 0.44; // ~25°
+
+const clampN = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 export interface XZ {
   x: number;
@@ -19,9 +25,12 @@ export class Track {
   readonly length: number;
   readonly bounds: { minX: number; maxX: number; minZ: number; maxZ: number };
   private curvatures: number[];
+  private banks: number[] = [];
+  private banked: boolean;
   private samples: number;
 
-  constructor(controlPoints: [number, number, number][]) {
+  constructor(controlPoints: [number, number, number][], banked = true) {
+    this.banked = banked;
     const pts = controlPoints.map(([x, y, z]) => new THREE.Vector3(x, y, z));
     this.curve = new THREE.CatmullRomCurve3(pts, true, "catmullrom", 0.5);
     this.curve.arcLengthDivisions = 2000;
@@ -46,20 +55,55 @@ export class Track {
       minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
     }
     this.bounds = { minX, maxX, minZ, maxZ };
+
+    // precompute a smoothed bank per sample from the signed curvature, so the
+    // road leans into corners without jitter (ground realms only)
+    this.banks = new Array(this.samples).fill(0);
+    if (banked) {
+      const win = 7;
+      for (let i = 0; i < this.samples; i++) {
+        let sum = 0;
+        for (let j = -win; j <= win; j++) {
+          sum += this.curvatures[((i + j) % this.samples + this.samples) % this.samples];
+        }
+        const c = sum / (2 * win + 1);
+        this.banks[i] = clampN(c * BANK_K, -MAX_BANK, MAX_BANK);
+      }
+    }
+  }
+
+  /** Bank (roll) angle in radians at a distance — 0 on unbanked (void) tracks. */
+  bankAt(dist: number): number {
+    if (!this.banked) return 0;
+    const i = Math.floor((this.wrap(dist) / this.length) * this.samples) % this.samples;
+    return this.banks[i];
   }
 
   wrap(dist: number) {
     return ((dist % this.length) + this.length) % this.length;
   }
 
-  pointAt(dist: number, lateral = 0, out = new THREE.Vector3()) {
+  pointAt(dist: number, lateral = 0, out = new THREE.Vector3(), flat = false) {
     const t = this.wrap(dist) / this.length;
     const p = this.curve.getPointAt(t, out);
     if (p.y < GROUND_FLOOR) p.y = GROUND_FLOOR;
     if (lateral !== 0) {
       const tan = this.curve.getTangentAt(t);
-      p.x += -tan.z * lateral;
-      p.z += tan.x * lateral;
+      // road "right" vector, rotated around the tangent by the bank so the
+      // cross-section tilts (outer edge lifts). `flat` skips it (roadside scenery
+      // must stay on the ground, not ride up the banked plane).
+      let rx = -tan.z, ry = 0, rz = tan.x;
+      const bank = flat ? 0 : this.bankAt(dist);
+      if (bank !== 0) {
+        const c = Math.cos(bank), s = Math.sin(bank);
+        const ux = tan.y * rz - tan.z * ry;
+        const uy = tan.z * rx - tan.x * rz;
+        const uz = tan.x * ry - tan.y * rx;
+        rx = rx * c + ux * s; ry = ry * c + uy * s; rz = rz * c + uz * s;
+      }
+      p.x += rx * lateral;
+      p.y += ry * lateral;
+      p.z += rz * lateral;
     }
     return p;
   }
@@ -96,11 +140,19 @@ export class Track {
       const t = this.wrap(d) / this.length;
       const p = this.curve.getPointAt(t);
       const tan = this.curve.getTangentAt(t);
-      const nx = -tan.z;
-      const nz = tan.x;
-      const ry = Math.max(GROUND_FLOOR, p.y) + 0.1;
-      positions.push(p.x + nx * edge, ry, p.z + nz * edge);
-      positions.push(p.x - nx * edge, ry, p.z - nz * edge);
+      // banked road "right" vector (tilts the ribbon into corners)
+      let rx = -tan.z, ry = 0, rz = tan.x;
+      const bank = this.bankAt(d);
+      if (bank !== 0) {
+        const c = Math.cos(bank), s = Math.sin(bank);
+        const ux = tan.y * rz - tan.z * ry;
+        const uy = tan.z * rx - tan.x * rz;
+        const uz = tan.x * ry - tan.y * rx;
+        rx = rx * c + ux * s; ry = ry * c + uy * s; rz = rz * c + uz * s;
+      }
+      const cy = Math.max(GROUND_FLOOR, p.y) + 0.1;
+      positions.push(p.x + rx * edge, cy + ry * edge, p.z + rz * edge);
+      positions.push(p.x - rx * edge, cy - ry * edge, p.z - rz * edge);
       const v = d / TEX_TILE_METERS;
       uvs.push(0, v, 1, v);
       if (i < count) {

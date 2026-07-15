@@ -247,7 +247,7 @@ export class Game {
     } else {
       this.realm = REALMS[options.realm ?? "forest"];
     }
-    this.track = new Track(this.realm.controlPoints);
+    this.track = new Track(this.realm.controlPoints, this.realm.style !== "void");
     this.minimap = new Minimap(this.track);
     this.onFinish = options.onFinish;
     this.lap = 1;
@@ -1599,11 +1599,13 @@ export class Game {
       const tan = track.tangentAt(this.position);
       this.playerRoot.rotation.y = Math.atan2(tan.x, tan.z);
 
-      // pitch = flips + air tilt, yaw = steer/drift heading, roll = barrel roll + lean
+      // pitch = flips + air tilt, yaw = steer/drift heading, roll = barrel roll +
+      // lean + the road's bank (so the car sits flat on banked corners)
+      const bankRoll = this.alt < 0.4 ? track.bankAt(this.position) : 0;
       this.playerBody.rotation.x = this.flip * Math.PI * 2 + clamp(-this.vAlt * 0.03, -0.35, 0.35);
       this.playerBody.rotation.y = this.carYaw;
       this.playerBody.rotation.z =
-        this.spin * Math.PI * 2 - this.steer * 0.09 - (this.drifting ? this.driftDir * 0.1 : 0);
+        this.spin * Math.PI * 2 - this.steer * 0.09 - (this.drifting ? this.driftDir * 0.1 : 0) + bankRoll;
 
       // form swap + effects
       if (this.carModel) this.carModel.visible = !this.transformed;

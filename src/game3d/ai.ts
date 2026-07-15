@@ -254,7 +254,9 @@ export class Opponent {
     this.obj.position.set(p.x, p.y + this.alt + CAR_LIFT, p.z);
     if (!spinning) {
       const tan = track.tangentAt(this.dist);
+      this.obj.rotation.order = "YXZ";
       this.obj.rotation.y = Math.atan2(tan.x, tan.z);
+      this.obj.rotation.z = this.alt < 0.4 ? track.bankAt(this.dist) : 0; // lean on banked corners
     }
   }
 }

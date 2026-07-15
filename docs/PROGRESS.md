@@ -404,6 +404,22 @@ On top of the layouts:
 
 ---
 
+## Banked corners + a real F1 grid
+
+- **Banked corners** — the road now leans INTO turns (velodrome-style, up to
+  ~25°), computed from the smoothed track curvature. The road ribbon, the player
+  and every rival roll with the bank (and stop rolling mid-jump so flips stay
+  clean). The camera holds level so you *see* the lean. Gated off on the void
+  tubes (they use dramatic elevation instead).
+- **F1 standing grid** — the field is 8 cars total (7 rivals + you) in a proper
+  two-column staggered grid, with you at the back so the whole field lines up
+  ahead. Rivals are snapped onto the grid before the lights instead of popping in
+  when the race starts.
+- **Finish placement fix** — the HUD position no longer drifts to "1st" as you
+  coast past the line; it freezes to the placement taken at the line.
+
+---
+
 ## Where it stands now
 
 - **8 realms**: Enchanted Forest, Ember Wastes, Crystal Peaks, Void Circuit,
