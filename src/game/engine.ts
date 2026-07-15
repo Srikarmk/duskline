@@ -17,10 +17,11 @@ import {
   drawToasts, drawCenterText, type Toast,
 } from "./render";
 
-export type GameMode = "classic" | "timetrial" | "nitro" | "transform" | "grandprix";
+export type GameMode = "classic" | "timetrial" | "nitro" | "transform" | "grandprix" | "spacewars";
 export type RealmId =
   | "forest" | "ember" | "peaks" | "void"
-  | "sands" | "castle" | "circuit" | "metro";
+  | "sands" | "castle" | "circuit" | "metro"
+  | "nebula";
 export type CarId = "comet" | "bolt" | "titan" | "wisp" | "apex" | "goliath" | "corsair" | "baron";
 
 export interface RaceStanding {

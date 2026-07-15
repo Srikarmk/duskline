@@ -346,6 +346,24 @@ same wizard, Grand Prix and time-trial flow as the rest.
 
 ---
 
+## Space Wars — deep-space combat
+
+A new combat mode that turns the anti-gravity tubes into a running firefight.
+Space Wars is always fought in space: it swaps your realm pick for one of **two
+battle arenas** — Void Circuit or the otherwise-hidden **Nebula Run** — and
+rewrites the rules of engagement:
+
+- you **start armed** with a missile,
+- **item boxes are packed** three-across every ~85 m, weighted heavily toward
+  missiles and mines,
+- **rivals are trigger-happy**, seeding the tube with far more mines,
+- press **E** to fire; big points for every hit.
+
+It reuses the existing missile / mine / shield combat, so it slotted in as a
+mode config flag rather than a new system.
+
+---
+
 ## Where it stands now
 
 - **8 realms**: Enchanted Forest, Ember Wastes, Crystal Peaks, Void Circuit,
@@ -354,7 +372,8 @@ same wizard, Grand Prix and time-trial flow as the rest.
 - **8 karts**: Comet, Bolt, Titan, Wisp, Apex (F1), Goliath (monster truck),
   Corsair (ship), Baron (limo) — each a distinct model + stat line, picked in
   a live 3D garage
-- **5 modes**: Classic, Time Trial, Nitro Sprint, Transformer Rush, Grand Prix
+- **6 modes**: Classic, Time Trial, Nitro Sprint, Transformer Rush, Grand Prix,
+  Space Wars (deep-space combat)
 - **9-racer grid** with live position + a top-down minimap
 - **Grip-limited handling** (weight transfer, drift + boost) with a camera
   that banks and kicks FOV; barrel-roll/flip **stunts** with combos

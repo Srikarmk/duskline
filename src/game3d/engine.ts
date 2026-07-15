@@ -86,6 +86,8 @@ interface ModeConfig {
   monsters: boolean;
   startNitro: number;
   label: string;
+  /** combat mode: start armed, weapon-dense item boxes, trigger-happy rivals */
+  combat?: boolean;
 }
 
 const MODE_CONFIG: Record<GameMode, ModeConfig> = {
@@ -94,6 +96,7 @@ const MODE_CONFIG: Record<GameMode, ModeConfig> = {
   nitro:     { laps: 1, opponents: true,  orbs: false, monsters: false, startNitro: NITRO_MAX_CHARGES, label: "NITRO SPRINT" },
   transform: { laps: 3, opponents: true,  orbs: true,  monsters: true,  startNitro: 1, label: "TRANSFORMER" },
   grandprix: { laps: 2, opponents: true,  orbs: false, monsters: false, startNitro: 1, label: "GRAND PRIX" },
+  spacewars: { laps: 3, opponents: true,  orbs: false, monsters: false, startNitro: 1, label: "SPACE WARS", combat: true },
 };
 
 const COLLIDE_WIDTH: Record<EntityType, number> = {
@@ -232,12 +235,19 @@ export class Game {
     this.cfg = { ...MODE_CONFIG[options.mode] };
     // per-match lap override (time trial keeps its own clean-lap rule)
     if (options.laps && options.mode !== "grandprix") this.cfg.laps = options.laps;
-    this.realm = REALMS[options.realm ?? "forest"];
+    // Space Wars is always fought in deep space — swap the realm pick for one of
+    // the two battle tubes (the 2nd, "nebula", is otherwise hidden)
+    if (options.mode === "spacewars") {
+      this.realm = Math.random() < 0.5 ? REALMS.void : REALMS.nebula;
+    } else {
+      this.realm = REALMS[options.realm ?? "forest"];
+    }
     this.track = new Track(this.realm.controlPoints);
     this.minimap = new Minimap(this.track);
     this.onFinish = options.onFinish;
     this.lap = 1;
     this.nitroCharges = this.cfg.startNitro;
+    if (this.cfg.combat) this.heldItem = "missile"; // start armed
     this.carId = options.car ?? "comet";
     this.carStat = CAR_SPECS[this.carId].stat;
 
@@ -679,8 +689,10 @@ export class Game {
       }
     }
 
-    // item boxes — power-ups, a row across the lanes so you can always grab one
-    for (let d = 110; d < len - 40; d += 210) {
+    // item boxes — power-ups, a row across the lanes so you can always grab one.
+    // Space Wars packs them far tighter so the tube is a running firefight.
+    const boxGap = this.cfg.combat ? 85 : 210;
+    for (let d = 110; d < len - 40; d += boxGap) {
       for (const l of LANE_CENTERS) {
         this.addEntity("itembox", d, l, makeItemBox(), 0.2);
       }
@@ -1148,8 +1160,11 @@ export class Game {
       }
     }
 
-    // an opponent occasionally drops a mine on the road behind it
-    if (this.opponents.length && this.mines.length < 14 && Math.random() < OPPONENT_MINE_CHANCE * dt) {
+    // an opponent occasionally drops a mine on the road behind it (Space Wars
+    // rivals are far more trigger-happy, and the tube holds more live mines)
+    const mineChance = OPPONENT_MINE_CHANCE * (this.cfg.combat ? 5 : 1);
+    const mineCap = this.cfg.combat ? 28 : 14;
+    if (this.opponents.length && this.mines.length < mineCap && Math.random() < mineChance * dt) {
       const live = this.opponents.filter((o) => !o.finished && o.stunnedT <= 0);
       if (live.length) {
         const o = live[Math.floor(Math.random() * live.length)];
@@ -1396,9 +1411,11 @@ export class Game {
   }
 
   private randomItem(): ItemKind {
-    const pool: ItemKind[] = this.opponents.length
-      ? ["boost", "boost", "shield", "missile", "missile", "mine"]
-      : ["boost", "boost", "shield"];
+    const pool: ItemKind[] = this.cfg.combat
+      ? ["missile", "missile", "missile", "mine", "mine", "shield", "boost"]
+      : this.opponents.length
+        ? ["boost", "boost", "shield", "missile", "missile", "mine"]
+        : ["boost", "boost", "shield"];
     return pool[Math.floor(Math.random() * pool.length)];
   }
 

@@ -55,6 +55,8 @@ export interface RealmSpec {
   id: RealmId;
   name: string;
   blurb: string;
+  /** hidden from the realm picker — only reached via a mode (e.g. Space Wars) */
+  hidden?: boolean;
   /** "ground" = grass verges + terrain; "void" = floating glass-tube track */
   style?: "ground" | "void";
   /** [x, elevation, z] control points of the closed loop (meters) */
@@ -333,6 +335,34 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       { kind: "streetlight", weight: 4 }, { kind: "billboard", weight: 2 },
       { kind: "waterTower", weight: 1 },
     ],
+  },
+
+  // hidden battle arena — only reached through Space Wars (the 2nd space map)
+  nebula: {
+    id: "nebula",
+    name: "Nebula Run",
+    blurb: "A neon war-tube through a green nebula — deep space, no rules.",
+    hidden: true,
+    style: "void",
+    controlPoints: loopTrack(
+      18, 210,
+      [{ k: 2, amp: 40, phase: 1.4 }, { k: 3, amp: 26, phase: 0.4 }],
+      35, [{ k: 2, amp: 24, phase: 0.6 }, { k: 3, amp: 16, phase: 2.0 }, { k: 1, amp: 12, phase: 1.0 }]
+    ),
+    palette: {
+      sky: ["#02060a", "#05131a", "#0a2630", "#124036"],
+      stars: true,
+      moons: [{ x: 760, y: 100, r: 24, tint: "#6ee7b7" }],
+      fog: 0x06140f, fogNear: 120, fogFar: 720,
+      hemiSky: 0x3fb0a0, hemiGround: 0x0a2018, hemiInt: 0.95,
+      sun: 0x7ff0d0, sunInt: 1.2,
+      groundBase: "#06140f", groundSpeck: "#0f3028", groundDark: "#03100b",
+      road: "#0d2420", roadDark: "#0a1c18", rumbleA: "#0891b2", rumbleB: "#34d399",
+      laneLine: "#6ee7b7", edgeLine: "#a7f3d0",
+      crystalColors: [0x34d399, 0x22d3ee, 0xa7f3d0],
+      mountain: 0x0a2630, mountainDark: 0x05131a, clutter: 0x0a2630, gem: 0x34d399,
+    },
+    scenery: [{ kind: "crystal", weight: 1 }],
   },
 };
 

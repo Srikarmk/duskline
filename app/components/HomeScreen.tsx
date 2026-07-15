@@ -30,10 +30,11 @@ const MODES: { id: GameMode; name: string; blurb: string }[] = [
   { id: "nitro", name: "NITRO SPRINT", blurb: "1 lap, full nitro, all-out sprint vs the pack." },
   { id: "transform", name: "TRANSFORMER RUSH", blurb: "Morph into a sword-mech — slash monsters and fly." },
   { id: "grandprix", name: "GRAND PRIX", blurb: "All 3 realms back-to-back for the championship." },
+  { id: "spacewars", name: "SPACE WARS", blurb: "Deep-space combat — start armed, weapons everywhere, blast the pack." },
 ];
 
 const MODE_LABEL: Record<GameMode, string> = {
-  classic: "CIRCUIT", timetrial: "TRIAL", nitro: "SPRINT", transform: "RUSH", grandprix: "GP",
+  classic: "CIRCUIT", timetrial: "TRIAL", nitro: "SPRINT", transform: "RUSH", grandprix: "GP", spacewars: "WARS",
 };
 
 const STEPS: { n: number; label: string; hint: string }[] = [
@@ -83,8 +84,9 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
     });
   }, []);
 
-  const realmIds = Object.keys(REALMS) as RealmId[];
+  const realmIds = (Object.keys(REALMS) as RealmId[]).filter((id) => !REALMS[id].hidden);
   const isGP = mode === "grandprix";
+  const isSpace = mode === "spacewars";
   const shownScores = board === "global" ? globalScores ?? [] : localScores;
   const canStart = name.trim().length > 0 && realmPicked && carPicked;
 
@@ -279,6 +281,14 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
                 </div>
               )}
 
+              {isSpace && (
+                <div className="gp-note">
+                  Space Wars is fought in deep space — your realm pick is swapped
+                  for one of two battle tubes. You start armed; item boxes and
+                  enemy mines are everywhere. Press <b>E</b> to fire.
+                </div>
+              )}
+
               {!isGP && mode !== "nitro" && (
                 <>
                   <div className="section-label">LAPS</div>
@@ -298,7 +308,7 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
 
               <button className="start" disabled={!canStart} onClick={launch}>
                 {canStart
-                  ? (isGP ? "▸ START GRAND PRIX" : `▸ START RACE — ${mode === "nitro" ? 1 : laps} LAP${(mode === "nitro" ? 1 : laps) > 1 ? "S" : ""}`)
+                  ? (isGP ? "▸ START GRAND PRIX" : isSpace ? "▸ START SPACE WARS" : `▸ START RACE — ${mode === "nitro" ? 1 : laps} LAP${(mode === "nitro" ? 1 : laps) > 1 ? "S" : ""}`)
                   : "ENTER A RACER NAME"}
               </button>
 
