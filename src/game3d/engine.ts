@@ -661,8 +661,11 @@ export class Game {
   private placeBranches() {
     const pal = this.realm.palette;
     const len = this.track.length;
+    // the branch uses the SAME textured, double-sided asphalt as the main road,
+    // so it reads as a real road (a flat single-sided material rendered as a
+    // "ghost" surface — grass showing through with only the lines drawn)
     const roadMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(pal.road), roughness: 0.92, metalness: 0.0, flatShading: true,
+      map: makeRoadTexture(pal), roughness: 0.95, metalness: 0.0, side: THREE.DoubleSide,
     });
     // samplers give the branch the main road's flat centre + tangent at any dist
     const sampleP = (dist: number, out?: THREE.Vector3) => this.track.pointAt(this.track.wrap(dist), 0, out, true);

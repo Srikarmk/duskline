@@ -211,9 +211,9 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     name: "Enchanted Forest",
     blurb: "Moonlit woods, glowing mushrooms, gentle rolling hills.",
     controlPoints: loopTrack(
-      30, 205,
-      [{ k: 2, amp: 46, phase: 0.3 }, { k: 3, amp: 26, phase: 1.0 }, { k: 5, amp: 15, phase: 2.0 }],
-      1.6, [{ k: 2, amp: 4, phase: 0 }, { k: 4, amp: 2.6, phase: 1.5 }, { k: 6, amp: 1.6, phase: 0.5 }]
+      34, 214,
+      [{ k: 2, amp: 52, phase: 0.3 }, { k: 3, amp: 18, phase: 1.0 }, { k: 5, amp: 9, phase: 2.0 }],
+      2, [{ k: 2, amp: 6, phase: 0 }, { k: 4, amp: 3.5, phase: 1.5 }, { k: 6, amp: 2, phase: 0.5 }]
     ),
     palette: {
       sky: ["#0d0821", "#1a1033", "#4a2d6e", "#6d4a9e"],
@@ -245,9 +245,9 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     name: "Ember Wastes",
     blurb: "Volcanic flats — long straights, sweeping fast bends, ash sky.",
     controlPoints: loopTrack(
-      28, 255,
-      [{ k: 1, amp: 74, phase: 0.5 }, { k: 2, amp: 30, phase: 0 }, { k: 4, amp: 20, phase: 1.6 }],
-      1, [{ k: 2, amp: 3, phase: 0.5 }, { k: 3, amp: 2, phase: 2.0 }]
+      32, 258,
+      [{ k: 1, amp: 100, phase: 0.5 }, { k: 2, amp: 24, phase: 0 }, { k: 3, amp: 13, phase: 1.6 }],
+      1, [{ k: 1, amp: 4, phase: 0.5 }, { k: 2, amp: 3, phase: 2.0 }]
     ),
     palette: {
       sky: ["#1a0805", "#3b1206", "#7c2d12", "#b45309"],
@@ -274,9 +274,9 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     name: "Crystal Peaks",
     blurb: "High icy mountains — steep climbs, tight twists, thin air.",
     controlPoints: loopTrack(
-      28, 195,
-      [{ k: 3, amp: 40, phase: 0.2 }, { k: 5, amp: 18, phase: 0.8 }, { k: 6, amp: 9, phase: 1.4 }],
-      2.2, [{ k: 3, amp: 5.5, phase: 0 }, { k: 2, amp: 3.5, phase: 1.0 }, { k: 5, amp: 2.2, phase: 0.5 }]
+      36, 204,
+      [{ k: 3, amp: 34, phase: 0.2 }, { k: 4, amp: 12, phase: 0.8 }, { k: 5, amp: 5, phase: 1.4 }],
+      3, [{ k: 2, amp: 14, phase: 0 }, { k: 3, amp: 9, phase: 1.0 }, { k: 5, amp: 5, phase: 0.5 }]
     ),
     palette: {
       sky: ["#081428", "#0e2540", "#2a5a8a", "#7ec8e8"],
@@ -304,9 +304,9 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     blurb: "Anti-gravity glass tube through deep space — huge climbs and drops.",
     style: "void",
     controlPoints: loopTrack(
-      22, 230,
-      [{ k: 2, amp: 54, phase: 0.6 }, { k: 3, amp: 30, phase: 2.0 }],
-      52, [{ k: 2, amp: 34, phase: 0 }, { k: 3, amp: 24, phase: 1.2 }, { k: 1, amp: 20, phase: 0.5 }, { k: 4, amp: 13, phase: 1.8 }]
+      26, 228,
+      [{ k: 1, amp: 50, phase: 0.6 }, { k: 2, amp: 34, phase: 2.0 }, { k: 3, amp: 20, phase: 0.4 }],
+      34, [{ k: 1, amp: 30, phase: 0 }, { k: 2, amp: 20, phase: 1.2 }, { k: 3, amp: 13, phase: 0.5 }, { k: 4, amp: 8, phase: 1.8 }]
     ),
     palette: {
       sky: ["#02010a", "#070218", "#0d0a2e", "#1a1040"],
@@ -329,8 +329,8 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     name: "Sunspire Sands",
     blurb: "Blazing desert circuit — vast dunes, ancient monuments, long sun-baked straights.",
     controlPoints: loopTrack(
-      28, 260,
-      [{ k: 1, amp: 78, phase: 0.2 }, { k: 2, amp: 32, phase: 1.1 }, { k: 3, amp: 17, phase: 2.3 }],
+      32, 262,
+      [{ k: 1, amp: 92, phase: 0.2 }, { k: 3, amp: 22, phase: 1.1 }, { k: 4, amp: 10, phase: 2.3 }],
       1.2, [{ k: 1, amp: 5, phase: 0 }, { k: 3, amp: 3, phase: 1.0 }]
     ),
     palette: {
@@ -359,9 +359,9 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     name: "Hogwarts",
     blurb: "A twisting lap around the wizarding castle — turrets, the Express, floating candles and a Whomping Willow.",
     controlPoints: loopTrack(
-      30, 190,
-      [{ k: 3, amp: 42, phase: 0.4 }, { k: 4, amp: 22, phase: 1.2 }, { k: 6, amp: 10, phase: 0.6 }],
-      2.2, [{ k: 2, amp: 6, phase: 0.5 }, { k: 4, amp: 3.5, phase: 1.4 }]
+      34, 204,
+      [{ k: 3, amp: 30, phase: 0.4 }, { k: 4, amp: 14, phase: 1.2 }, { k: 5, amp: 6, phase: 0.6 }],
+      3, [{ k: 2, amp: 7, phase: 0.5 }, { k: 4, amp: 4, phase: 1.4 }]
     ),
     palette: {
       sky: ["#0b1020", "#161e33", "#2c3350", "#4a4a6e"],
@@ -390,8 +390,8 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     name: "Apex Speedway",
     blurb: "A real grand-prix stadium — grandstands, floodlights, flat-out sweepers and a stadium roar.",
     controlPoints: loopTrack(
-      34, 250,
-      [{ k: 2, amp: 56, phase: 0.5 }, { k: 3, amp: 27, phase: 2.4 }, { k: 5, amp: 14, phase: 1.0 }, { k: 7, amp: 7, phase: 0.2 }],
+      40, 246,
+      [{ k: 1, amp: 82, phase: 0.5 }, { k: 2, amp: 30, phase: 2.4 }, { k: 3, amp: 22, phase: 1.0 }],
       1, [{ k: 2, amp: 2.5, phase: 0 }]
     ),
     palette: {
@@ -419,9 +419,9 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     name: "Neon Metro",
     blurb: "A midnight street circuit through the city — glass towers, neon billboards, wet asphalt.",
     controlPoints: loopTrack(
-      28, 215,
-      [{ k: 2, amp: 50, phase: 1.2 }, { k: 4, amp: 24, phase: 0.3 }, { k: 1, amp: 30, phase: 2.0 }, { k: 3, amp: 12, phase: 0.9 }],
-      1, [{ k: 2, amp: 3, phase: 0.5 }]
+      32, 216,
+      [{ k: 2, amp: 46, phase: 1.2 }, { k: 4, amp: 16, phase: 0.3 }, { k: 1, amp: 26, phase: 2.0 }, { k: 5, amp: 6, phase: 0.9 }],
+      1, [{ k: 2, amp: 3.5, phase: 0.5 }]
     ),
     palette: {
       sky: ["#05060f", "#0b1024", "#161a3a", "#2a2450"],
