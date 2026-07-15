@@ -189,6 +189,13 @@ through:
 
 ![Textured asphalt, brushed-metal car, brighter readable world](screenshots/textured.jpg)
 
+**Polish round:** ramps sometimes did nothing because they'd been centred in
+one lane while the hit window was narrower than a lane — now they **span the
+full road** (and the window with them), so you launch from any line. The
+**glow was dialled back** (bloom + emissive intensities down, edge-post markers
+and neon kerbs dimmed) so it's less distracting, and the forest gets
+**per-instance colour variation** so it's not a wall of identical trees.
+
 ---
 
 ## Where it stands now

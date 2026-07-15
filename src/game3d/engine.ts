@@ -30,7 +30,7 @@ import {
   makeCrystalCluster, makeMonster,
   makeMech, makeSlash, makeFlame, makeUnderGlow,
   makeItemBox, makeMissile, makeMine, makeShieldBubble,
-  makeParticleField, makeStartGantry,
+  makeParticleField, makeStartGantry, varyTint,
   type MechRig, type Placement, type ParticleField,
 } from "./objects";
 import { makeKart, CAR_SPECS, CAR_IDS, type CarStat } from "./cars";
@@ -90,7 +90,7 @@ const MODE_CONFIG: Record<GameMode, ModeConfig> = {
 };
 
 const COLLIDE_WIDTH: Record<EntityType, number> = {
-  gem: 0.36, airGem: 0.42, nitro: 0.36, orb: 0.44, ramp: 0.62, rock: 0.34, monster: 0.38, itembox: 0.56,
+  gem: 0.36, airGem: 0.42, nitro: 0.36, orb: 0.44, ramp: 1.0, rock: 0.34, monster: 0.38, itembox: 0.56,
 };
 
 const BUCKET_METERS = 5;
@@ -263,7 +263,7 @@ export class Game {
     this.composer.setPixelRatio(this.renderer.getPixelRatio());
     this.composer.setSize(w, h);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.3, 0.5, 0.9);
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.22, 0.6, 0.95);
     this.composer.addPass(this.bloomPass);
     // final pass applies tone mapping + sRGB so the composed image is graded
     this.composer.addPass(new OutputPass());
@@ -445,16 +445,21 @@ export class Game {
   }
 
   private sceneryObject(kind: SceneryKind, library: ModelLibrary, rand: () => number): THREE.Object3D {
+    if (kind === "crystal") return makeCrystalCluster(rand, this.realm.palette.crystalColors);
+    let obj: THREE.Object3D;
     switch (kind) {
-      case "crystal": return makeCrystalCluster(rand, this.realm.palette.crystalColors);
-      case "treeA": return instantiate(library, "treeA", 3 + rand() * 2.2);
-      case "treeB": return instantiate(library, "treeB", 3 + rand() * 2.2);
-      case "treeDark": return instantiate(library, "treeDark", 2.5 + rand() * 2);
-      case "mushroom": return instantiate(library, "mushroom", 1.2 + rand() * 1.4);
-      case "mushroomTall": return instantiate(library, "mushroomTall", 1.6 + rand() * 1.6);
-      case "rockA": return instantiate(library, "rockA", 2 + rand() * 2.5);
-      case "rockB": return instantiate(library, "rockB", 2 + rand() * 2.5);
+      case "treeA": obj = instantiate(library, "treeA", 3 + rand() * 2.2); break;
+      case "treeB": obj = instantiate(library, "treeB", 3 + rand() * 2.2); break;
+      case "treeDark": obj = instantiate(library, "treeDark", 2.5 + rand() * 2); break;
+      case "mushroom": obj = instantiate(library, "mushroom", 1.2 + rand() * 1.4); break;
+      case "mushroomTall": obj = instantiate(library, "mushroomTall", 1.6 + rand() * 1.6); break;
+      case "rockA": obj = instantiate(library, "rockA", 2 + rand() * 2.5); break;
+      case "rockB": obj = instantiate(library, "rockB", 2 + rand() * 2.5); break;
     }
+    // per-instance colour variation so the forest isn't a wall of identical props
+    obj.rotation.y = rand() * Math.PI * 2;
+    varyTint(obj, rand);
+    return obj;
   }
 
   private addEntity(type: EntityType, dist: number, lateral: number, obj: THREE.Object3D, extraY = 0, power = 1) {

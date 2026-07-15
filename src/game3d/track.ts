@@ -235,8 +235,8 @@ export class Track {
     const stemMat = new THREE.MeshStandardMaterial({ color: 0x2a2438, metalness: 0.5, roughness: 0.5 });
     const stems = new THREE.InstancedMesh(stemGeo, stemMat, count * 2);
 
-    const capGeo = new THREE.SphereGeometry(0.32, 10, 8);
-    capGeo.translate(0, 1.5, 0);
+    const capGeo = new THREE.SphereGeometry(0.26, 10, 8);
+    capGeo.translate(0, 1.45, 0);
     const capMat = new THREE.MeshBasicMaterial({ vertexColors: true });
     const caps = new THREE.InstancedMesh(capGeo, capMat, count * 2);
 
@@ -244,8 +244,9 @@ export class Track {
     const q = new THREE.Quaternion();
     const s = new THREE.Vector3(1, 1, 1);
     const p = new THREE.Vector3();
-    const cA = new THREE.Color(colorA);
-    const cB = new THREE.Color(colorB);
+    // dimmed so the markers read as gentle dots rather than blinding glow
+    const cA = new THREE.Color(colorA).multiplyScalar(0.6);
+    const cB = new THREE.Color(colorB).multiplyScalar(0.6);
     let idx = 0;
     for (let i = 0; i < count; i++) {
       const d = (i / count) * this.length;
@@ -306,6 +307,10 @@ export function makeRoadTexture(pal: RealmPalette): THREE.Texture {
     ctx.fillRect(0, y, edgeW, R / 8);
     ctx.fillRect(asphaltR, y, edgeW, R / 8);
   }
+  // knock the neon back so the kerbs read as an accent, not a light source
+  ctx.fillStyle = "rgba(8,6,16,0.34)";
+  ctx.fillRect(0, 0, edgeW, R);
+  ctx.fillRect(asphaltR, 0, edgeW, R);
 
   // asphalt base + soft patches for uneven surfacing
   ctx.fillStyle = pal.road;

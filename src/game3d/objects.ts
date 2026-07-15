@@ -396,7 +396,7 @@ export function makeGem(color: number, air: boolean): THREE.Mesh {
   const mat = new THREE.MeshStandardMaterial({
     color: air ? 0xfbbf24 : color,
     emissive: air ? 0xb45309 : color,
-    emissiveIntensity: 1.3,
+    emissiveIntensity: 0.8,
     metalness: 0.3,
     roughness: 0.2,
   });
@@ -407,12 +407,12 @@ export function makeNitroCan(): THREE.Group {
   const group = new THREE.Group();
   const body = new THREE.Mesh(
     new THREE.CylinderGeometry(0.32, 0.32, 1, 12),
-    new THREE.MeshStandardMaterial({ color: 0x0ea5e9, emissive: 0x0e7490, emissiveIntensity: 0.8 })
+    new THREE.MeshStandardMaterial({ color: 0x0ea5e9, emissive: 0x0e7490, emissiveIntensity: 0.5 })
   );
   body.position.y = 0.5;
   const cap = new THREE.Mesh(
     new THREE.CylinderGeometry(0.14, 0.2, 0.25, 12),
-    new THREE.MeshStandardMaterial({ color: 0x67e8f9, emissive: 0x67e8f9, emissiveIntensity: 1 })
+    new THREE.MeshStandardMaterial({ color: 0x67e8f9, emissive: 0x67e8f9, emissiveIntensity: 0.6 })
   );
   cap.position.y = 1.1;
   group.add(body, cap);
@@ -424,13 +424,13 @@ export function makeOrb(): THREE.Group {
   const core = new THREE.Mesh(
     new THREE.SphereGeometry(0.55, 20, 16),
     new THREE.MeshStandardMaterial({
-      color: 0xd946ef, emissive: 0xd946ef, emissiveIntensity: 1.6,
+      color: 0xd946ef, emissive: 0xd946ef, emissiveIntensity: 1.0,
       transparent: true, opacity: 0.9,
     })
   );
   const ring = new THREE.Mesh(
     new THREE.TorusGeometry(0.85, 0.06, 8, 32),
-    new THREE.MeshStandardMaterial({ color: 0x22d3ee, emissive: 0x22d3ee, emissiveIntensity: 1.2 })
+    new THREE.MeshStandardMaterial({ color: 0x22d3ee, emissive: 0x22d3ee, emissiveIntensity: 0.8 })
   );
   ring.rotation.x = Math.PI / 2.4;
   inner.add(core, ring);
@@ -445,7 +445,7 @@ export function makeItemBox(): THREE.Group {
   const shell = new THREE.Mesh(
     new THREE.BoxGeometry(1.1, 1.1, 1.1),
     new THREE.MeshStandardMaterial({
-      color: 0xf0abfc, emissive: 0xd946ef, emissiveIntensity: 1.1,
+      color: 0xf0abfc, emissive: 0xd946ef, emissiveIntensity: 0.7,
       transparent: true, opacity: 0.5, metalness: 0.3, roughness: 0.2,
     })
   );
@@ -455,7 +455,7 @@ export function makeItemBox(): THREE.Group {
   );
   const core = new THREE.Mesh(
     new THREE.OctahedronGeometry(0.32),
-    new THREE.MeshStandardMaterial({ color: 0xfde68a, emissive: 0xfbbf24, emissiveIntensity: 1.6 })
+    new THREE.MeshStandardMaterial({ color: 0xfde68a, emissive: 0xfbbf24, emissiveIntensity: 1.0 })
   );
   g.add(shell, edges, core);
   g.position.y = 1.1;
@@ -506,10 +506,11 @@ export type RampKind = "standard" | "mega" | "kicker" | "wide";
 export const RAMP_SPECS: Record<RampKind, {
   w: number; l: number; h: number; body: number; glow: number; chev: number; power: number;
 }> = {
-  standard: { w: 2.5, l: 3.0, h: 2.0, body: 0x5a2c0e, glow: 0xf59e0b, chev: 0xfbbf24, power: 1.0 },
-  mega:     { w: 2.7, l: 4.2, h: 3.2, body: 0x0e3a4a, glow: 0x22d3ee, chev: 0x67e8f9, power: 1.55 },
-  kicker:   { w: 2.3, l: 1.9, h: 1.15, body: 0x143a20, glow: 0x4ade80, chev: 0xa7f3d0, power: 0.7 },
-  wide:     { w: 2.8, l: 2.5, h: 1.7, body: 0x3b1046, glow: 0xd946ef, chev: 0xf5d0fe, power: 1.05 },
+  // widths span the road so you can't drive past one in a side lane
+  standard: { w: 4.6, l: 3.0, h: 2.0, body: 0x5a2c0e, glow: 0xf59e0b, chev: 0xfbbf24, power: 1.0 },
+  mega:     { w: 4.6, l: 4.2, h: 3.0, body: 0x0e3a4a, glow: 0x22d3ee, chev: 0x67e8f9, power: 1.5 },
+  kicker:   { w: 4.6, l: 1.9, h: 1.15, body: 0x143a20, glow: 0x4ade80, chev: 0xa7f3d0, power: 0.7 },
+  wide:     { w: 4.6, l: 2.5, h: 1.7, body: 0x3b1046, glow: 0xd946ef, chev: 0xf5d0fe, power: 1.05 },
 };
 
 // curved slope profiles (t: 0 at entry → 1 at lip). All start flat at 0 and
@@ -553,8 +554,8 @@ export function makeRamp(kind: RampKind = "standard"): THREE.Group {
   );
   group.add(body);
 
-  const glow = new THREE.MeshStandardMaterial({ color: 0xfde68a, emissive: spec.glow, emissiveIntensity: 1.3 });
-  const chevMat = new THREE.MeshStandardMaterial({ color: 0xfef3c7, emissive: spec.chev, emissiveIntensity: 1.6 });
+  const glow = new THREE.MeshStandardMaterial({ color: 0xfde68a, emissive: spec.glow, emissiveIntensity: 0.85 });
+  const chevMat = new THREE.MeshStandardMaterial({ color: 0xfef3c7, emissive: spec.chev, emissiveIntensity: 1.0 });
 
   // glowing rails + centre strip as tubes that follow the curve
   const railPts = (x: number) => {
@@ -589,7 +590,7 @@ export function makeCrystalCluster(rand: () => number, colors: number[]): THREE.
     const geo = new THREE.ConeGeometry(0.35 + rand() * 0.3, height, 5);
     const shade = colors[Math.floor(rand() * colors.length)];
     const mat = new THREE.MeshStandardMaterial({
-      color: shade, emissive: shade, emissiveIntensity: 0.6, roughness: 0.25, metalness: 0.2,
+      color: shade, emissive: shade, emissiveIntensity: 0.35, roughness: 0.3, metalness: 0.2,
       bumpMap: facet, bumpScale: 0.05,
     });
     const shard = new THREE.Mesh(geo, mat);
@@ -774,7 +775,7 @@ export function makeUnderGlow(): THREE.Mesh {
   c.height = 128;
   const ctx = c.getContext("2d")!;
   const grad = ctx.createRadialGradient(64, 64, 6, 64, 64, 62);
-  grad.addColorStop(0, "rgba(103,232,249,0.8)");
+  grad.addColorStop(0, "rgba(103,232,249,0.45)");
   grad.addColorStop(1, "rgba(103,232,249,0)");
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 128, 128);
@@ -796,6 +797,23 @@ export function makeShieldBubble(): THREE.Mesh {
   m.position.y = 1.2;
   m.visible = false;
   return m;
+}
+
+/** Nudge a cloned prop's colours by a small random hue/lightness so a forest of
+ *  identical models reads as varied. Clones materials so instances differ. */
+export function varyTint(obj: THREE.Object3D, rand: () => number) {
+  const dh = (rand() - 0.5) * 0.07;
+  const dl = (rand() - 0.5) * 0.24;
+  const ds = (rand() - 0.5) * 0.12;
+  obj.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    const mat = mesh.material as THREE.MeshStandardMaterial | undefined;
+    if (mat && mat.color && !Array.isArray(mesh.material)) {
+      const c = mat.clone();
+      c.color = mat.color.clone().offsetHSL(dh, ds, dl);
+      mesh.material = c;
+    }
+  });
 }
 
 /** Uniformly tint every mesh in a cloned model, for opponent team colors. */
