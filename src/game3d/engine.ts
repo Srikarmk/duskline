@@ -14,6 +14,9 @@ import {
   SCORE_GEM, SCORE_AIR_GEM, SCORE_STUNT, SCORE_LANE_BONUS, SCORE_SMASH,
   SCORE_MONSTER, SCORE_FINISH, LANE_BONUS_SECONDS,
   OPPONENTS, CAMERA_PRESETS, SWING_DURATION,
+  ITEM_BOOST_DURATION, ITEM_BOOST_FACTOR, ITEM_SHIELD_DURATION,
+  MISSILE_SPEED, MISSILE_MAX_DIST, STUN_DURATION, ITEM_LATERAL_TOL,
+  SCORE_HIT, OPPONENT_MINE_CHANCE,
 } from "./constants";
 import { Track, makeRoadTexture, makeCheckerTexture } from "./track";
 import { loadModels, instantiate, type ModelLibrary } from "./assets";
@@ -22,6 +25,7 @@ import {
   makeGrassField, makeRockField, makeMountainRing,
   makeGem, makeNitroCan, makeOrb, makeRamp, makeCrystalCluster, makeMonster,
   makeMech, makeSlash, makeFlame, makeUnderGlow, tintModel,
+  makeItemBox, makeMissile, makeMine, makeShieldBubble,
   type MechRig, type Placement,
 } from "./objects";
 import { REALMS, pickScenery, type RealmSpec, type SceneryKind } from "./realms";
@@ -35,7 +39,12 @@ import type { GameMode, GameResult, GameOptions, RaceStanding } from "../game/en
 
 type Phase = "loading" | "countdown" | "racing" | "finished";
 
-type EntityType = "gem" | "airGem" | "nitro" | "orb" | "ramp" | "rock" | "monster";
+type EntityType = "gem" | "airGem" | "nitro" | "orb" | "ramp" | "rock" | "monster" | "itembox";
+
+type ItemKind = "boost" | "shield" | "missile" | "mine";
+const ITEM_LABEL: Record<ItemKind, string> = {
+  boost: "BOOST", shield: "SHIELD", missile: "MISSILE", mine: "MINE",
+};
 
 interface Entity {
   type: EntityType;
@@ -46,6 +55,14 @@ interface Entity {
   baseY: number;
   phase: number;
   home: number; // spawn lateral, for monster patrol
+}
+
+interface Projectile {
+  obj: THREE.Object3D;
+  dist: number;
+  lateral: number;
+  travelled: number;
+  fromPlayer: boolean;
 }
 
 interface ModeConfig {
@@ -66,7 +83,7 @@ const MODE_CONFIG: Record<GameMode, ModeConfig> = {
 };
 
 const COLLIDE_WIDTH: Record<EntityType, number> = {
-  gem: 0.24, airGem: 0.3, nitro: 0.24, orb: 0.32, ramp: 0.42, rock: 0.3, monster: 0.36,
+  gem: 0.24, airGem: 0.3, nitro: 0.24, orb: 0.32, ramp: 0.42, rock: 0.3, monster: 0.36, itembox: 0.4,
 };
 
 const BUCKET_METERS = 5;
@@ -161,6 +178,14 @@ export class Game {
   private transformed = false;
   private transformT = 0;
 
+  // power-ups
+  private heldItem: ItemKind | null = null;
+  private boostT = 0;
+  private shieldT = 0;
+  private missiles: Projectile[] = [];
+  private mines: Projectile[] = [];
+  private shieldBubble: THREE.Mesh | null = null;
+
   private lastLane = -1;
   private laneT = 0;
 
@@ -210,7 +235,7 @@ export class Game {
     this.composer.setSize(WIDTH, HEIGHT);
     this.composer.setPixelRatio(this.renderer.getPixelRatio());
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(WIDTH, HEIGHT), 0.9, 0.5, 0.68);
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(WIDTH, HEIGHT), 0.4, 0.4, 0.85);
     this.composer.addPass(this.bloomPass);
     this.bloomPass.enabled = loadSetting("bloom", true);
     this.cameraIndex = loadSetting("camera", 0) % CAMERA_PRESETS.length;
@@ -294,6 +319,8 @@ export class Game {
     this.playerBody.add(this.slash);
     this.underGlow = makeUnderGlow();
     this.underGlow.position.y = 0.08;
+    this.shieldBubble = makeShieldBubble();
+    this.playerBody.add(this.shieldBubble);
     for (const x of [-0.8, 0.8]) {
       const flame = makeFlame();
       flame.position.set(x, 0.6, -2.2);
@@ -374,7 +401,7 @@ export class Game {
       if (bucket) bucket.push(entity);
       else this.buckets.set(key, [entity]);
     }
-    if (type === "gem" || type === "airGem" || type === "orb" || type === "nitro") {
+    if (type === "gem" || type === "airGem" || type === "orb" || type === "nitro" || type === "itembox") {
       this.spinners.push(entity);
     }
   }
@@ -459,6 +486,13 @@ export class Game {
     if (this.cfg.monsters) {
       for (let d = 240; d < len - 60; d += 150) {
         this.addEntity("monster", d, lane(), makeMonster(rand));
+      }
+    }
+
+    // item boxes — power-ups, a row across the lanes so you can always grab one
+    for (let d = 110; d < len - 40; d += 210) {
+      for (const l of LANE_CENTERS) {
+        this.addEntity("itembox", d, l, makeItemBox(), 0.2);
       }
     }
   }
@@ -557,6 +591,7 @@ export class Game {
     if (this.transformed) max *= TRANSFORM_SPEED_FACTOR;
     if (this.nitroT > 0) max *= NITRO_SPEED_FACTOR;
     if (this.driftBoostT > 0) max *= DRIFT_BOOST_FACTOR;
+    if (this.boostT > 0) max *= ITEM_BOOST_FACTOR;
     return max;
   }
 
@@ -701,7 +736,7 @@ export class Game {
     }
 
     // throttle
-    const boosting = this.nitroT > 0 || this.driftBoostT > 0;
+    const boosting = this.nitroT > 0 || this.driftBoostT > 0 || this.boostT > 0;
     if (this.transformed) {
       this.speed += ACCEL * 1.5 * dt;
     } else if (this.drifting) {
@@ -731,6 +766,12 @@ export class Game {
       this.sound.play("nitro");
       this.toast("NITRO!", "#fb923c");
     }
+
+    // power-ups
+    this.boostT = Math.max(0, this.boostT - dt);
+    this.shieldT = Math.max(0, this.shieldT - dt);
+    if (this.input.usePressed && this.heldItem) this.useItem();
+    this.updateProjectiles(dt);
 
     // transform timer
     if (this.transformed) {
@@ -812,6 +853,7 @@ export class Game {
       } else {
         this.sound.play("lap");
         this.toast(`LAP ${this.lap}/${this.cfg.laps}`, "#c084fc");
+        this.clearProjectiles();
         for (const e of this.entities) {
           if (e.collectedLap !== 0 && e.collectedLap !== this.lap) {
             e.collectedLap = 0;
@@ -846,6 +888,20 @@ export class Game {
           this.toast("BUMP!", "#fca5a5");
           this.bumpCd = 0.5;
         }
+      }
+    }
+
+    // an opponent occasionally drops a mine on the road behind it
+    if (this.opponents.length && this.mines.length < 14 && Math.random() < OPPONENT_MINE_CHANCE * dt) {
+      const live = this.opponents.filter((o) => !o.finished && o.stunnedT <= 0);
+      if (live.length) {
+        const o = live[Math.floor(Math.random() * live.length)];
+        const md = this.track.wrap(o.dist - 3);
+        const obj = makeMine();
+        const p = this.track.pointAt(md, o.lane * ROAD_HALF_WIDTH * 0.9);
+        obj.position.set(p.x, p.y + 0.3, p.z);
+        this.scene.add(obj);
+        this.mines.push({ obj, dist: md, lateral: o.lane, travelled: 5, fromPlayer: false });
       }
     }
   }
@@ -947,6 +1003,9 @@ export class Game {
           this.bumpCd = 0.5;
         }
         e.dist = this.track.wrap(e.dist + 6);
+      } else if (this.shieldT > 0) {
+        this.toast("BLOCKED", "#67e8f9");
+        e.dist = this.track.wrap(e.dist + 6);
       } else {
         this.speed = Math.min(this.speed, MAX_SPEED * 0.12);
         if (this.crashFlash <= 0) {
@@ -1031,6 +1090,9 @@ export class Game {
             this.swingT = SWING_DURATION;
             this.sound.play("smash");
             this.toast(`SMASH +${SCORE_SMASH}`, "#f0abfc");
+          } else if (this.shieldT > 0) {
+            this.collect(e); // plow through under shield
+            this.toast("BLOCKED", "#67e8f9");
           } else {
             this.speed = Math.min(this.speed, MAX_SPEED * 0.15);
             if (this.crashFlash <= 0) {
@@ -1041,12 +1103,155 @@ export class Game {
           }
         }
         break;
+      case "itembox":
+        if (this.alt < 1.2 && !this.heldItem) {
+          this.collect(e);
+          this.heldItem = this.randomItem();
+          this.sound.play("nitroCharge");
+          this.toast(`ITEM: ${ITEM_LABEL[this.heldItem]}  [E]`, "#f0abfc");
+        }
+        break;
     }
   }
 
   private collect(e: Entity) {
     e.collectedLap = this.lap;
     e.obj.visible = false;
+  }
+
+  private randomItem(): ItemKind {
+    const pool: ItemKind[] = this.opponents.length
+      ? ["boost", "boost", "shield", "missile", "missile", "mine"]
+      : ["boost", "boost", "shield"];
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  private useItem() {
+    const item = this.heldItem;
+    this.heldItem = null;
+    const half = ROAD_HALF_WIDTH * 0.9;
+    switch (item) {
+      case "boost":
+        this.boostT = ITEM_BOOST_DURATION;
+        this.speed = Math.max(this.speed, MAX_SPEED * 1.05);
+        this.sound.play("nitro");
+        this.toast("BOOST!", "#fb923c");
+        break;
+      case "shield":
+        this.shieldT = ITEM_SHIELD_DURATION;
+        this.sound.play("nitroCharge");
+        this.toast("SHIELD UP", "#67e8f9");
+        break;
+      case "missile": {
+        const obj = makeMissile();
+        this.scene.add(obj);
+        this.missiles.push({ obj, dist: this.track.wrap(this.position + 4), lateral: this.playerX, travelled: 0, fromPlayer: true });
+        this.sound.play("nitro");
+        this.toast("MISSILE FIRED!", "#f87171");
+        break;
+      }
+      case "mine": {
+        const obj = makeMine();
+        const d = this.track.wrap(this.position - 4);
+        const p = this.track.pointAt(d, this.playerX * half);
+        obj.position.set(p.x, p.y + 0.3, p.z);
+        this.scene.add(obj);
+        this.mines.push({ obj, dist: d, lateral: this.playerX, travelled: 0, fromPlayer: true });
+        this.sound.play("nitroCharge");
+        this.toast("MINE DROPPED", "#f0abfc");
+        break;
+      }
+    }
+  }
+
+  private updateProjectiles(dt: number) {
+    const len = this.track.length;
+    const half = ROAD_HALF_WIDTH * 0.9;
+    const signedGap = (a: number, b: number) => {
+      let g = a - b;
+      if (g > len / 2) g -= len;
+      if (g < -len / 2) g += len;
+      return g;
+    };
+
+    // missiles travel forward, homing onto the nearest opponent ahead
+    for (let i = this.missiles.length - 1; i >= 0; i--) {
+      const m = this.missiles[i];
+      m.dist = this.track.wrap(m.dist + MISSILE_SPEED * dt);
+      m.travelled += MISSILE_SPEED * dt;
+      let target: Opponent | null = null;
+      let best = Infinity;
+      for (const o of this.opponents) {
+        if (o.stunnedT > 0 || o.finished) continue;
+        const g = signedGap(o.dist, m.dist);
+        if (g > -3 && g < 45 && g < best) { best = g; target = o; }
+      }
+      if (target) m.lateral += (target.lane - m.lateral) * Math.min(1, dt * 3);
+      const p = this.track.pointAt(m.dist, m.lateral * half);
+      m.obj.position.set(p.x, p.y + 0.9, p.z);
+      const tan = this.track.tangentAt(m.dist);
+      m.obj.rotation.y = Math.atan2(tan.x, tan.z);
+      let hit = false;
+      for (const o of this.opponents) {
+        if (o.stunnedT > 0 || o.finished) continue;
+        if (Math.abs(signedGap(o.dist, m.dist)) < 3 && Math.abs(o.lane - m.lateral) < ITEM_LATERAL_TOL) {
+          o.stun(STUN_DURATION);
+          this.score += SCORE_HIT;
+          this.sound.play("crash");
+          this.toast(`DIRECT HIT +${SCORE_HIT}`, "#fbbf24");
+          hit = true;
+          break;
+        }
+      }
+      if (hit || m.travelled > MISSILE_MAX_DIST) {
+        this.scene.remove(m.obj);
+        this.missiles.splice(i, 1);
+      }
+    }
+
+    // mines: static hazards; whoever drives over one spins out
+    for (let i = this.mines.length - 1; i >= 0; i--) {
+      const mine = this.mines[i];
+      mine.travelled += dt; // used as an arm/age timer
+      mine.obj.rotation.y += dt * 2;
+      let done = false;
+      for (const o of this.opponents) {
+        if (o.stunnedT > 0 || o.finished) continue;
+        if (Math.abs(signedGap(o.dist, mine.dist)) < 2.5 && Math.abs(o.lane - mine.lateral) < ITEM_LATERAL_TOL) {
+          o.stun(STUN_DURATION);
+          if (mine.fromPlayer) this.score += SCORE_HIT;
+          done = true;
+          break;
+        }
+      }
+      if (!done) {
+        const canHitPlayer = !mine.fromPlayer || mine.travelled > 1.2;
+        if (canHitPlayer && this.alt < 1.2 &&
+            Math.abs(signedGap(this.position, mine.dist)) < 2.5 &&
+            Math.abs(this.playerX - mine.lateral) < ITEM_LATERAL_TOL) {
+          if (this.shieldT > 0) {
+            this.toast("BLOCKED", "#67e8f9");
+          } else {
+            this.speed = Math.min(this.speed, MAX_SPEED * 0.15);
+            this.crashFlash = 0.6;
+            this.sound.play("crash");
+            this.toast("MINE!", "#f87171");
+          }
+          done = true;
+        }
+      }
+      if (done) {
+        this.scene.remove(mine.obj);
+        this.mines.splice(i, 1);
+      }
+    }
+  }
+
+  private clearProjectiles() {
+    for (const m of this.missiles) this.scene.remove(m.obj);
+    for (const m of this.mines) this.scene.remove(m.obj);
+    this.missiles = [];
+    this.mines = [];
   }
 
   // --- render ----------------------------------------------------------------
@@ -1092,7 +1297,7 @@ export class Game {
           this.slash.rotation.z = -t * 2.2;
         }
       }
-      const boosting = this.nitroT > 0 || this.driftBoostT > 0 || (this.transformed && this.alt > 0.15);
+      const boosting = this.nitroT > 0 || this.driftBoostT > 0 || this.boostT > 0 || (this.transformed && this.alt > 0.15);
       for (const flame of this.flames) {
         flame.visible = boosting;
         const flick = 1 + Math.sin(this.time * 40 + flame.position.x) * 0.3;
@@ -1103,6 +1308,14 @@ export class Game {
         this.underGlow.visible = !this.transformed;
         this.underGlow.scale.setScalar(0.9 + Math.sin(this.time * 9) * 0.15);
         this.underGlow.position.y = 0.08 - this.alt;
+      }
+      if (this.shieldBubble) {
+        this.shieldBubble.visible = this.shieldT > 0;
+        if (this.shieldT > 0) {
+          (this.shieldBubble.material as THREE.MeshBasicMaterial).opacity =
+            0.14 + Math.sin(this.time * 6) * 0.06;
+          this.shieldBubble.rotation.y = this.time;
+        }
       }
 
       // pickup + monster animation
@@ -1160,6 +1373,8 @@ export class Game {
       totalRacers: this.opponents.length ? this.opponents.length + 1 : undefined,
       cameraName: CAMERA_PRESETS[this.cameraIndex].name,
       soundMuted: this.sound.isMuted,
+      heldItem: this.heldItem ? ITEM_LABEL[this.heldItem] : null,
+      shieldActive: this.shieldT > 0,
     });
 
     // minimap bottom-center

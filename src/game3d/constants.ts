@@ -70,6 +70,17 @@ export const OPPONENTS: { name: string; color: number; skill: number }[] = [
 // sword swing (transformer melee)
 export const SWING_DURATION = 0.35;
 
+// power-ups
+export const ITEM_BOOST_DURATION = 1.7;
+export const ITEM_BOOST_FACTOR = 1.4;
+export const ITEM_SHIELD_DURATION = 6;
+export const MISSILE_SPEED = 100; // m/s along the track
+export const MISSILE_MAX_DIST = 240; // how far before it fizzles
+export const STUN_DURATION = 1.7; // seconds an opponent is spun out
+export const ITEM_LATERAL_TOL = 0.65; // lateral hit tolerance for missile/mine
+export const SCORE_HIT = 150; // points for hitting an opponent
+export const OPPONENT_MINE_CHANCE = 0.06; // per second, an opponent drops a mine
+
 // camera presets: distance behind, height, look-ahead distance, look height
 export interface CameraPreset {
   name: string;

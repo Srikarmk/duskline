@@ -58,7 +58,7 @@ export default function PauseMenu({ onResume, onRestart, onQuit, onApply }: Prop
               </select>
             </label>
             <p className="controls-help">
-              arrows/WASD · nitro SPACE · fly SHIFT · camera C · sound M · pause ESC
+              arrows/WASD · nitro SPACE · item E · fly SHIFT · camera C · sound M · pause ESC
             </p>
             <button className="start" onClick={() => setView("menu")}>BACK</button>
           </>

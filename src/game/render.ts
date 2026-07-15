@@ -532,6 +532,8 @@ export interface HudState {
   totalRacers?: number;
   cameraName?: string;
   soundMuted?: boolean;
+  heldItem?: string | null;
+  shieldActive?: boolean;
 }
 
 function panel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
@@ -612,6 +614,28 @@ export function drawHud(ctx: CanvasRenderingContext2D, hud: HudState) {
     ctx.font = "bold 13px monospace";
     ctx.textAlign = "center";
     ctx.fillText("TRANSFORMED — SHIFT TO FLY", WIDTH / 2, 29);
+  }
+
+  // held-item slot (top center, below the transform banner)
+  const iw = 168;
+  panel(ctx, WIDTH / 2 - iw / 2, 52, iw, 30);
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "center";
+  if (hud.heldItem) {
+    ctx.fillStyle = "#f0abfc";
+    ctx.font = "bold 14px monospace";
+    ctx.fillText(`[E]  ${hud.heldItem}`, WIDTH / 2, 68);
+  } else {
+    ctx.fillStyle = "#55506e";
+    ctx.font = "12px monospace";
+    ctx.fillText("ITEM SLOT", WIDTH / 2, 68);
+  }
+
+  // shield = cyan border
+  if (hud.shieldActive) {
+    ctx.strokeStyle = "rgba(103, 232, 249, 0.65)";
+    ctx.lineWidth = 6;
+    ctx.strokeRect(4, 4, WIDTH - 8, HEIGHT - 8);
   }
 
   if (hud.crashFlash > 0) {

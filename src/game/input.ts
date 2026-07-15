@@ -60,4 +60,7 @@ export class Input {
   get muteToggle() {
     return this.consumePress("m");
   }
+  get usePressed() {
+    return this.consumePress("e");
+  }
 }

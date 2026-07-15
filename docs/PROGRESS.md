@@ -8,6 +8,7 @@ stunts, a championship mode, sound, and a global leaderboard.
 
 ![Enchanted Forest, with bloom](screenshots/forest.jpg)
 ![Void Circuit — anti-gravity glass tube](screenshots/void.jpg)
+![Power-ups — item boxes on track, missile held in the slot](screenshots/powerups.jpg)
 
 > Screenshots live in `docs/screenshots/`. They're captured straight from the
 > game canvas (512×384 JPEG). Add more any time — the renderer keeps its
@@ -76,6 +77,25 @@ silhouette. A rebuilt **glowing jump ramp** that sits flush on hills. A
 **pause menu** (Esc/P) with **settings** — music/SFX volume, glow toggle,
 default camera — all persisted.
 
+### 11. Toned-down glow + power-ups & combat (this pass)
+The bloom from milestone 10 was **too strong** — halos everywhere. Dialed it
+back (strength 0.9 → 0.4, threshold 0.68 → 0.85) so gems and crystals glint
+instead of flare. Then the first roadmap item shipped: **power-ups**. Item
+boxes line the track; drive through one to grab a random item into your slot,
+fire it with **E**:
+
+- **BOOST** — a short burst above top speed.
+- **SHIELD** — a cyan bubble that absorbs the next rock, monster, missile, or
+  mine for a few seconds.
+- **MISSILE** — a homing projectile that locks the nearest opponent ahead,
+  stuns them, and scores a hit.
+- **MINE** — drop a hazard behind you; whoever hits it spins out.
+
+Opponents fight back — they scatter mines of their own. Getting stunned makes
+a racer spin and bleed speed, so a well-timed missile can flip a position.
+Shields block everything and flash **BLOCKED**. Projectiles clear on each new
+lap so nothing lingers across the line.
+
 ---
 
 ## Where it stands now
@@ -85,7 +105,9 @@ default camera — all persisted.
 - **9-racer grid** with live position + a top-down minimap
 - **Drift + boost**, barrel-roll/flip **stunts** with combos
 - **Transformer mech** with an energy sword + monster combat
-- **Bloom** lighting, textured car, procedural sound, pause + settings
+- **Power-ups**: boost / shield / homing missile / mines, item boxes, and
+  opponents that fight back — press **E** to fire
+- **Bloom** lighting (toned down), textured car, procedural sound, pause + settings
 - **Global leaderboard** (activates fully once a KV store is connected)
 
 **Stack:** Next.js 15 · React 19 · TypeScript · Three.js · Web Audio ·
@@ -97,8 +119,8 @@ Vercel. Assets: Kenney CC0 kits. ~60 fps (measured ~1.4 ms/frame with bloom).
 
 The look and UX are in good shape; the next arc is depth of play.
 
-- **Power-ups & combat** — item boxes on the track: speed boost, shield,
-  homing spell, oil-slick/mines. Offense + defense, Mario-Kart chaos.
+- ~~**Power-ups & combat**~~ — ✅ shipped in milestone 11: item boxes, boost,
+  shield, homing missile, mines, and opponents that fight back.
 - **Karts & progression** — unlockable karts with distinct speed / accel /
   handling stats, gems as currency, a garage/select screen, unlock
   milestones.

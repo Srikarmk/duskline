@@ -10,6 +10,7 @@ export class Opponent {
   targetLane: number;
   speed = 0;
   finished = false;
+  stunnedT = 0;
   private laneTimer: number;
 
   constructor(
@@ -30,10 +31,24 @@ export class Opponent {
     return (this.lap - 1) * trackLength + this.dist;
   }
 
+  stun(seconds: number) {
+    this.stunnedT = Math.max(this.stunnedT, seconds);
+  }
+
   update(dt: number, track: Track, baseSpeed: number, totalLaps: number) {
     if (this.finished) {
       this.speed *= 1 - Math.min(1, dt);
       this.place(track);
+      return;
+    }
+
+    if (this.stunnedT > 0) {
+      // spun out: drop speed, wobble, don't advance much
+      this.stunnedT -= dt;
+      this.speed *= 1 - Math.min(1, dt * 3);
+      this.dist += this.speed * dt;
+      this.obj.rotation.y += dt * 12; // visible spin
+      this.place(track, true);
       return;
     }
 
@@ -58,10 +73,12 @@ export class Opponent {
     this.place(track);
   }
 
-  private place(track: Track) {
+  private place(track: Track, spinning = false) {
     const p = track.pointAt(this.dist, this.lane * ROAD_HALF_WIDTH * 0.9);
     this.obj.position.set(p.x, p.y, p.z);
-    const tan = track.tangentAt(this.dist);
-    this.obj.rotation.y = Math.atan2(tan.x, tan.z);
+    if (!spinning) {
+      const tan = track.tangentAt(this.dist);
+      this.obj.rotation.y = Math.atan2(tan.x, tan.z);
+    }
   }
 }

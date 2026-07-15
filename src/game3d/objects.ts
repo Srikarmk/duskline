@@ -219,6 +219,64 @@ export function makeOrb(): THREE.Group {
   return wrapper;
 }
 
+export function makeItemBox(): THREE.Group {
+  const g = new THREE.Group();
+  const shell = new THREE.Mesh(
+    new THREE.BoxGeometry(1.1, 1.1, 1.1),
+    new THREE.MeshStandardMaterial({
+      color: 0xf0abfc, emissive: 0xd946ef, emissiveIntensity: 1.1,
+      transparent: true, opacity: 0.5, metalness: 0.3, roughness: 0.2,
+    })
+  );
+  const edges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(1.15, 1.15, 1.15)),
+    new THREE.LineBasicMaterial({ color: 0xfef3c7 })
+  );
+  const core = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.32),
+    new THREE.MeshStandardMaterial({ color: 0xfde68a, emissive: 0xfbbf24, emissiveIntensity: 1.6 })
+  );
+  g.add(shell, edges, core);
+  g.position.y = 1.1;
+  const wrapper = new THREE.Group();
+  wrapper.add(g);
+  return wrapper;
+}
+
+export function makeMissile(): THREE.Mesh {
+  const geo = new THREE.ConeGeometry(0.3, 1.2, 8);
+  geo.rotateX(Math.PI / 2); // point along +z (travel direction)
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xfca5a5, emissive: 0xef4444, emissiveIntensity: 1.8,
+  });
+  const m = new THREE.Mesh(geo, mat);
+  m.position.y = 0.9;
+  return m;
+}
+
+export function makeMine(): THREE.Group {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.5, 0),
+    new THREE.MeshStandardMaterial({ color: 0x1e1b2e, metalness: 0.6, roughness: 0.4 })
+  );
+  const spikeMat = new THREE.MeshStandardMaterial({
+    color: 0xf87171, emissive: 0xdc2626, emissiveIntensity: 1.4,
+  });
+  for (const dir of [
+    [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 0, -1],
+  ]) {
+    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.5, 5), spikeMat);
+    spike.position.set(dir[0] * 0.55, dir[1] * 0.55 + 0.2, dir[2] * 0.55);
+    if (dir[0]) spike.rotation.z = -Math.sign(dir[0]) * Math.PI / 2;
+    if (dir[2]) spike.rotation.x = Math.sign(dir[2]) * Math.PI / 2;
+    g.add(spike);
+  }
+  body.position.y = 0.2;
+  g.add(body);
+  return g;
+}
+
 export function makeRamp(): THREE.Group {
   const group = new THREE.Group();
   const w = 2.3, l = 3.0, h = 2.0;
@@ -477,6 +535,18 @@ export function makeUnderGlow(): THREE.Mesh {
   const mesh = new THREE.Mesh(geo, mat);
   mesh.rotation.x = -Math.PI / 2;
   return mesh;
+}
+
+export function makeShieldBubble(): THREE.Mesh {
+  const geo = new THREE.SphereGeometry(2.7, 20, 16);
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0x67e8f9, transparent: true, opacity: 0.16,
+    side: THREE.DoubleSide, depthWrite: false,
+  });
+  const m = new THREE.Mesh(geo, mat);
+  m.position.y = 1.2;
+  m.visible = false;
+  return m;
 }
 
 /** Uniformly tint every mesh in a cloned model, for opponent team colors. */

@@ -131,8 +131,8 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
       </button>
 
       <p className="controls-help">
-        drive: ARROWS / WASD · nitro: SPACE · fly (mech): SHIFT · camera: C ·
-        sound: M · spin mid-air for stunts
+        drive: ARROWS / WASD · nitro: SPACE · use item: E · fly (mech): SHIFT ·
+        camera: C · sound: M · pause: ESC · spin mid-air for stunts
       </p>
 
       <div className="leaderboard">
