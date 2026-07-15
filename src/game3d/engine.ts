@@ -24,10 +24,12 @@ import {
   makeSkyDome, makeGround, makeGroundTexture, makeGrassTexture,
   makeGrassField, makeRockField, makeMountainRing,
   makeGem, makeNitroCan, makeOrb, makeRamp, makeCrystalCluster, makeMonster,
-  makeMech, makeSlash, makeFlame, makeUnderGlow, tintModel,
+  makeMech, makeSlash, makeFlame, makeUnderGlow,
   makeItemBox, makeMissile, makeMine, makeShieldBubble,
-  type MechRig, type Placement,
+  makeParticleField, makeStartGantry,
+  type MechRig, type Placement, type ParticleField,
 } from "./objects";
+import { makeKart, CAR_SPECS, CAR_IDS, type CarStat } from "./cars";
 import { REALMS, pickScenery, type RealmSpec, type SceneryKind } from "./realms";
 import { Opponent } from "./ai";
 import { Minimap } from "./minimap";
@@ -35,7 +37,7 @@ import { Sound } from "./sound";
 import { loadSetting, loadSettings, type Settings } from "../ui/settings";
 import { Input } from "../game/input";
 import { drawHud, drawToasts, drawCenterText, type Toast } from "../game/render";
-import type { GameMode, GameResult, GameOptions, RaceStanding } from "../game/engine";
+import type { GameMode, GameResult, GameOptions, RaceStanding, CarId } from "../game/engine";
 
 type Phase = "loading" | "countdown" | "racing" | "finished";
 
@@ -109,8 +111,15 @@ export class Game {
   private composer!: EffectComposer;
   private bloomPass!: UnrealBloomPass;
   private hudCtx: CanvasRenderingContext2D;
+  private hudCanvas: HTMLCanvasElement;
   private scene = new THREE.Scene();
   private camera: THREE.PerspectiveCamera;
+  private viewW = WIDTH;
+  private viewH = HEIGHT;
+  private resizeObs: ResizeObserver | null = null;
+  private carId: CarId;
+  private carStat: CarStat;
+  private particles: ParticleField | null = null;
   private input = new Input();
   private sound = new Sound();
   private slashCooldown = 0;
@@ -208,17 +217,24 @@ export class Game {
     this.onFinish = options.onFinish;
     this.lap = 1;
     this.nitroCharges = this.cfg.startNitro;
+    this.carId = options.car ?? "comet";
+    this.carStat = CAR_SPECS[this.carId].stat;
+
+    // fill the container at its true aspect ratio (full-width, no letterbox)
+    const w = Math.max(1, container.clientWidth || window.innerWidth);
+    const h = Math.max(1, container.clientHeight || window.innerHeight);
+    this.viewW = w;
+    this.viewH = h;
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-    this.renderer.setSize(WIDTH, HEIGHT, false);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setSize(w, h, false);
     this.renderer.domElement.className = "game-layer";
     this.renderer.setClearColor(this.realm.palette.fog);
 
     const hudCanvas = document.createElement("canvas");
-    hudCanvas.width = WIDTH;
-    hudCanvas.height = HEIGHT;
     hudCanvas.className = "game-layer game-hud";
+    this.hudCanvas = hudCanvas;
     const hudCtx = hudCanvas.getContext("2d");
     if (!hudCtx) throw new Error("2d canvas context unavailable");
     this.hudCtx = hudCtx;
@@ -227,24 +243,48 @@ export class Game {
     container.appendChild(hudCanvas);
 
     const pal = this.realm.palette;
-    this.camera = new THREE.PerspectiveCamera(CAMERA_PRESETS[0].fov, WIDTH / HEIGHT, 0.1, 1600);
+    this.camera = new THREE.PerspectiveCamera(CAMERA_PRESETS[0].fov, w / h, 0.1, 1600);
     this.scene.fog = new THREE.Fog(pal.fog, pal.fogNear, pal.fogFar);
 
     // bloom post-processing so emissive gems / rails / crystals / nitro glow
     this.composer = new EffectComposer(this.renderer);
-    this.composer.setSize(WIDTH, HEIGHT);
     this.composer.setPixelRatio(this.renderer.getPixelRatio());
+    this.composer.setSize(w, h);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(WIDTH, HEIGHT), 0.4, 0.4, 0.85);
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.4, 0.4, 0.85);
     this.composer.addPass(this.bloomPass);
     this.bloomPass.enabled = loadSetting("bloom", true);
     this.cameraIndex = loadSetting("camera", 0) % CAMERA_PRESETS.length;
     this.camera.fov = CAMERA_PRESETS[this.cameraIndex].fov;
-    this.camera.updateProjectionMatrix();
+    this.resize();
+
+    this.resizeObs = new ResizeObserver(() => this.resize());
+    this.resizeObs.observe(container);
 
     if (process.env.NODE_ENV !== "production") {
       (window as unknown as { __frGame?: Game }).__frGame = this;
     }
+  }
+
+  /** Match renderer, composer, camera and HUD canvas to the container size. */
+  private resize() {
+    const w = Math.max(1, this.container.clientWidth || window.innerWidth);
+    const h = Math.max(1, this.container.clientHeight || window.innerHeight);
+    this.viewW = w;
+    this.viewH = h;
+    const dpr = Math.min(window.devicePixelRatio, 2);
+    this.renderer.setPixelRatio(dpr);
+    this.renderer.setSize(w, h, false);
+    this.composer.setPixelRatio(dpr);
+    this.composer.setSize(w, h);
+    this.bloomPass.setSize(w * dpr, h * dpr);
+    this.camera.aspect = w / h;
+    this.camera.fov = CAMERA_PRESETS[this.cameraIndex].fov;
+    this.camera.updateProjectionMatrix();
+    // HUD canvas: backing store in device pixels, drawn in CSS pixels
+    this.hudCanvas.width = Math.round(w * dpr);
+    this.hudCanvas.height = Math.round(h * dpr);
+    this.hudCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
   start() {
@@ -260,6 +300,8 @@ export class Game {
   stop() {
     this.stopped = true;
     cancelAnimationFrame(this.rafId);
+    this.resizeObs?.disconnect();
+    this.resizeObs = null;
     this.input.detach();
     this.sound.dispose();
     this.composer.dispose();
@@ -309,8 +351,8 @@ export class Game {
       scene.add(track.buildRails());
     }
 
-    // player rig
-    this.carModel = instantiate(library, "racer", 4.2);
+    // player rig — a procedural kart of the chosen type
+    this.carModel = makeKart(this.carId, CAR_SPECS[this.carId].color);
     const mech = makeMech();
     mech.group.visible = false;
     this.mech = mech;
@@ -332,30 +374,54 @@ export class Game {
     this.playerRoot.add(this.playerBody);
     scene.add(this.playerRoot);
 
-    if (this.cfg.opponents) this.spawnOpponents(library);
+    if (this.cfg.opponents) this.spawnOpponents();
+
+    // start/finish gantry over the line + ambient particle field for life
+    if (realm.style !== "void") {
+      const gp = track.pointAt(2);
+      const gtan = track.tangentAt(2);
+      const gantry = makeStartGantry(pal);
+      gantry.position.set(gp.x, gp.y, gp.z);
+      gantry.rotation.y = Math.atan2(gtan.x, gtan.z);
+      scene.add(gantry);
+    }
+    this.particles = makeParticleField(pal, track.bounds, realm.id);
+    scene.add(this.particles.points);
+
     this.decorate(library);
   }
 
-  private spawnOpponents(library: ModelLibrary) {
-    // grid start with the player mid-pack: slots are staggered along the track,
-    // racers ahead of the line have positive dist (lap 1), racers behind wrap
-    // to the end of the loop on lap 0 so ranking-by-progress reads them as
-    // behind (negative progress) rather than a whole lap ahead.
+  private spawnOpponents() {
+    // Clean starting grid: 3 columns (lanes) × rows, staggered so no two karts
+    // overlap. The grid is shifted so the PLAYER's cell sits on the start line
+    // (dist 0, lap 1). Karts in rows ahead get positive dist (also lap 1); karts
+    // behind wrap to the end of the loop on lap 0 so ranking-by-progress reads
+    // them as behind rather than a whole lap ahead. Each opponent drives a
+    // different kart type, so the grid shows real variety.
+    const cols = 3;
+    const rowGap = 8;        // meters between grid rows
+    const colStagger = 2.6;  // dist offset per column within a row
     const total = OPPONENTS.length + 1;
-    const playerSlot = Math.floor(total / 2);
-    const rowGap = 5;
+    const playerPos = Math.floor(total / 2); // mid-pack (P5 of 9)
+
+    const cellDist = (pos: number) =>
+      -(Math.floor(pos / cols) * rowGap + (pos % cols) * colStagger);
+    const cellLane = (pos: number) => LANE_CENTERS[pos % cols];
+    const playerRef = cellDist(playerPos); // shift so the player's cell => 0
+
+    let pos = 0;
     for (let i = 0; i < OPPONENTS.length; i++) {
+      if (pos === playerPos) pos++; // reserve the player's grid slot
       const spec = OPPONENTS[i];
-      const slot = i < playerSlot ? i : i + 1; // skip the player's slot
-      const gridDist = (playerSlot - slot) * rowGap; // ahead > 0, behind < 0
-      const car = instantiate(library, "racer", 4.2);
-      tintModel(car, spec.color);
+      const gridDist = cellDist(pos) - playerRef; // ahead > 0, behind < 0
+      const car = makeKart(CAR_IDS[i % CAR_IDS.length], spec.color);
       this.scene.add(car);
       const startDist = gridDist >= 0 ? gridDist : this.track.wrap(gridDist);
       const opp = new Opponent(car, spec.color, spec.name, spec.skill, startDist);
-      opp.lane = LANE_CENTERS[slot % 3];
+      opp.lane = cellLane(pos);
       opp.lap = gridDist >= 0 ? 1 : 0;
       this.opponents.push(opp);
+      pos++;
     }
   }
 
@@ -587,7 +653,7 @@ export class Game {
   }
 
   private effectiveMaxSpeed() {
-    let max = MAX_SPEED;
+    let max = MAX_SPEED * this.carStat.speed;
     if (this.transformed) max *= TRANSFORM_SPEED_FACTOR;
     if (this.nitroT > 0) max *= NITRO_SPEED_FACTOR;
     if (this.driftBoostT > 0) max *= DRIFT_BOOST_FACTOR;
@@ -712,8 +778,8 @@ export class Game {
         this.endDrift();
       }
 
-      const grip = this.drifting ? DRIFT_GRIP : GRIP;
-      const steerPow = this.drifting ? STEER_ACCEL * 1.6 : STEER_ACCEL;
+      const grip = (this.drifting ? DRIFT_GRIP : GRIP) * this.carStat.grip;
+      const steerPow = (this.drifting ? STEER_ACCEL * 1.6 : STEER_ACCEL) * this.carStat.grip;
       const targetVX = this.steer * steerPow * speedPercent;
       this.playerVX += (targetVX - centri - this.playerVX) * Math.min(1, dt * grip);
       this.playerX += this.playerVX * dt;
@@ -735,15 +801,16 @@ export class Game {
       this.carYaw += (this.steer * 0.2 - this.carYaw) * Math.min(1, dt * 6);
     }
 
-    // throttle
+    // throttle (car type sets acceleration; boost/nitro still override)
     const boosting = this.nitroT > 0 || this.driftBoostT > 0 || this.boostT > 0;
+    const accel = ACCEL * this.carStat.accel;
     if (this.transformed) {
       this.speed += ACCEL * 1.5 * dt;
     } else if (this.drifting) {
       // hold speed through the slide instead of braking hard
-      this.speed += (this.input.accelerate ? ACCEL * 0.6 : DECEL * 0.5) * dt;
+      this.speed += (this.input.accelerate ? accel * 0.6 : DECEL * 0.5) * dt;
     } else if (this.input.accelerate) {
-      this.speed += ACCEL * (boosting ? 2 : 1) * dt;
+      this.speed += accel * (boosting ? 2 : 1) * dt;
     } else if (this.input.brake) {
       this.speed += BRAKING * dt;
     } else {
@@ -1324,6 +1391,8 @@ export class Game {
         e.obj.rotation.y = this.time * 1.6 + e.phase;
         e.obj.position.y = e.baseY + Math.sin(this.time * 2.5 + e.phase) * 0.18;
       }
+      // ambient particles drift and follow the camera so they always fill view
+      if (this.particles) this.particles.update(this.time, this.playerRoot.position);
       // monsters are positioned in updateMonsters (they move + charge)
 
       // camera
@@ -1349,12 +1418,14 @@ export class Game {
 
   private renderHud() {
     const ctx = this.hudCtx;
-    ctx.clearRect(0, 0, WIDTH, HEIGHT);
+    const vw = this.viewW;
+    const vh = this.viewH;
+    ctx.clearRect(0, 0, vw, vh);
 
     if (this.phase === "loading") {
       ctx.fillStyle = "#0b0b1a";
-      ctx.fillRect(0, 0, WIDTH, HEIGHT);
-      drawCenterText(ctx, "SUMMONING REALM…", 32, "#c084fc");
+      ctx.fillRect(0, 0, vw, vh);
+      drawCenterText(ctx, "SUMMONING REALM…", 32, "#c084fc", vw, vh);
       return;
     }
 
@@ -1375,26 +1446,27 @@ export class Game {
       soundMuted: this.sound.isMuted,
       heldItem: this.heldItem ? ITEM_LABEL[this.heldItem] : null,
       shieldActive: this.shieldT > 0,
-    });
+      carName: CAR_SPECS[this.carId].name,
+    }, vw, vh);
 
-    // minimap bottom-center
-    const size = 132;
+    // minimap bottom-right (out of the driving sightline)
+    const size = Math.round(Math.min(150, Math.max(112, vw * 0.11)));
     this.minimap.draw(
       ctx,
-      WIDTH / 2 - size / 2,
-      HEIGHT - size - 8,
+      vw - size - 18,
+      vh - size - 18,
       size,
       { x: this.playerRoot.position.x, z: this.playerRoot.position.z, color: "#67e8f9" },
       this.opponents.map((o) => ({ x: o.obj.position.x, z: o.obj.position.z, color: `#${o.color.toString(16).padStart(6, "0")}` }))
     );
 
-    drawToasts(ctx, this.toasts);
+    drawToasts(ctx, this.toasts, vw);
 
     if (this.phase === "countdown") {
       const n = Math.ceil(this.countdownT - 0.5);
-      drawCenterText(ctx, n > 0 ? String(n) : "GO!", 72, n > 0 ? "#e8e0ff" : "#a7f3d0");
+      drawCenterText(ctx, n > 0 ? String(n) : "GO!", 72, n > 0 ? "#e8e0ff" : "#a7f3d0", vw, vh);
     } else if (this.phase === "finished") {
-      drawCenterText(ctx, "FINISH!", 64, "#fbbf24");
+      drawCenterText(ctx, "FINISH!", 64, "#fbbf24", vw, vh);
     }
   }
 }

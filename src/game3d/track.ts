@@ -229,39 +229,82 @@ export class Track {
   }
 }
 
-/** Procedural road surface: asphalt, lane dashes, edge lines, rumble strips. */
+/** Procedural road surface: asphalt with aggregate + wear, lane dashes, edge
+ *  lines, and rumble strips down each edge. */
 export function makeRoadTexture(pal: RealmPalette): THREE.Texture {
+  const R = 512;
   const c = document.createElement("canvas");
-  c.width = 256;
-  c.height = 256;
+  c.width = R;
+  c.height = R;
   const ctx = c.getContext("2d")!;
+  let seed = 909;
+  const rand = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
 
-  // rumble strips on the outer edges (alternating halves)
-  ctx.fillStyle = pal.rumbleA;
-  ctx.fillRect(0, 0, 256, 128);
-  ctx.fillStyle = pal.rumbleB;
-  ctx.fillRect(0, 128, 256, 128);
+  const edgeW = 52;       // rumble-strip width per side
+  const asphaltL = edgeW; // asphalt left x
+  const asphaltR = R - edgeW;
+  const asphaltW = asphaltR - asphaltL;
 
-  // asphalt body
-  ctx.fillStyle = pal.road;
-  ctx.fillRect(26, 0, 204, 256);
-  ctx.fillStyle = pal.roadDark;
-  ctx.fillRect(26, 128, 204, 128);
-  // grain
-  for (let i = 0; i < 600; i++) {
-    ctx.fillStyle = `rgba(0,0,0,${Math.random() * 0.12})`;
-    ctx.fillRect(26 + Math.random() * 204, Math.random() * 256, 2, 2);
+  // rumble strips on both edges, alternating color every quarter along length
+  for (let y = 0; y < R; y += R / 8) {
+    const a = ((y / (R / 8)) | 0) % 2 === 0;
+    ctx.fillStyle = a ? pal.rumbleA : pal.rumbleB;
+    ctx.fillRect(0, y, edgeW, R / 8);
+    ctx.fillRect(asphaltR, y, edgeW, R / 8);
   }
 
-  // edge lines
+  // asphalt base + soft patches for uneven surfacing
+  ctx.fillStyle = pal.road;
+  ctx.fillRect(asphaltL, 0, asphaltW, R);
+  for (let i = 0; i < 40; i++) {
+    ctx.globalAlpha = 0.08 + rand() * 0.12;
+    ctx.fillStyle = rand() < 0.5 ? pal.roadDark : "#000000";
+    const w = 30 + rand() * 120, h = 30 + rand() * 120;
+    ctx.beginPath();
+    ctx.ellipse(asphaltL + rand() * asphaltW, rand() * R, w, h, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // darker tire-wear bands down each lane centre
+  for (const lx of [0.17, 0.5, 0.83]) {
+    ctx.fillStyle = "rgba(0,0,0,0.12)";
+    ctx.fillRect(asphaltL + asphaltW * lx - 16, 0, 32, R);
+  }
+
+  // aggregate grain (light + dark flecks)
+  for (let i = 0; i < 2600; i++) {
+    ctx.fillStyle = rand() < 0.5 ? `rgba(0,0,0,${rand() * 0.18})` : `rgba(255,255,255,${rand() * 0.06})`;
+    const s = 1 + rand() * 2;
+    ctx.fillRect(asphaltL + rand() * asphaltW, rand() * R, s, s);
+  }
+
+  // hairline cracks
+  ctx.strokeStyle = "rgba(0,0,0,0.22)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 10; i++) {
+    let x = asphaltL + rand() * asphaltW;
+    let y = rand() * R;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    for (let s = 0; s < 6; s++) {
+      x += (rand() - 0.5) * 40;
+      y += 20 + rand() * 40;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  // solid edge lines
   ctx.fillStyle = pal.edgeLine;
-  ctx.fillRect(30, 0, 5, 256);
-  ctx.fillRect(221, 0, 5, 256);
+  ctx.fillRect(asphaltL + 4, 0, 8, R);
+  ctx.fillRect(asphaltR - 12, 0, 8, R);
 
   // lane dashes (2 dividers for 3 lanes)
   ctx.fillStyle = pal.laneLine;
-  for (const x of [94, 158]) {
-    ctx.fillRect(x, 16, 5, 96);
+  for (const lx of [1 / 3, 2 / 3]) {
+    const x = asphaltL + asphaltW * lx - 4;
+    for (let y = 20; y < R; y += 128) ctx.fillRect(x, y, 8, 72);
   }
 
   const tex = new THREE.CanvasTexture(c);

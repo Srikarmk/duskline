@@ -19,6 +19,7 @@ import {
 
 export type GameMode = "classic" | "timetrial" | "nitro" | "transform" | "grandprix";
 export type RealmId = "forest" | "ember" | "peaks" | "void";
+export type CarId = "comet" | "bolt" | "titan" | "wisp";
 
 export interface RaceStanding {
   name: string;
@@ -43,6 +44,7 @@ export interface GameResult {
 export interface GameOptions {
   mode: GameMode;
   realm?: RealmId;
+  car?: CarId;
   onFinish: (result: GameResult) => void;
 }
 

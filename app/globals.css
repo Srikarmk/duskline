@@ -20,9 +20,11 @@ main {
 }
 
 .game-stage {
-  position: relative;
-  width: min(98vw, calc(96vh * 4 / 3));
-  aspect-ratio: 4 / 3;
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .game-mount {
@@ -104,6 +106,7 @@ main {
 .game-layer {
   position: absolute;
   inset: 0;
+  display: block;
   width: 100%;
   height: 100%;
 }
@@ -199,6 +202,74 @@ main {
   grid-template-columns: repeat(4, 1fr);
   gap: 12px;
   width: 100%;
+}
+
+.cars {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  width: 100%;
+}
+
+.car-card {
+  background: #171430;
+  border: 1px solid #3b3355;
+  color: #e8e0ff;
+  font: inherit;
+  padding: 12px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.car-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.car-head strong {
+  color: #f0abfc;
+  letter-spacing: 2px;
+}
+
+.car-chip {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.car-blurb {
+  font-size: 11px;
+  color: #8b85a8;
+  line-height: 1.4;
+  min-height: 30px;
+}
+
+.car-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: #8b85a8;
+  letter-spacing: 1px;
+}
+
+.car-stats b {
+  letter-spacing: 0;
+  margin-left: 4px;
+}
+
+@media (max-width: 720px) {
+  .cars,
+  .realms,
+  .modes {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 .mode-card {

@@ -1,4 +1,4 @@
-import type { GameMode, GameResult } from "@/src/game/engine";
+import type { GameMode, GameResult, CarId } from "@/src/game/engine";
 
 export interface ScoreEntry {
   name: string;
@@ -10,6 +10,7 @@ export interface ScoreEntry {
 
 const KEY = "fantasy-racer-scores";
 const NAME_KEY = "fantasy-racer-name";
+const CAR_KEY = "fantasy-racer-car";
 const MAX_ENTRIES = 10;
 
 export function loadScores(): ScoreEntry[] {
@@ -86,6 +87,19 @@ export function loadLastName(): string {
 export function saveLastName(name: string) {
   try {
     window.localStorage.setItem(NAME_KEY, name);
+  } catch {
+    // ignore
+  }
+}
+
+export function loadLastCar(): CarId | null {
+  if (typeof window === "undefined") return null;
+  return (window.localStorage.getItem(CAR_KEY) as CarId | null) ?? null;
+}
+
+export function saveLastCar(car: CarId) {
+  try {
+    window.localStorage.setItem(CAR_KEY, car);
   } catch {
     // ignore
   }

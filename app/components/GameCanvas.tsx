@@ -2,17 +2,18 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Game } from "@/src/game3d/engine";
-import type { GameMode, RealmId, GameResult } from "@/src/game/engine";
+import type { GameMode, RealmId, CarId, GameResult } from "@/src/game/engine";
 import PauseMenu from "./PauseMenu";
 
 interface Props {
   mode: GameMode;
   realm: RealmId;
+  car: CarId;
   onFinish: (result: GameResult) => void;
   onQuit: () => void;
 }
 
-export default function GameCanvas({ mode, realm, onFinish, onQuit }: Props) {
+export default function GameCanvas({ mode, realm, car, onFinish, onQuit }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const gameRef = useRef<Game | null>(null);
   const onFinishRef = useRef(onFinish);
@@ -27,6 +28,7 @@ export default function GameCanvas({ mode, realm, onFinish, onQuit }: Props) {
     const game = new Game(mount, {
       mode,
       realm,
+      car,
       onFinish: (result) => onFinishRef.current(result),
     });
     gameRef.current = game;
@@ -36,7 +38,7 @@ export default function GameCanvas({ mode, realm, onFinish, onQuit }: Props) {
       game.stop();
       gameRef.current = null;
     };
-  }, [mode, realm, runId]);
+  }, [mode, realm, car, runId]);
 
   // Esc / P toggles pause
   useEffect(() => {

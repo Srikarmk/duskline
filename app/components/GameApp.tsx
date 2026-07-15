@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import type { GameMode, RealmId, GameResult, RaceStanding } from "@/src/game/engine";
+import type { GameMode, RealmId, CarId, GameResult, RaceStanding } from "@/src/game/engine";
 import { REALMS } from "@/src/game3d/realms";
-import { saveScore, saveLastName, submitGlobalScore } from "@/src/ui/leaderboard";
+import { saveScore, saveLastName, saveLastCar, submitGlobalScore } from "@/src/ui/leaderboard";
 import HomeScreen from "./HomeScreen";
 import GameCanvas from "./GameCanvas";
 
@@ -37,6 +37,7 @@ export default function GameApp() {
   const [screen, setScreen] = useState<Screen>("home");
   const [mode, setMode] = useState<GameMode>("classic");
   const [realm, setRealm] = useState<RealmId>("forest");
+  const [car, setCar] = useState<CarId>("comet");
   const [name, setName] = useState("");
   const [lastResult, setLastResult] = useState<GameResult | null>(null);
   const [gp, setGp] = useState<GpState | null>(null);
@@ -104,6 +105,7 @@ export default function GameApp() {
       <GameCanvas
         mode={mode}
         realm={realm}
+        car={car}
         onFinish={handleFinish}
         onQuit={() => {
           setGp(null);
@@ -178,9 +180,11 @@ export default function GameApp() {
   return (
     <HomeScreen
       lastResult={lastResult}
-      onStart={(playerName, playerMode, playerRealm) => {
+      onStart={(playerName, playerMode, playerRealm, playerCar) => {
         setName(playerName);
         saveLastName(playerName);
+        setCar(playerCar);
+        saveLastCar(playerCar);
         setMode(playerMode);
         setLastResult(null);
         if (playerMode === "grandprix") {

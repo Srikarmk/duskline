@@ -1,16 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { GameMode, RealmId, GameResult } from "@/src/game/engine";
+import type { GameMode, RealmId, CarId, GameResult } from "@/src/game/engine";
 import { REALMS } from "@/src/game3d/realms";
+import { CAR_SPECS, CAR_IDS, carColorHex } from "@/src/game3d/carData";
 import {
-  loadScores, loadLastName, fetchGlobalScores,
+  loadScores, loadLastName, loadLastCar, fetchGlobalScores,
   type ScoreEntry,
 } from "@/src/ui/leaderboard";
 
 interface Props {
   lastResult: GameResult | null;
-  onStart: (name: string, mode: GameMode, realm: RealmId) => void;
+  onStart: (name: string, mode: GameMode, realm: RealmId, car: CarId) => void;
+}
+
+function stars(n: number) {
+  return "★★★★★".slice(0, n) + "☆☆☆☆☆".slice(0, 5 - n);
 }
 
 const MODES: { id: GameMode; name: string; blurb: string }[] = [
@@ -34,6 +39,7 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
   const [name, setName] = useState("");
   const [mode, setMode] = useState<GameMode>("classic");
   const [realm, setRealm] = useState<RealmId>("forest");
+  const [car, setCar] = useState<CarId>("comet");
   const [localScores, setLocalScores] = useState<ScoreEntry[]>([]);
   const [globalScores, setGlobalScores] = useState<ScoreEntry[] | null>(null);
   const [isGlobal, setIsGlobal] = useState(false);
@@ -41,6 +47,8 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
 
   useEffect(() => {
     setName(loadLastName());
+    const savedCar = loadLastCar();
+    if (savedCar && CAR_SPECS[savedCar]) setCar(savedCar);
     setLocalScores(loadScores());
     fetchGlobalScores().then((res) => {
       if (res) {
@@ -79,7 +87,7 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
           placeholder="enter your name"
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && canStart) onStart(name.trim(), mode, realm);
+            if (e.key === "Enter" && canStart) onStart(name.trim(), mode, realm, car);
           }}
         />
       </label>
@@ -108,6 +116,33 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
         </div>
       )}
 
+      <div className="section-label">MACHINE</div>
+      <div className="cars">
+        {CAR_IDS.map((id) => {
+          const spec = CAR_SPECS[id];
+          const swatch = carColorHex(id);
+          return (
+            <button
+              key={id}
+              className={`car-card ${car === id ? "selected" : ""}`}
+              onClick={() => setCar(id)}
+              style={car === id ? { borderColor: swatch, boxShadow: `0 0 14px ${swatch}66` } : undefined}
+            >
+              <div className="car-head">
+                <span className="car-chip" style={{ background: swatch }} />
+                <strong>{spec.name}</strong>
+              </div>
+              <span className="car-blurb">{spec.blurb}</span>
+              <div className="car-stats">
+                <span>SPD <b style={{ color: swatch }}>{stars(spec.stars.speed)}</b></span>
+                <span>ACC <b style={{ color: swatch }}>{stars(spec.stars.accel)}</b></span>
+                <span>HDL <b style={{ color: swatch }}>{stars(spec.stars.handling)}</b></span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
       <div className="section-label">MODE</div>
       <div className="modes">
         {MODES.map((m) => (
@@ -125,7 +160,7 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
       <button
         className="start"
         disabled={!canStart}
-        onClick={() => onStart(name.trim(), mode, realm)}
+        onClick={() => onStart(name.trim(), mode, realm, car)}
       >
         {isGP ? "START GRAND PRIX" : "START RACE"}
       </button>

@@ -96,6 +96,32 @@ a racer spin and bleed speed, so a well-timed missile can flip a position.
 Shields block everything and flash **BLOCKED**. Projectiles clear on each new
 lap so nothing lingers across the line.
 
+### 12. Full-width, textures, karts & a clean grid (this pass)
+A big look-and-feel pass:
+
+- **Full-width, responsive canvas.** The race used to sit letterboxed in a
+  4:3 box; now it fills the whole browser at its true aspect ratio and resizes
+  live (a `ResizeObserver` re-sizes the renderer, bloom, camera and HUD). The
+  HUD was rewritten to be resolution-aware and anchors to the real edges.
+- **Real textures & a fuller world.** Ground is now organic multi-scale
+  terrain (soft patches + grain, not flat color); the road is proper asphalt
+  with aggregate, tire-wear bands, hairline cracks, crisp lane dashes and
+  rumble strips. Every realm gets an **ambient particle field** — fireflies in
+  the forest, rising embers in the wastes, falling snow on the peaks, drifting
+  stardust in the void — plus a lit **START / FINISH gantry** over the line.
+- **Four kart types with stats.** COMET (all-rounder), BOLT (top-speed),
+  TITAN (heavy launcher), WISP (razor handling) — each a distinct hand-built
+  low-poly hull with wheels, canopy, wing/fin and glowing trim. Stats
+  (speed / accel / handling, shown as ★ ratings in a new **garage** on the
+  home screen) feed real physics multipliers. Opponents now drive an assortment
+  of types too, so the grid shows genuine variety.
+- **Streamlined starting grid.** Karts line up on a clean staggered 3-column
+  grid — no more overlapping/clumped spawns — with the player mid-pack at
+  **P5 of 9**.
+
+![Full-width grid start — nine distinct karts, staggered lanes](screenshots/grid.jpg)
+![Full-width race — textured road, fireflies, the pack ahead](screenshots/race.jpg)
+
 ---
 
 ## Where it stands now

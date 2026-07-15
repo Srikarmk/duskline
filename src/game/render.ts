@@ -534,13 +534,26 @@ export interface HudState {
   soundMuted?: boolean;
   heldItem?: string | null;
   shieldActive?: boolean;
+  carName?: string;
 }
 
-function panel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
-  ctx.fillStyle = "rgba(11, 11, 26, 0.6)";
+function panel(
+  ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number,
+  accent = "#c084fc"
+) {
+  ctx.fillStyle = "rgba(11, 11, 26, 0.55)";
   ctx.fillRect(x, y, w, h);
-  ctx.strokeStyle = "#c084fc";
-  ctx.strokeRect(x, y, w, h);
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  // corner ticks for a HUD-ish feel
+  ctx.strokeStyle = "rgba(240, 171, 252, 0.9)";
+  ctx.lineWidth = 2;
+  const t = 7;
+  ctx.beginPath();
+  ctx.moveTo(x, y + t); ctx.lineTo(x, y); ctx.lineTo(x + t, y);
+  ctx.moveTo(x + w - t, y + h); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w, y + h - t);
+  ctx.stroke();
 }
 
 export function formatTime(seconds: number) {
@@ -550,97 +563,119 @@ export function formatTime(seconds: number) {
   return `${m}:${String(s).padStart(2, "0")}.${t}`;
 }
 
-export function drawHud(ctx: CanvasRenderingContext2D, hud: HudState) {
+export function drawHud(
+  ctx: CanvasRenderingContext2D, hud: HudState, vw = WIDTH, vh = HEIGHT
+) {
   ctx.textBaseline = "middle";
 
-  panel(ctx, 16, 16, 140, 52);
-  ctx.fillStyle = "#e8e0ff";
-  ctx.font = "bold 22px monospace";
+  // --- speed (top-left) ---
+  panel(ctx, 16, 16, 168, 66);
+  ctx.fillStyle = hud.nitroActive ? "#fb923c" : "#e8e0ff";
+  ctx.font = "bold 30px monospace";
   ctx.textAlign = "left";
-  ctx.fillText(`${hud.mph} mph`, 28, 37);
-  // speed bar
-  ctx.fillStyle = "#2a2542";
-  ctx.fillRect(28, 52, 116, 6);
-  ctx.fillStyle = hud.nitroActive ? "#fb923c" : "#67e8f9";
-  ctx.fillRect(28, 52, 116 * Math.min(hud.mph / 180, 1), 6);
-
-  panel(ctx, WIDTH - 196, 16, 180, 64);
-  ctx.fillStyle = "#e8e0ff";
-  ctx.font = "bold 22px monospace";
-  ctx.textAlign = "right";
-  ctx.fillText(`${hud.score}`, WIDTH - 28, 37);
-  ctx.font = "14px monospace";
-  ctx.fillText(`LAP ${hud.lap}/${hud.totalLaps}  ${formatTime(hud.raceTime)}`, WIDTH - 28, 62);
-
-  // race position
-  if (hud.position && hud.totalRacers) {
-    const ord = ["1ST", "2ND", "3RD", "4TH", "5TH", "6TH"][hud.position - 1] ?? `${hud.position}TH`;
-    panel(ctx, WIDTH - 196, 88, 180, 40);
-    ctx.fillStyle = hud.position === 1 ? "#fbbf24" : "#e8e0ff";
-    ctx.font = "bold 22px monospace";
+  ctx.fillText(`${hud.mph}`, 28, 40);
+  ctx.fillStyle = "#8b85a8";
+  ctx.font = "11px monospace";
+  ctx.fillText("MPH", 92, 44);
+  if (hud.carName) {
     ctx.textAlign = "right";
-    ctx.fillText(ord, WIDTH - 28, 109);
+    ctx.fillStyle = "#c084fc";
+    ctx.font = "bold 12px monospace";
+    ctx.fillText(hud.carName, 176, 30);
+  }
+  // speed bar
+  ctx.fillStyle = "#241f3a";
+  ctx.fillRect(28, 62, 144, 8);
+  const spd = Math.min(hud.mph / 190, 1);
+  const grad = ctx.createLinearGradient(28, 0, 172, 0);
+  grad.addColorStop(0, "#22d3ee");
+  grad.addColorStop(0.7, hud.nitroActive ? "#fb923c" : "#67e8f9");
+  grad.addColorStop(1, hud.nitroActive ? "#fbbf24" : "#a855f7");
+  ctx.fillStyle = grad;
+  ctx.fillRect(28, 62, 144 * spd, 8);
+
+  // --- score + lap/time (top-right) ---
+  panel(ctx, vw - 200, 16, 184, 66);
+  ctx.fillStyle = "#fbbf24";
+  ctx.font = "bold 26px monospace";
+  ctx.textAlign = "right";
+  ctx.fillText(`${hud.score}`, vw - 28, 38);
+  ctx.fillStyle = "#cfc9e8";
+  ctx.font = "14px monospace";
+  ctx.fillText(`LAP ${hud.lap}/${hud.totalLaps}   ${formatTime(hud.raceTime)}`, vw - 28, 64);
+
+  // --- race position (below score) ---
+  if (hud.position && hud.totalRacers) {
+    const ord = ["1ST", "2ND", "3RD", "4TH", "5TH", "6TH", "7TH", "8TH", "9TH"][hud.position - 1] ?? `${hud.position}TH`;
+    const lead = hud.position === 1;
+    panel(ctx, vw - 200, 90, 184, 46, lead ? "#fbbf24" : "#c084fc");
+    ctx.fillStyle = lead ? "#fbbf24" : "#f0abfc";
+    ctx.font = "bold 28px monospace";
+    ctx.textAlign = "right";
+    ctx.fillText(ord, vw - 28, 114);
     ctx.fillStyle = "#8b85a8";
     ctx.font = "12px monospace";
-    ctx.fillText(`of ${hud.totalRacers}`, WIDTH - 96, 110);
+    ctx.textAlign = "left";
+    ctx.fillText(`of ${hud.totalRacers}`, vw - 192, 114);
   }
 
-  // nitro charges
-  panel(ctx, 16, HEIGHT - 56, 118, 40);
+  // --- nitro charges (bottom-left) ---
+  panel(ctx, 16, vh - 60, 128, 44);
   for (let i = 0; i < NITRO_MAX_CHARGES; i++) {
     ctx.fillStyle = i < hud.nitroCharges ? (hud.nitroActive ? "#fb923c" : "#67e8f9") : "#333048";
-    flame(ctx, 44 + i * 32, HEIGHT - 48, 9);
+    flame(ctx, 44 + i * 32, vh - 50, 10);
   }
   ctx.fillStyle = "#8b85a8";
-  ctx.font = "10px monospace";
+  ctx.font = "9px monospace";
   ctx.textAlign = "left";
-  ctx.fillText("SPACE", 24, HEIGHT - 24);
+  ctx.fillText("[SPACE] NITRO", 24, vh - 24);
 
+  // --- control hints (bottom-left, above nitro) ---
   if (hud.cameraName) {
-    ctx.fillStyle = "#8b85a8";
+    ctx.fillStyle = "#6f6a8a";
     ctx.font = "11px monospace";
-    ctx.textAlign = "right";
-    ctx.fillText(`[C] ${hud.cameraName}`, WIDTH - 20, HEIGHT - 42);
-    ctx.fillText(`[M] SOUND ${hud.soundMuted ? "OFF" : "ON"}`, WIDTH - 20, HEIGHT - 26);
+    ctx.textAlign = "left";
+    ctx.fillText(`[C] ${hud.cameraName}    [M] SOUND ${hud.soundMuted ? "OFF" : "ON"}    [ESC] PAUSE`, 18, vh - 74);
   }
 
-  // transform timer
+  // --- transform timer (top center) ---
   if (hud.transformT > 0) {
-    const w = 220;
-    panel(ctx, WIDTH / 2 - w / 2, 16, w, 26);
+    const w = 240;
+    panel(ctx, vw / 2 - w / 2, 16, w, 28, "#d946ef");
     ctx.fillStyle = "#d946ef";
-    ctx.fillRect(WIDTH / 2 - w / 2 + 3, 19, (w - 6) * (hud.transformT / TRANSFORM_DURATION), 20);
+    ctx.fillRect(vw / 2 - w / 2 + 4, 20, (w - 8) * (hud.transformT / TRANSFORM_DURATION), 20);
     ctx.fillStyle = "#fdf4ff";
     ctx.font = "bold 13px monospace";
     ctx.textAlign = "center";
-    ctx.fillText("TRANSFORMED — SHIFT TO FLY", WIDTH / 2, 29);
+    ctx.fillText("TRANSFORMED — SHIFT TO FLY", vw / 2, 30);
   }
 
-  // held-item slot (top center, below the transform banner)
-  const iw = 168;
-  panel(ctx, WIDTH / 2 - iw / 2, 52, iw, 30);
+  // --- held-item slot (top center, below the transform banner) ---
+  const iw = 180;
+  const iy = hud.transformT > 0 ? 52 : 16;
+  panel(ctx, vw / 2 - iw / 2, iy, iw, 34, hud.heldItem ? "#f0abfc" : "#3b3355");
   ctx.textBaseline = "middle";
   ctx.textAlign = "center";
   if (hud.heldItem) {
     ctx.fillStyle = "#f0abfc";
-    ctx.font = "bold 14px monospace";
-    ctx.fillText(`[E]  ${hud.heldItem}`, WIDTH / 2, 68);
+    ctx.font = "bold 16px monospace";
+    ctx.fillText(`◆ ${hud.heldItem}  [E]`, vw / 2, iy + 18);
   } else {
     ctx.fillStyle = "#55506e";
     ctx.font = "12px monospace";
-    ctx.fillText("ITEM SLOT", WIDTH / 2, 68);
+    ctx.fillText("— ITEM SLOT —", vw / 2, iy + 18);
   }
 
-  // shield = cyan border
+  // shield = cyan border glow
   if (hud.shieldActive) {
-    ctx.strokeStyle = "rgba(103, 232, 249, 0.65)";
-    ctx.lineWidth = 6;
-    ctx.strokeRect(4, 4, WIDTH - 8, HEIGHT - 8);
+    ctx.strokeStyle = "rgba(103, 232, 249, 0.6)";
+    ctx.lineWidth = 8;
+    ctx.strokeRect(6, 6, vw - 12, vh - 12);
   }
 
   if (hud.crashFlash > 0) {
     ctx.fillStyle = `rgba(220, 38, 38, ${Math.min(hud.crashFlash, 0.35)})`;
-    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    ctx.fillRect(0, 0, vw, vh);
   }
 }
 
@@ -650,24 +685,29 @@ export interface Toast {
   t: number; // remaining seconds
 }
 
-export function drawToasts(ctx: CanvasRenderingContext2D, toasts: Toast[]) {
+export function drawToasts(ctx: CanvasRenderingContext2D, toasts: Toast[], vw = WIDTH) {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.font = "bold 20px monospace";
+  ctx.font = "bold 22px monospace";
   toasts.forEach((toast, i) => {
     ctx.globalAlpha = Math.min(1, toast.t * 2);
+    ctx.fillStyle = "rgba(0,0,0,0.5)";
+    ctx.fillText(toast.text, vw / 2 + 1, 151 + i * 30);
     ctx.fillStyle = toast.color;
-    ctx.fillText(toast.text, WIDTH / 2, 130 + i * 28);
+    ctx.fillText(toast.text, vw / 2, 150 + i * 30);
   });
   ctx.globalAlpha = 1;
 }
 
-export function drawCenterText(ctx: CanvasRenderingContext2D, text: string, size = 64, color = "#e8e0ff") {
+export function drawCenterText(
+  ctx: CanvasRenderingContext2D, text: string, size = 64, color = "#e8e0ff",
+  vw = WIDTH, vh = HEIGHT
+) {
   ctx.font = `bold ${size}px monospace`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillStyle = "rgba(11, 11, 26, 0.5)";
-  ctx.fillRect(0, HEIGHT / 2 - size, WIDTH, size * 2);
+  ctx.fillRect(0, vh / 2 - size, vw, size * 2);
   ctx.fillStyle = color;
-  ctx.fillText(text, WIDTH / 2, HEIGHT / 2);
+  ctx.fillText(text, vw / 2, vh / 2);
 }

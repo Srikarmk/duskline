@@ -1,5 +1,7 @@
 import * as THREE from "three";
+import { ROAD_HALF_WIDTH } from "./constants";
 import type { RealmPalette } from "./realms";
+import type { RealmId } from "../game/engine";
 
 // --- sky ------------------------------------------------------------------
 
@@ -60,25 +62,68 @@ export function makeSkyDome(pal: RealmPalette): THREE.Mesh {
 
 // --- ground / grass -------------------------------------------------------
 
-function noiseTexture(base: string, speck: string, dark: string, tile: number): THREE.Texture {
-  const c = document.createElement("canvas");
-  c.width = 128;
-  c.height = 128;
-  const ctx = c.getContext("2d")!;
-  ctx.fillStyle = base;
-  ctx.fillRect(0, 0, 128, 128);
-  for (let i = 0; i < 1400; i++) {
-    ctx.fillStyle = Math.random() < 0.5 ? speck : dark;
-    const s = 1 + Math.random() * 3;
-    ctx.globalAlpha = 0.3 + Math.random() * 0.5;
-    ctx.fillRect(Math.random() * 128, Math.random() * 128, s, s);
+/** A soft radial blob, drawn with its wrapped copies so the tile stays seamless. */
+function softBlob(
+  ctx: CanvasRenderingContext2D, res: number,
+  x: number, y: number, r: number, color: string, alpha: number
+) {
+  for (const ox of [-res, 0, res]) {
+    for (const oy of [-res, 0, res]) {
+      const g = ctx.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r);
+      g.addColorStop(0, color);
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x + ox, y + oy, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
   ctx.globalAlpha = 1;
+}
+
+/**
+ * Organic terrain texture: a base tone mottled with soft patches of a lighter
+ * and darker shade (large + medium scale), then fine grain on top. Reads as
+ * real ground rather than flat color with random specks.
+ */
+function noiseTexture(base: string, speck: string, dark: string, tile: number): THREE.Texture {
+  const res = 256;
+  const c = document.createElement("canvas");
+  c.width = res;
+  c.height = res;
+  const ctx = c.getContext("2d")!;
+  let seed = 1337;
+  const rand = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, res, res);
+
+  // large soft patches — the terrain's big color variation
+  for (let i = 0; i < 60; i++) {
+    softBlob(ctx, res, rand() * res, rand() * res, 34 + rand() * 46,
+      rand() < 0.5 ? speck : dark, 0.18 + rand() * 0.22);
+  }
+  // medium mottling
+  for (let i = 0; i < 160; i++) {
+    softBlob(ctx, res, rand() * res, rand() * res, 8 + rand() * 20,
+      rand() < 0.5 ? speck : dark, 0.14 + rand() * 0.22);
+  }
+  // fine grain flecks
+  for (let i = 0; i < 2600; i++) {
+    ctx.fillStyle = rand() < 0.5 ? speck : dark;
+    ctx.globalAlpha = 0.2 + rand() * 0.4;
+    const s = 1 + rand() * 2;
+    ctx.fillRect(rand() * res, rand() * res, s, s);
+  }
+  ctx.globalAlpha = 1;
+
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(tile, tile);
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
   return tex;
 }
 
@@ -142,6 +187,174 @@ export function makeRockField(pal: RealmPalette, pts: Placement[]): THREE.Instan
   });
   mesh.instanceMatrix.needsUpdate = true;
   return mesh;
+}
+
+// --- ambient particles (fireflies / embers / snow / stardust) --------------
+
+export interface ParticleField {
+  points: THREE.Points;
+  update: (time: number, center: THREE.Vector3) => void;
+}
+
+function dotSprite(): THREE.Texture {
+  const c = document.createElement("canvas");
+  c.width = 64;
+  c.height = 64;
+  const ctx = c.getContext("2d")!;
+  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, "rgba(255,255,255,1)");
+  g.addColorStop(0.35, "rgba(255,255,255,0.7)");
+  g.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 64);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/**
+ * A cloud of drifting motes that follows the camera so it always fills view.
+ * Motion is a pure function of time (no dt needed): embers rise, snow falls,
+ * fireflies/stardust bob. Colours + size come from the realm.
+ */
+export function makeParticleField(
+  pal: RealmPalette, _bounds: { minX: number; maxX: number; minZ: number; maxZ: number },
+  realmId: RealmId
+): ParticleField {
+  const kind =
+    realmId === "ember" ? "ember" :
+    realmId === "peaks" ? "snow" :
+    realmId === "void" ? "stardust" : "firefly";
+
+  const conf = {
+    firefly:  { count: 520, color: 0xfde68a, size: 2.6, R: 200, HY: 70 },
+    ember:    { count: 620, color: 0xf97316, size: 2.2, R: 200, HY: 80 },
+    snow:     { count: 900, color: 0xf0f9ff, size: 2.4, R: 200, HY: 90 },
+    stardust: { count: 700, color: 0xa5b4fc, size: 2.4, R: 260, HY: 120 },
+  }[kind];
+
+  const { count, R, HY } = conf;
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(count * 3);
+  const base = new Float32Array(count * 3);
+  const phase = new Float32Array(count);
+  let seed = 20260715;
+  const rand = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  for (let i = 0; i < count; i++) {
+    base[i * 3] = (rand() * 2 - 1) * R;
+    base[i * 3 + 1] = rand() * HY;
+    base[i * 3 + 2] = (rand() * 2 - 1) * R;
+    phase[i] = rand() * Math.PI * 2;
+  }
+  geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+
+  const mat = new THREE.PointsMaterial({
+    color: conf.color,
+    map: dotSprite(),
+    size: conf.size,
+    sizeAttenuation: true,
+    transparent: true,
+    opacity: kind === "snow" ? 0.9 : 0.85,
+    depthWrite: false,
+    blending: kind === "snow" ? THREE.NormalBlending : THREE.AdditiveBlending,
+    fog: false,
+  });
+  const points = new THREE.Points(geo, mat);
+  points.frustumCulled = false;
+  points.renderOrder = 2;
+
+  const update = (time: number, center: THREE.Vector3) => {
+    const attr = geo.getAttribute("position") as THREE.BufferAttribute;
+    for (let i = 0; i < count; i++) {
+      const bx = base[i * 3], by = base[i * 3 + 1], bz = base[i * 3 + 2];
+      const ph = phase[i];
+      let ly: number;
+      let sway = 6;
+      if (kind === "ember") {
+        ly = (by + time * 12) % HY;
+        sway = 5;
+      } else if (kind === "snow") {
+        ly = ((by - time * 9) % HY + HY) % HY;
+        sway = 9;
+      } else {
+        ly = by + Math.sin(time * 0.5 + ph) * 8;
+        sway = kind === "stardust" ? 12 : 9;
+      }
+      const lx = bx + Math.sin(time * 0.4 + ph) * sway;
+      const lz = bz + Math.cos(time * 0.33 + ph * 1.3) * sway;
+      attr.setXYZ(i, center.x + lx, ly + 2, center.z + lz);
+    }
+    attr.needsUpdate = true;
+  };
+
+  return { points, update };
+}
+
+// --- start / finish gantry -------------------------------------------------
+
+/** An arch straddling the start line, built spanning local X (across the road)
+ *  with local +Z as the track's forward direction. */
+export function makeStartGantry(pal: RealmPalette): THREE.Group {
+  const g = new THREE.Group();
+  const span = ROAD_HALF_WIDTH * 1.35;
+  const postMat = new THREE.MeshStandardMaterial({ color: 0x2a2438, metalness: 0.7, roughness: 0.4 });
+  const trimMat = new THREE.MeshStandardMaterial({
+    color: pal.rumbleB, emissive: pal.rumbleB, emissiveIntensity: 1.0, metalness: 0.5, roughness: 0.3,
+  });
+
+  const height = 8.5;
+  for (const sx of [-1, 1]) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.45, height, 10), postMat);
+    post.position.set(sx * span, height / 2, 0);
+    g.add(post);
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.5, 1.4), postMat);
+    foot.position.set(sx * span, 0.25, 0);
+    g.add(foot);
+    const glowRing = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.08, 6, 16), trimMat);
+    glowRing.rotation.x = Math.PI / 2;
+    glowRing.position.set(sx * span, height - 0.6, 0);
+    g.add(glowRing);
+  }
+
+  // top beam
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(span * 2 + 1, 1.4, 1.2), postMat);
+  beam.position.set(0, height + 0.2, 0);
+  g.add(beam);
+  const beamGlow = new THREE.Mesh(new THREE.BoxGeometry(span * 2 + 1.1, 0.18, 1.3), trimMat);
+  beamGlow.position.set(0, height - 0.5, 0);
+  g.add(beamGlow);
+
+  // banner with START / FINISH text, facing back down the track (-Z)
+  const c = document.createElement("canvas");
+  c.width = 512;
+  c.height = 128;
+  const ctx = c.getContext("2d")!;
+  ctx.fillStyle = "#11101f";
+  ctx.fillRect(0, 0, 512, 128);
+  // checker trim top + bottom
+  for (let x = 0; x < 512; x += 32) {
+    ctx.fillStyle = (x / 32) % 2 ? "#e8e0ff" : "#1e1b2e";
+    ctx.fillRect(x, 0, 32, 16);
+    ctx.fillStyle = (x / 32) % 2 ? "#1e1b2e" : "#e8e0ff";
+    ctx.fillRect(x, 112, 32, 16);
+  }
+  ctx.fillStyle = pal.edgeLine;
+  ctx.font = "bold 54px monospace";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("START · FINISH", 256, 66);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const banner = new THREE.Mesh(
+    new THREE.PlaneGeometry(span * 2, span * 0.5),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide })
+  );
+  // face the banner back down the track so drivers approaching the line read it
+  banner.position.set(0, height - 1.7, -0.62);
+  banner.rotation.y = Math.PI;
+  g.add(banner);
+
+  return g;
 }
 
 export function makeMountainRing(pal: RealmPalette, cx: number, cz: number, radius: number): THREE.Group {
