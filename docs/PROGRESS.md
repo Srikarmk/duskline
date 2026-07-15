@@ -230,6 +230,33 @@ everything. Fixed:
 
 ![Spread-out rivals, tapered car body, brighter textured world](screenshots/opponents-cars.jpg)
 
+### 17. Real cars, rival brains, a proper asteroid field (this pass)
+A big multi-front pass (two focused sub-agents rebuilt the cars and the AI in
+parallel while the engine work went in alongside):
+
+- **Cars are actual cars now.** Rebuilt each kart as a smooth width-tapered
+  hull (tucked sills, full fenders, a narrow glass greenhouse, sloped
+  windshield/backlight), real tyres + rims with a suspension gap, headlights,
+  a slim tail-light bar, and type-specific wings — comet/bolt/titan/wisp each a
+  distinct silhouette. Emissive dialled right down.
+- **Each rival has a brain.** Every opponent now has a deterministic
+  personality seeded from its name: cornering caution (some send it and wash
+  wide, some brake clean), a preferred racing line + how much it weaves, apex
+  aggression, its own nitro trigger (straights / corner-exit / comeback /
+  wildcard) and cadence, and mistake-proneness by skill — so no two race alike.
+- **Cars no longer sink into the road** (the surface renders slightly above the
+  centreline; cars are lifted to sit on it).
+- **The space realm looks like space.** A dense floating **asteroid field**
+  (textured rock chunks at varied sizes/depths, some huge and distant) around
+  the glass tube, plus a ringed **gas-giant** backdrop.
+- **Calmer + fuller:** bloom + emissives cut again (no blown-out glow), the
+  fixed square "stars" are now soft round dots, three scenery bands fill the
+  empty flats, ramp collision widened (no clipping the sides; every rival hops),
+  and the car's lean/slip on turns reduced so it stops shearing.
+
+![Rebuilt cars + a dense, fuller forest](screenshots/cars-forest.jpg)
+![The void realm as a real asteroid field](screenshots/space.jpg)
+
 ---
 
 ## Where it stands now

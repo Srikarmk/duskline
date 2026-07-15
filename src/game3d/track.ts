@@ -223,8 +223,8 @@ export class Track {
         ));
       }
       const railCurve = new THREE.CatmullRomCurve3(pts, true);
-      const geo = new THREE.TubeGeometry(railCurve, 320, 0.35, 6, true);
-      const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.5 });
+      const geo = new THREE.TubeGeometry(railCurve, 320, 0.3, 6, true);
+      const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.95 });
       g.add(new THREE.Mesh(geo, mat));
     }
     return g;
@@ -255,8 +255,8 @@ export class Track {
     const s = new THREE.Vector3(1, 1, 1);
     const p = new THREE.Vector3();
     // dimmed so the markers read as gentle dots rather than blinding glow
-    const cA = new THREE.Color(colorA).multiplyScalar(0.6);
-    const cB = new THREE.Color(colorB).multiplyScalar(0.6);
+    const cA = new THREE.Color(colorA).multiplyScalar(0.42);
+    const cB = new THREE.Color(colorB).multiplyScalar(0.42);
     let idx = 0;
     for (let i = 0; i < count; i++) {
       const d = (i / count) * this.length;

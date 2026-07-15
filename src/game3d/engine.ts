@@ -5,7 +5,7 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import {
   WIDTH, HEIGHT, STEP,
-  ROAD_HALF_WIDTH, LANE_CENTERS,
+  ROAD_HALF_WIDTH, LANE_CENTERS, CAR_LIFT,
   MAX_SPEED, ACCEL, BRAKING, DECEL, OFF_ROAD_DECEL, OFF_ROAD_LIMIT,
   STEER_RESPONSE, STEER_RETURN, TURN_ACCEL, STEER_SPEED_FALLOFF,
   GRIP_LIMIT, LATERAL_DAMP, CENTRI_K, WEIGHT_BRAKE_GRIP, WEIGHT_THROTTLE_GRIP,
@@ -30,7 +30,7 @@ import {
   makeCrystalCluster, makeMonster,
   makeMech, makeSlash, makeFlame, makeUnderGlow,
   makeItemBox, makeMissile, makeMine, makeShieldBubble,
-  makeParticleField, makeStartGantry, varyTint,
+  makeParticleField, makeStartGantry, varyTint, makeSpaceBackdrop,
   type MechRig, type Placement, type ParticleField,
 } from "./objects";
 import { loadPBR } from "./textures";
@@ -91,7 +91,7 @@ const MODE_CONFIG: Record<GameMode, ModeConfig> = {
 };
 
 const COLLIDE_WIDTH: Record<EntityType, number> = {
-  gem: 0.36, airGem: 0.42, nitro: 0.36, orb: 0.44, ramp: 1.0, rock: 0.34, monster: 0.38, itembox: 0.56,
+  gem: 0.36, airGem: 0.42, nitro: 0.36, orb: 0.44, ramp: 1.45, rock: 0.34, monster: 0.38, itembox: 0.56,
 };
 
 const BUCKET_METERS = 5;
@@ -267,7 +267,7 @@ export class Game {
     this.composer.setPixelRatio(this.renderer.getPixelRatio());
     this.composer.setSize(w, h);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.22, 0.6, 0.95);
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.14, 0.6, 0.92);
     this.composer.addPass(this.bloomPass);
     // final pass applies tone mapping + sRGB so the composed image is graded
     this.composer.addPass(new OutputPass());
@@ -374,6 +374,7 @@ export class Game {
     if (isVoid) {
       scene.add(track.buildTube());
       scene.add(track.buildRails());
+      scene.add(makeSpaceBackdrop()); // ringed planet + atmosphere in the distance
     }
 
     // player rig — a procedural kart of the chosen type
@@ -527,36 +528,44 @@ export class Game {
     if (realm.style === "void") {
       this.decorateVoid(library, rand);
     } else {
-      // roadside scenery — two bands each side for depth
-      for (let d = 0; d < len; d += 4) {
+      // roadside scenery — three bands each side for depth, so the flats aren't
+      // empty (the sparse world felt "empty/anxious")
+      for (let d = 0; d < len; d += 3.3) {
         for (const side of [-1, 1]) {
-          // near band
-          if (rand() < 0.85) {
+          // near band (dense, right by the road)
+          if (rand() < 0.95) {
             const obj = this.sceneryObject(pickScenery(realm, rand), library, rand);
-            const off = side * (ROAD_HALF_WIDTH + 6 + rand() * 12);
+            const off = side * (ROAD_HALF_WIDTH + 5 + rand() * 13);
             const p = track.pointAt(d + rand() * 3, off);
             obj.position.set(p.x, 0, p.z);
-            obj.rotation.y = rand() * Math.PI * 2;
             this.scene.add(obj);
           }
-          // far band
-          if (rand() < 0.5) {
+          // mid band
+          if (rand() < 0.7) {
             const obj = this.sceneryObject(pickScenery(realm, rand), library, rand);
-            const off = side * (ROAD_HALF_WIDTH + 22 + rand() * 34);
+            const off = side * (ROAD_HALF_WIDTH + 20 + rand() * 36);
             const p = track.pointAt(d + rand() * 3, off);
             obj.position.set(p.x, 0, p.z);
-            obj.rotation.y = rand() * Math.PI * 2;
             obj.scale.multiplyScalar(1.1 + rand() * 0.5);
+            this.scene.add(obj);
+          }
+          // far band (big, fills the mid-distance out toward the mountains)
+          if (rand() < 0.4) {
+            const obj = this.sceneryObject(pickScenery(realm, rand), library, rand);
+            const off = side * (ROAD_HALF_WIDTH + 58 + rand() * 70);
+            const p = track.pointAt(d + rand() * 5, off);
+            obj.position.set(p.x, 0, p.z);
+            obj.scale.multiplyScalar(1.5 + rand() * 1.1);
             this.scene.add(obj);
           }
         }
       }
 
       // ground clutter fills the empty flats
-      const centerline = track.sampleXZ(220);
-      const grass = this.scatter(centerline, rand, 2600, ROAD_HALF_WIDTH * 1.3 + 3, 130);
+      const centerline = track.sampleXZ(240);
+      const grass = this.scatter(centerline, rand, 4200, ROAD_HALF_WIDTH * 1.3 + 3, 150);
       this.scene.add(makeGrassField(pal, grass));
-      const pebbles = this.scatter(centerline, rand, 700, ROAD_HALF_WIDTH * 1.3 + 4, 150);
+      const pebbles = this.scatter(centerline, rand, 1100, ROAD_HALF_WIDTH * 1.3 + 4, 170);
       this.scene.add(makeRockField(pal, pebbles));
     }
 
@@ -644,20 +653,41 @@ export class Game {
 
   /** Floating crystals and asteroids around the anti-gravity void track. */
   private decorateVoid(library: ModelLibrary, rand: () => number) {
+    // A dense asteroid field floating in 3D around the tube — textured rock
+    // chunks at varied sizes/depths, with occasional glowing space crystals for
+    // colour, so it reads as real space rather than a few scattered shapes.
     const { track, realm } = this;
     const len = track.length;
-    for (let d = 0; d < len; d += 5) {
+    for (let d = 0; d < len; d += 2.6) {
       for (const side of [-1, 1]) {
-        if (rand() < 0.5) continue;
-        const obj = rand() < 0.6
-          ? makeCrystalCluster(rand, realm.palette.crystalColors)
-          : instantiate(library, rand() < 0.5 ? "rockA" : "rockB", 2 + rand() * 4);
-        const lateral = side * (ROAD_HALF_WIDTH + 8 + rand() * 45);
-        const p = track.pointAt(d + rand() * 4, lateral);
-        obj.position.set(p.x, p.y + (rand() - 0.5) * 70, p.z);
+        if (rand() < 0.28) continue;
+        let obj: THREE.Object3D;
+        if (rand() < 0.86) {
+          // rock asteroid (real PBR rock via the relit GLB), tumbling
+          const size = 1.4 + rand() * rand() * 9; // mostly small, a few huge
+          obj = instantiate(library, rand() < 0.5 ? "rockA" : "rockB", size);
+          varyTint(obj, rand);
+        } else {
+          obj = makeCrystalCluster(rand, realm.palette.crystalColors);
+        }
+        const lateral = side * (ROAD_HALF_WIDTH + 5 + rand() * 75);
+        const p = track.pointAt(d + rand() * 2.6, lateral);
+        obj.position.set(p.x, p.y + (rand() - 0.5) * 130, p.z);
         obj.rotation.set(rand() * Math.PI * 2, rand() * Math.PI * 2, rand() * Math.PI * 2);
         this.scene.add(obj);
       }
+    }
+    // a handful of massive distant asteroids for a sense of scale
+    for (let i = 0; i < 14; i++) {
+      const rock = instantiate(library, rand() < 0.5 ? "rockA" : "rockB", 22 + rand() * 40);
+      varyTint(rock, rand);
+      const a = rand() * Math.PI * 2;
+      const rad = 320 + rand() * 340;
+      const c = (track.bounds.minX + track.bounds.maxX) / 2;
+      const cz = (track.bounds.minZ + track.bounds.maxZ) / 2;
+      rock.position.set(c + Math.cos(a) * rad, (rand() - 0.5) * 260, cz + Math.sin(a) * rad);
+      rock.rotation.set(rand() * Math.PI * 2, rand() * Math.PI * 2, rand() * Math.PI * 2);
+      this.scene.add(rock);
     }
   }
 
@@ -865,9 +895,11 @@ export class Game {
       if (this.drifting) this.driftCharge += dt;
 
       // point the car where it's actually heading (slip), plus a steer lean
-      const slipYaw = clamp(this.playerVX * 0.085, -0.5, 0.5);
-      const yawTarget = this.steerInput * 0.13 + slipYaw + (this.drifting ? this.driftDir * 0.5 : 0);
-      this.carYaw += (yawTarget - this.carYaw) * Math.min(1, dt * 9);
+      // modest heading offset — enough to feel alive, not so much the car looks
+      // like it's crab-walking / bending on turns
+      const slipYaw = clamp(this.playerVX * 0.05, -0.26, 0.26);
+      const yawTarget = this.steerInput * 0.09 + slipYaw + (this.drifting ? this.driftDir * 0.32 : 0);
+      this.carYaw += (yawTarget - this.carYaw) * Math.min(1, dt * 8);
     } else if (this.stuntAir) {
       // mid-air: left/right = barrel roll, up/down = flips. Only a little lateral
       // drift so a jump doesn't fling you off the track.
@@ -1026,11 +1058,11 @@ export class Game {
       o.update(dt, this.track, base, this.cfg.laps);
 
       // hop ramps (full-width, so any lane) when reaching one on the ground
-      if (o.alt < 0.3) {
+      if (o.alt < 0.4 && !o.finished) {
         for (const r of this.ramps) {
           let g = ((r.dist - o.dist) % len + len) % len;
           if (g > len / 2) g -= len;
-          if (Math.abs(g) < 3) { o.hop(r.power); break; }
+          if (Math.abs(g) < 4.5) { o.hop(r.power); break; }
         }
       }
 
@@ -1433,7 +1465,7 @@ export class Game {
     if (this.phase !== "loading") {
       const lateralM = this.playerX * ROAD_HALF_WIDTH * 0.9;
       const p = track.pointAt(this.position, lateralM);
-      this.playerRoot.position.set(p.x, p.y + this.alt, p.z);
+      this.playerRoot.position.set(p.x, p.y + this.alt + CAR_LIFT, p.z);
       const tan = track.tangentAt(this.position);
       this.playerRoot.rotation.y = Math.atan2(tan.x, tan.z);
 
@@ -1441,7 +1473,7 @@ export class Game {
       this.playerBody.rotation.x = this.flip * Math.PI * 2 + clamp(-this.vAlt * 0.03, -0.35, 0.35);
       this.playerBody.rotation.y = this.carYaw;
       this.playerBody.rotation.z =
-        this.spin * Math.PI * 2 - this.steer * 0.16 - (this.drifting ? this.driftDir * 0.14 : 0);
+        this.spin * Math.PI * 2 - this.steer * 0.09 - (this.drifting ? this.driftDir * 0.1 : 0);
 
       // form swap + effects
       if (this.carModel) this.carModel.visible = !this.transformed;
@@ -1526,7 +1558,7 @@ export class Game {
         this.camera.position.y += (Math.random() - 0.5) * s;
       }
       // look slightly ahead into the corner (small, so the view doesn't swing)
-      const aheadBias = clamp(curve * this.speed * 0.9, -1.4, 1.4);
+      const aheadBias = clamp(curve * this.speed * 0.6, -1.0, 1.0);
       const lookAt = track.pointAt(this.position + preset.ahead, lateralM * 0.5 + aheadBias);
       lookAt.y += preset.lookHeight + this.alt * 0.8;
       this.camera.lookAt(lookAt);

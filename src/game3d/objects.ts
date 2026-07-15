@@ -26,15 +26,21 @@ export function makeSkyDome(pal: RealmPalette): THREE.Mesh {
       seed = (seed * 16807) % 2147483647;
       return seed / 2147483647;
     };
-    ctx.fillStyle = "#ffffff";
-    for (let i = 0; i < 280; i++) {
+    // soft round stars (was hard squares) — small, mostly dim, a few brighter
+    for (let i = 0; i < 220; i++) {
       const x = rand() * 1024;
       const y = rand() * 300;
-      const r = rand() * 1.8 + 0.4;
-      ctx.globalAlpha = 0.25 + rand() * 0.7;
-      ctx.fillRect(x, y, r, r);
+      const bright = rand();
+      const r = bright > 0.92 ? 1.4 + rand() * 1.2 : 0.5 + rand() * 0.9;
+      const a = 0.18 + bright * 0.5;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r * 2.2);
+      g.addColorStop(0, `rgba(255,255,255,${a.toFixed(2)})`);
+      g.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, y, r * 2.2, 0, Math.PI * 2);
+      ctx.fill();
     }
-    ctx.globalAlpha = 1;
   }
 
   for (const m of pal.moons) {
@@ -59,6 +65,66 @@ export function makeSkyDome(pal: RealmPalette): THREE.Mesh {
   const geo = new THREE.SphereGeometry(900, 32, 16);
   const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, fog: false });
   return new THREE.Mesh(geo, mat);
+}
+
+// --- deep-space backdrop (void realm): a ringed gas giant + a nebula --------
+
+export function makeSpaceBackdrop(): THREE.Group {
+  const g = new THREE.Group();
+
+  // banded gas-giant texture
+  const c = document.createElement("canvas");
+  c.width = 512;
+  c.height = 256;
+  const ctx = c.getContext("2d")!;
+  let seed = 424242;
+  const rand = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const bands = ["#6d5ac7", "#8b6fd8", "#5a4bb0", "#a98ae0", "#7159bd", "#9b7fe0"];
+  let y = 0;
+  while (y < 256) {
+    const h = 6 + rand() * 26;
+    ctx.fillStyle = bands[Math.floor(rand() * bands.length)];
+    ctx.fillRect(0, y, 512, h + 2);
+    y += h;
+  }
+  // swirl mottling
+  for (let i = 0; i < 500; i++) {
+    ctx.globalAlpha = 0.05 + rand() * 0.12;
+    ctx.fillStyle = rand() < 0.5 ? "#3a2f7a" : "#c4b0f5";
+    const w = 20 + rand() * 90;
+    ctx.beginPath();
+    ctx.ellipse(rand() * 512, rand() * 256, w, 4 + rand() * 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+
+  const R = 150;
+  const planet = new THREE.Mesh(
+    new THREE.SphereGeometry(R, 48, 32),
+    new THREE.MeshStandardMaterial({ map: tex, roughness: 1, metalness: 0, emissive: 0x1a1440, emissiveIntensity: 0.25, fog: false })
+  );
+  g.add(planet);
+
+  // soft atmosphere rim
+  const atmo = new THREE.Mesh(
+    new THREE.SphereGeometry(R * 1.06, 32, 24),
+    new THREE.MeshBasicMaterial({ color: 0x8f7ff0, transparent: true, opacity: 0.12, side: THREE.BackSide, fog: false })
+  );
+  g.add(atmo);
+
+  // tilted ring
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(R * 1.4, R * 2.2, 64),
+    new THREE.MeshBasicMaterial({ color: 0xb9a7ef, transparent: true, opacity: 0.35, side: THREE.DoubleSide, fog: false })
+  );
+  ring.rotation.x = Math.PI / 2.3;
+  ring.rotation.z = 0.3;
+  g.add(ring);
+
+  g.position.set(620, 240, -680);
+  return g;
 }
 
 // --- ground / grass -------------------------------------------------------
@@ -419,7 +485,7 @@ export function makeGem(color: number, air: boolean): THREE.Mesh {
   const mat = new THREE.MeshStandardMaterial({
     color: air ? 0xfbbf24 : color,
     emissive: air ? 0xb45309 : color,
-    emissiveIntensity: 0.8,
+    emissiveIntensity: air ? 0.45 : 0.6,
     metalness: 0.3,
     roughness: 0.2,
   });
@@ -577,8 +643,8 @@ export function makeRamp(kind: RampKind = "standard"): THREE.Group {
   );
   group.add(body);
 
-  const glow = new THREE.MeshStandardMaterial({ color: 0xfde68a, emissive: spec.glow, emissiveIntensity: 0.85 });
-  const chevMat = new THREE.MeshStandardMaterial({ color: 0xfef3c7, emissive: spec.chev, emissiveIntensity: 1.0 });
+  const glow = new THREE.MeshStandardMaterial({ color: 0xfde68a, emissive: spec.glow, emissiveIntensity: 0.55 });
+  const chevMat = new THREE.MeshStandardMaterial({ color: 0xfef3c7, emissive: spec.chev, emissiveIntensity: 0.7 });
 
   // glowing rails + centre strip as tubes that follow the curve
   const railPts = (x: number) => {

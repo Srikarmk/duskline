@@ -5,6 +5,9 @@ export const STEP = 1 / 60;
 
 export const ROAD_HALF_WIDTH = 5;
 export const LANES = 3;
+/** the road surface renders slightly above the track centerline, so lift cars
+ *  by this much to keep their wheels on the road instead of sinking in */
+export const CAR_LIFT = 0.13;
 export const LANE_CENTERS = [-2 / 3, 0, 2 / 3]; // in playerX units (1 = road edge)
 
 export const MAX_SPEED = 55;

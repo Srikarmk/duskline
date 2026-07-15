@@ -19,8 +19,8 @@ function paint(
 ): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({
     color,
-    metalness: o.metal ?? 0.55,
-    roughness: o.rough ?? 0.35,
+    metalness: o.metal ?? 0.5,
+    roughness: o.rough ?? 0.4,
     emissive: o.emissive ?? 0x000000,
     emissiveIntensity: o.ei ?? 0,
   });
@@ -35,58 +35,62 @@ function box(
   return m;
 }
 
-/** A wheel with a glowing hubcap; axle runs along X. */
-function wheel(x: number, z: number, radius: number, width: number, accent: number): THREE.Group {
+/** A wheel: dark low-poly tyre + a subtle metallic rim (no glow). Axle along X. */
+function wheel(
+  x: number, z: number,
+  tireGeo: THREE.BufferGeometry, rimGeo: THREE.BufferGeometry,
+  tireMat: THREE.Material, rimMat: THREE.Material, radius: number
+): THREE.Group {
   const g = new THREE.Group();
-  const tire = new THREE.Mesh(
-    new THREE.CylinderGeometry(radius, radius, width, 16),
-    new THREE.MeshStandardMaterial({ color: 0x0c0c16, roughness: 0.85, metalness: 0.1 })
-  );
+  const tire = new THREE.Mesh(tireGeo, tireMat);
   tire.rotation.z = Math.PI / 2;
-  const hub = new THREE.Mesh(
-    new THREE.CylinderGeometry(radius * 0.52, radius * 0.52, width + 0.05, 12),
-    paint(accent, { emissive: accent, ei: 0.8, metal: 0.7, rough: 0.3 })
-  );
-  hub.rotation.z = Math.PI / 2;
-  g.add(tire, hub);
+  const rim = new THREE.Mesh(rimGeo, rimMat);
+  rim.rotation.z = Math.PI / 2;
+  g.add(tire, rim);
   g.position.set(x, radius, z);
   return g;
 }
 
+type Wing = "duck" | "swan" | "low" | "fin" | "none";
+
 interface KartParams {
   length: number;
   width: number;
-  ride: number;       // hull thickness
+  ride: number;     // solid lower-body (beltline) height
   wheelR: number;
-  wing: "low" | "tall" | "fin" | "none";
-  bulky?: boolean;    // adds roll-cage / side pods
+  wing: Wing;
+  cabin?: number;   // greenhouse height as a fraction of the body height
+  bulky?: boolean;  // side pods + twin exhausts (the bruiser)
+  mirrors?: boolean;
 }
 
 /**
- * Build a stylised hover-kart facing +Z (forward = +Z, matching the engine's
- * "increasing track distance" direction). `color` is the livery; a lighter
- * shade of it becomes the glowing trim so the car reads as one machine.
+ * Build a stylised low-poly race car facing +Z (forward = +Z, matching the
+ * engine's "increasing track distance" direction). The body is a smooth,
+ * width-tapered hull (wide fenders, a narrow greenhouse) so it reads as a real
+ * car from behind — not a stacked-box slab. `color` is the livery; a lighter
+ * shade becomes the subtle accent trim so the machine reads as one piece.
  */
 function buildKart(color: number, p: KartParams): THREE.Group {
   const g = new THREE.Group();
   const base = new THREE.Color(color);
-  const accent = base.clone().offsetHSL(0, 0.05, 0.28);
-  const dark = base.clone().offsetHSL(0, -0.05, -0.22);
+  const accent = base.clone().offsetHSL(0, 0.05, 0.26);
+  const dark = base.clone().offsetHSL(0, -0.04, -0.2);
   const accentHex = accent.getHex();
 
-  const bodyMat = paint(base.getHex(), { metal: 0.6, rough: 0.32 });
-  const darkMat = paint(dark.getHex(), { metal: 0.7, rough: 0.4 });
-  const trimMat = paint(accentHex, { emissive: accentHex, ei: 0.7, metal: 0.6, rough: 0.3 });
-  // real CC0 metal-plate albedo + normal (tinted by the livery colour); falls
-  // back to the procedural brushed-metal map if the PBR set isn't loaded
+  // --- shared materials -----------------------------------------------------
+  const bodyMat = paint(base.getHex(), { metal: 0.5, rough: 0.4 });
+  const darkMat = paint(dark.getHex(), { metal: 0.55, rough: 0.45 });
+  const trimMat = paint(accentHex, { emissive: accentHex, ei: 0.5, metal: 0.6, rough: 0.3 });
+  // real CC0 metal-plate normal (panel/scratch relief) tints nothing — we keep
+  // the bright livery colour instead of the dark plate albedo. Falls back to the
+  // procedural brushed-metal map if the PBR set isn't loaded yet.
   const lib = pbr();
   if (lib) {
-    // use the real metal-plate NORMAL only (panel/scratch relief); keep the
-    // bright livery colour instead of multiplying it by the dark plate albedo
     lib.metal.nor.repeat.set(1.5, 1.5);
     for (const mat of [bodyMat, darkMat, trimMat]) {
       mat.normalMap = lib.metal.nor;
-      mat.normalScale = new THREE.Vector2(0.6, 0.6);
+      mat.normalScale = new THREE.Vector2(0.5, 0.5);
     }
   } else {
     const { map: metalMap, bump: metalBump } = metalDetail();
@@ -95,48 +99,64 @@ function buildKart(color: number, p: KartParams): THREE.Group {
       mat.bumpMap = metalBump;
       mat.bumpScale = 0.03;
     }
-    trimMat.bumpMap = metalBump;
-    trimMat.bumpScale = 0.02;
   }
   const glass = new THREE.MeshStandardMaterial({
-    color: 0x0a1a2a, metalness: 0.9, roughness: 0.08,
-    emissive: 0x112233, emissiveIntensity: 0.4, transparent: true, opacity: 0.85,
+    color: 0x0a1622, metalness: 0.9, roughness: 0.1,
+    emissive: 0x0a1420, emissiveIntensity: 0.25, transparent: true, opacity: 0.72,
   });
+  const tireMat = new THREE.MeshStandardMaterial({ color: 0x0b0b12, roughness: 0.85, metalness: 0.1 });
+  const rimMat = paint(accentHex, { metal: 0.9, rough: 0.25 });
+  const chromeMat = paint(0x2a2a33, { metal: 0.9, rough: 0.3 });
+  const headMat = paint(0xfff6d5, { emissive: 0xffe6a0, ei: 0.6 });
+  const tailMat = paint(0x2a0000, { emissive: 0xff2a2a, ei: 0.55 });
 
   const { length: L, width: W, ride: H, wheelR: R } = p;
-
-  // --- smooth extruded car hull (a real car silhouette, not stacked boxes) ---
   const hl = L / 2;
-  const BH = H * 1.9;      // total body height incl. cabin
-  const floor = R * 0.55;  // hull sits here; lower half of the wheels shows
+  const bodyH = H * 0.82;                  // solid lower body (beltline)
+  const cabH = bodyH * (p.cabin ?? 0.62);  // greenhouse height
+  const floor = R * 0.45;                  // ground clearance
+  const beltY = floor + bodyH;             // world height of the deck / beltline
+
+  // === lower body: a smooth, width-tapered hull (a car silhouette) ==========
+  // Side profile (x = length, y = height): low nose → hood → cowl → flat deck →
+  // tail drop. Extruded across the width, then the width is tapered by height so
+  // the cross-section is a rounded car body (tucked sills, full fenders, a much
+  // narrower roofline) rather than a constant-width slab.
   const sil = new THREE.Shape();
-  sil.moveTo(-hl, 0);
-  sil.lineTo(hl * 0.99, 0.02);
-  sil.lineTo(hl, BH * 0.36);                                    // nose tip
-  sil.quadraticCurveTo(hl * 0.78, BH * 0.42, hl * 0.46, BH * 0.46); // hood
-  sil.quadraticCurveTo(hl * 0.16, BH * 0.98, -hl * 0.14, BH * 0.96); // windshield → roof
-  sil.lineTo(-hl * 0.56, BH * 0.88);                            // roofline
-  sil.quadraticCurveTo(-hl * 0.95, BH * 0.6, -hl, BH * 0.38);   // rear glass / tail
+  sil.moveTo(-hl, bodyH * 0.06);
+  sil.lineTo(hl * 0.97, 0);
+  sil.lineTo(hl, bodyH * 0.5);                                        // low nose tip
+  sil.quadraticCurveTo(hl * 0.86, bodyH * 0.66, hl * 0.5, bodyH * 0.8); // hood
+  sil.quadraticCurveTo(hl * 0.3, bodyH * 0.95, hl * 0.14, bodyH);       // cowl → beltline
+  sil.lineTo(-hl * 0.5, bodyH);                                         // flat rear deck
+  sil.quadraticCurveTo(-hl * 0.85, bodyH * 0.92, -hl, bodyH * 0.6);     // tail
   sil.closePath();
   const hullGeo = new THREE.ExtrudeGeometry(sil, {
-    depth: W, bevelEnabled: true, bevelThickness: 0.07, bevelSize: 0.09, bevelSegments: 2, steps: 1,
+    depth: W, bevelEnabled: true, bevelThickness: 0.08, bevelSize: 0.1, bevelSegments: 2, steps: 1,
   });
   hullGeo.rotateY(-Math.PI / 2);   // length(x) → +z, front points forward
   hullGeo.center();
   hullGeo.computeBoundingBox();
   hullGeo.translate(0, -hullGeo.boundingBox!.min.y, 0); // rest bottom on y=0
-  // taper the width toward the top (and a touch toward the nose) so it reads as
-  // a rounded car body from behind, not a constant-width slab
   {
     const pa = hullGeo.getAttribute("position");
     hullGeo.computeBoundingBox();
     const maxY = hullGeo.boundingBox!.max.y || 1;
     const maxZ = hullGeo.boundingBox!.max.z || 1;
+    const shoulder = 0.42; // height of the widest point (the fender line)
     for (let i = 0; i < pa.count; i++) {
-      const ty = Math.max(0, pa.getY(i) / maxY);
-      const tz = Math.max(0, pa.getZ(i) / maxZ); // 1 at the nose
-      const wScale = (1 - ty * ty * 0.5) * (1 - tz * 0.18);
-      pa.setX(i, pa.getX(i) * wScale);
+      const ty = Math.min(1, Math.max(0, pa.getY(i) / maxY));
+      const tz = pa.getZ(i) / maxZ;        // +1 nose … -1 tail
+      let hs: number;
+      if (ty <= shoulder) {
+        hs = 0.8 + 0.2 * Math.sin((ty / shoulder) * Math.PI * 0.5); // tucked sills → full fenders
+      } else {
+        const t = (ty - shoulder) / (1 - shoulder);
+        hs = 1 - 0.36 * (t * t * (3 - 2 * t));                      // roofline ~0.64 width
+      }
+      const nose = Math.max(0, tz), tail = Math.max(0, -tz);
+      const plan = 1 - 0.2 * nose * nose - 0.07 * tail * tail;      // pointier nose, tucked tail
+      pa.setX(i, pa.getX(i) * hs * plan);
     }
     pa.needsUpdate = true;
     hullGeo.computeVertexNormals();
@@ -145,87 +165,122 @@ function buildKart(color: number, p: KartParams): THREE.Group {
   hull.position.y = floor;
   g.add(hull);
 
-  // glowing chin splitter + rear light bar
-  g.add(box(W * 0.92, 0.14, L * 0.26, trimMat, 0, floor + 0.06, hl * 0.62));
-  g.add(box(W * 0.62, 0.14, 0.4, trimMat, 0, floor + BH * 0.34, -hl * 0.94));
+  // === glass greenhouse: sloped windshield, roof, sloped backlight ==========
+  // A faceted glass canopy, clearly narrower than the body, sitting on the deck.
+  const cabW = W * 0.56;
+  const cab = new THREE.Shape();
+  cab.moveTo(hl * 0.32, 0);                                     // windshield base (front)
+  cab.quadraticCurveTo(hl * 0.14, cabH * 0.95, -hl * 0.02, cabH); // windshield → roof
+  cab.lineTo(-hl * 0.34, cabH);                                 // roof
+  cab.quadraticCurveTo(-hl * 0.5, cabH * 0.62, -hl * 0.56, 0);  // backlight → deck
+  cab.closePath();
+  const cabGeo = new THREE.ExtrudeGeometry(cab, {
+    depth: cabW, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.04, bevelSegments: 1, steps: 1,
+  });
+  cabGeo.rotateY(-Math.PI / 2);
+  cabGeo.translate(cabW / 2, 0, 0); // centre the width
+  const cabin = new THREE.Mesh(cabGeo, glass);
+  cabin.position.y = beltY - 0.03;  // slight overlap into the deck
+  g.add(cabin);
 
-  // side sill accent along the lower body
+  // === paneling & aero trim =================================================
+  g.add(box(W * 0.88, 0.12, L * 0.16, darkMat, 0, floor + 0.02, hl * 0.82));  // front splitter
+  g.add(box(W * 0.78, 0.14, L * 0.12, darkMat, 0, floor + 0.03, -hl * 0.88)); // rear diffuser
   for (const sx of [-1, 1]) {
-    g.add(box(0.08, 0.16, L * 0.7, trimMat, sx * W * 0.5, floor + BH * 0.22, 0));
+    // rocker/side-sill panel (subtle two-tone paneling along the lower body)
+    g.add(box(0.07, bodyH * 0.34, L * 0.56, darkMat, sx * W * 0.47, floor + bodyH * 0.3, 0));
   }
+  // subtle accent stripe down the hood
+  g.add(box(0.12, 0.04, L * 0.24, trimMat, 0, floor + bodyH * 0.86, hl * 0.5));
 
-  // glass windshield / greenhouse sitting on the cabin
-  const canopy = new THREE.Mesh(new THREE.SphereGeometry(W * 0.36, 18, 12), glass);
-  canopy.scale.set(0.92, 0.6, 1.25);
-  canopy.position.set(0, floor + BH * 0.72, hl * 0.02);
-  g.add(canopy);
-
-  // headlights
+  // === lights ================================================================
+  const lampGeo = new THREE.BoxGeometry(W * 0.16, 0.08, 0.05);
   for (const sx of [-1, 1]) {
-    const lamp = new THREE.Mesh(
-      new THREE.SphereGeometry(0.15, 10, 8),
-      paint(0xfffbe6, { emissive: 0xfff2b0, ei: 1.6 })
-    );
-    lamp.position.set(sx * W * 0.32, floor + BH * 0.28, hl * 0.92);
+    const lamp = new THREE.Mesh(lampGeo, headMat);
+    lamp.position.set(sx * W * 0.3, floor + bodyH * 0.56, hl * 0.9);
     g.add(lamp);
   }
+  // slim rear light bar
+  g.add(box(W * 0.66, 0.08, 0.05, tailMat, 0, floor + bodyH * 0.62, -hl * 0.98));
 
-  // roll cage / side pods on the bulky bruiser
-  if (p.bulky) {
+  // side mirrors (small, but they sell "this is a car")
+  if (p.mirrors) {
     for (const sx of [-1, 1]) {
-      const pod = box(W * 0.32, BH * 0.55, L * 0.5, darkMat, sx * W * 0.62, floor + BH * 0.4, -L * 0.05);
-      g.add(pod);
-      const exhaust = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.14, 0.14, 0.5, 8),
-        paint(0x2a2a33, { metal: 0.9, rough: 0.3 })
-      );
-      exhaust.rotation.x = Math.PI / 2;
-      exhaust.position.set(sx * W * 0.62, floor + BH * 0.55, -hl * 0.98);
-      g.add(exhaust);
+      g.add(box(0.11, 0.07, 0.1, bodyMat, sx * (cabW * 0.5 + 0.13), beltY + cabH * 0.34, hl * 0.16));
     }
   }
 
-  // rear wing
-  if (p.wing === "low" || p.wing === "tall") {
-    const wingH = p.wing === "tall" ? BH * 1.25 : BH * 0.85;
-    g.add(box(W * 1.05, 0.12, L * 0.16, darkMat, 0, floor + wingH, -hl * 0.9));
-    g.add(box(W * 1.05, 0.08, L * 0.1, trimMat, 0, floor + wingH + 0.14, -hl * 0.94));
+  // === type-specific spoiler / fin ==========================================
+  const deckY = beltY;
+  if (p.wing === "duck") {
+    // ducktail lip on the rear deck
+    g.add(box(W * 0.84, 0.07, L * 0.14, darkMat, 0, deckY + 0.07, -hl * 0.78));
+    for (const sx of [-1, 1])
+      g.add(box(0.06, 0.16, L * 0.13, darkMat, sx * W * 0.4, deckY + 0.02, -hl * 0.78));
+  } else if (p.wing === "low") {
+    // wide, low bruiser wing on stubby end plates
+    const wy = deckY + bodyH * 0.3;
+    g.add(box(W * 1.08, 0.09, L * 0.16, darkMat, 0, wy, -hl * 0.86));
+    for (const sx of [-1, 1])
+      g.add(box(0.1, bodyH * 0.34, L * 0.15, darkMat, sx * W * 0.5, wy - bodyH * 0.15, -hl * 0.86));
+  } else if (p.wing === "swan") {
+    // tall swan-neck GT wing for the top-speed car
+    const wy = deckY + cabH + bodyH * 0.32;
+    g.add(box(W * 1.0, 0.06, L * 0.15, darkMat, 0, wy, -hl * 0.86));
+    g.add(box(W * 1.0, 0.04, L * 0.06, trimMat, 0, wy + 0.07, -hl * 0.9)); // subtle trim edge
     for (const sx of [-1, 1]) {
-      g.add(box(0.12, wingH * 0.55, 0.12, darkMat, sx * W * 0.42, floor + wingH * 0.62, -hl * 0.86));
+      const stalk = box(0.08, wy - deckY, 0.14, chromeMat, sx * W * 0.32, deckY + (wy - deckY) / 2, -hl * 0.8);
+      stalk.rotation.x = -0.16;
+      g.add(stalk);
     }
   } else if (p.wing === "fin") {
-    const fin = new THREE.Mesh(new THREE.BufferGeometry(), trimMat);
-    const w2 = W * 0.06;
-    const fh = BH * 1.15;
+    // central dorsal shark-fin for the darty compact
+    const fin = new THREE.Mesh(new THREE.BufferGeometry(), bodyMat);
+    const w2 = W * 0.045;
+    const fh = cabH * 0.85;
     const verts = new Float32Array([
-      -w2, 0, -L * 0.15, w2, 0, -L * 0.15, w2, fh, -L * 0.42,
-      -w2, 0, -L * 0.15, w2, fh, -L * 0.42, -w2, fh, -L * 0.42,
+      -w2, 0, hl * 0.06, w2, 0, hl * 0.06, w2, fh, -hl * 0.4,
+      -w2, 0, hl * 0.06, w2, fh, -hl * 0.4, -w2, fh, -hl * 0.4,
     ]);
     fin.geometry.setAttribute("position", new THREE.BufferAttribute(verts, 3));
     fin.geometry.computeVertexNormals();
-    fin.position.y = floor + BH * 0.4;
+    fin.position.y = beltY;
     g.add(fin);
   }
 
-  // rear thruster glow
-  for (const sx of [-1, 1]) {
-    const thruster = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.2, 0.26, 0.3, 12),
-      paint(0x67e8f9, { emissive: 0x22d3ee, ei: 1.4 })
-    );
-    thruster.rotation.x = Math.PI / 2;
-    thruster.position.set(sx * W * 0.28, floor + BH * 0.28, -hl * 0.98);
-    g.add(thruster);
+  // === bruiser side pods + twin exhausts ====================================
+  if (p.bulky) {
+    for (const sx of [-1, 1]) {
+      g.add(box(W * 0.24, bodyH * 0.5, L * 0.42, darkMat, sx * W * 0.56, floor + bodyH * 0.4, -L * 0.04));
+      const ex = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 0.4, 10), chromeMat);
+      ex.rotation.x = Math.PI / 2;
+      ex.position.set(sx * W * 0.5, floor + bodyH * 0.35, -hl * 0.98);
+      g.add(ex);
+    }
+  } else {
+    // small twin thruster nozzles with a subtle accent glow
+    const nozzleGeo = new THREE.CylinderGeometry(0.13, 0.16, 0.22, 12);
+    for (const sx of [-1, 1]) {
+      const n = new THREE.Mesh(nozzleGeo, trimMat);
+      n.rotation.x = Math.PI / 2;
+      n.position.set(sx * W * 0.24, floor + bodyH * 0.4, -hl * 0.96);
+      g.add(n);
+    }
   }
 
-  // wheels
-  const wx = W * 0.55;
-  const wz = L * 0.34;
+  // === wheels (shared geometry per size) ====================================
+  const rf = R, rr = R * 1.08;
+  const tireGeoF = new THREE.CylinderGeometry(rf, rf, rf * 0.72, 16);
+  const rimGeoF = new THREE.CylinderGeometry(rf * 0.58, rf * 0.58, rf * 0.74, 12);
+  const tireGeoR = new THREE.CylinderGeometry(rr, rr, rr * 0.78, 16);
+  const rimGeoR = new THREE.CylinderGeometry(rr * 0.58, rr * 0.58, rr * 0.8, 12);
+  const wx = W * 0.52;
+  const wzF = L * 0.32, wzR = L * 0.33;
   g.add(
-    wheel(-wx, wz, R, R * 0.7, accentHex),
-    wheel(wx, wz, R, R * 0.7, accentHex),
-    wheel(-wx, -wz, R * 1.1, R * 0.8, accentHex),
-    wheel(wx, -wz, R * 1.1, R * 0.8, accentHex)
+    wheel(-wx, wzF, tireGeoF, rimGeoF, tireMat, rimMat, rf),
+    wheel(wx, wzF, tireGeoF, rimGeoF, tireMat, rimMat, rf),
+    wheel(-wx, -wzR, tireGeoR, rimGeoR, tireMat, rimMat, rr),
+    wheel(wx, -wzR, tireGeoR, rimGeoR, tireMat, rimMat, rr)
   );
 
   return g;
@@ -239,13 +294,29 @@ function buildKart(color: number, p: KartParams): THREE.Group {
 export function makeKart(id: CarId, color: number): THREE.Group {
   switch (id) {
     case "bolt":
-      return buildKart(color, { length: 4.4, width: 1.7, ride: 0.7, wheelR: 0.5, wing: "tall" });
+      // long, low, sleek — pointed nose, sunk cabin, tall swan-neck GT wing
+      return buildKart(color, {
+        length: 4.4, width: 1.68, ride: 0.82, wheelR: 0.48,
+        wing: "swan", cabin: 0.5, mirrors: true,
+      });
     case "titan":
-      return buildKart(color, { length: 4.2, width: 2.3, ride: 1.0, wheelR: 0.62, wing: "low", bulky: true });
+      // short, very wide bruiser — chunky, side pods, twin exhausts, low wing
+      return buildKart(color, {
+        length: 4.2, width: 2.3, ride: 1.05, wheelR: 0.62,
+        wing: "low", cabin: 0.6, bulky: true,
+      });
     case "wisp":
-      return buildKart(color, { length: 3.4, width: 1.7, ride: 0.7, wheelR: 0.52, wing: "fin" });
+      // tiny, tall bubble-canopy compact with a central dorsal fin
+      return buildKart(color, {
+        length: 3.4, width: 1.66, ride: 0.78, wheelR: 0.5,
+        wing: "fin", cabin: 0.9, mirrors: true,
+      });
     case "comet":
     default:
-      return buildKart(color, { length: 4.0, width: 1.9, ride: 0.85, wheelR: 0.55, wing: "low" });
+      // balanced sports car — even proportions, tidy ducktail spoiler
+      return buildKart(color, {
+        length: 4.0, width: 1.9, ride: 0.9, wheelR: 0.54,
+        wing: "duck", cabin: 0.62, mirrors: true,
+      });
   }
 }
