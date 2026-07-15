@@ -37,6 +37,7 @@ import {
 } from "./objects";
 import { makeWeather, type WeatherSystem } from "./weather";
 import { makeTunnelArch, makeTunnelPortal } from "./setpieces";
+import { makeBoostGate, makeRingArch } from "./props/gates";
 import { loadPBR } from "./textures";
 import { makeKart, CAR_SPECS, CAR_IDS, type CarStat } from "./cars";
 import { REALMS, pickScenery, REALM_WEATHER, REALM_AMBIENCE, REALM_TUNNELS, REALM_RIVERS, type RealmSpec, type SceneryKind } from "./realms";
@@ -56,7 +57,7 @@ import type { GameMode, GameResult, GameOptions, RaceStanding, CarId } from "../
 
 type Phase = "loading" | "countdown" | "racing" | "finished";
 
-type EntityType = "gem" | "airGem" | "nitro" | "orb" | "ramp" | "rock" | "monster" | "itembox" | "boostpad";
+type EntityType = "gem" | "airGem" | "nitro" | "orb" | "ramp" | "rock" | "monster" | "itembox" | "boostpad" | "boostgate";
 
 type ItemKind = "boost" | "shield" | "missile" | "mine";
 const ITEM_LABEL: Record<ItemKind, string> = {
@@ -105,7 +106,7 @@ const MODE_CONFIG: Record<GameMode, ModeConfig> = {
 
 const COLLIDE_WIDTH: Record<EntityType, number> = {
   gem: 0.36, airGem: 0.42, nitro: 0.36, orb: 0.44, ramp: 1.45, rock: 0.34, monster: 0.38, itembox: 0.56,
-  boostpad: 1.0,
+  boostpad: 1.0, boostgate: 0.45,
 };
 
 const BUCKET_METERS = 5;
@@ -274,7 +275,7 @@ export class Game {
     this.renderer.setClearColor(this.realm.palette.fog);
     // filmic tone mapping → richer colors + smooth highlight roll-off
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.35;
+    this.renderer.toneMappingExposure = 1.2;
 
     const hudCanvas = document.createElement("canvas");
     hudCanvas.className = "game-layer game-hud";
@@ -295,7 +296,7 @@ export class Game {
     this.composer.setPixelRatio(this.renderer.getPixelRatio());
     this.composer.setSize(w, h);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.14, 0.6, 0.92);
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.11, 0.6, 0.95);
     this.composer.addPass(this.bloomPass);
     // final pass applies tone mapping + sRGB so the composed image is graded
     this.composer.addPass(new OutputPass());
@@ -556,7 +557,7 @@ export class Game {
     obj.rotation.order = "YXZ";
     obj.rotation.y = Math.atan2(tan.x, tan.z);
     // ramps/rocks/pads sit on the road, so pitch them to match its slope on hills
-    if (type === "ramp" || type === "rock" || type === "boostpad") {
+    if (type === "ramp" || type === "rock" || type === "boostpad" || type === "boostgate") {
       const a = this.track.pointAt(d - 2);
       const b = this.track.pointAt(d + 2);
       const horiz = Math.hypot(b.x - a.x, b.z - a.z) || 4;
@@ -719,6 +720,18 @@ export class Game {
     // boost pads — drive over the arrows for a speed surge (something to aim for)
     for (let d = 170; d < len - 50; d += 300) {
       this.addEntity("boostpad", d, 0, makeBoostPad(), 0.02);
+    }
+
+    // boost gates — a glowing ring in ONE lane; thread it for a strong surge
+    // (reward for committing to the line, a distinct quirk from the flat pads)
+    for (let d = 330; d < len - 60; d += 460) {
+      const l = LANE_CENTERS[Math.floor(rand() * 3)];
+      this.addEntity("boostgate", d, l, makeBoostGate(rand), 0.1);
+    }
+
+    // decorative checkpoint hoops you pass under (pure cosmetic set-dressing)
+    for (let d = 240; d < len - 60; d += 690) {
+      this.placeOnTrack(makeRingArch(rand), d);
     }
 
     // (road-blocking rocks removed — they were pure race-stoppers, not fun)
@@ -1483,6 +1496,18 @@ export class Game {
             this.toast("BOOST!", "#22d3ee");
           }
           this.boostT = Math.max(this.boostT, PAD_BOOST_DURATION);
+        }
+        break;
+      case "boostgate":
+        // drive THROUGH the ring on its lane for a stronger, longer surge
+        if (this.alt < 2.2) {
+          if (this.boostT < 0.5) {
+            this.sound.play("nitro");
+            this.toast("BOOST GATE!", "#67e8f9");
+            this.score += 40;
+          }
+          this.boostT = Math.max(this.boostT, PAD_BOOST_DURATION * 1.4);
+          this.speed = Math.max(this.speed, MAX_SPEED * 0.85);
         }
         break;
       case "orb":
