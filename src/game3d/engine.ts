@@ -623,32 +623,33 @@ export class Game {
     if (realm.style === "void") {
       this.decorateVoid(library, rand);
     } else {
-      // roadside scenery — three bands each side for depth, so the flats aren't
-      // empty (the sparse world felt "empty/anxious")
-      for (let d = 0; d < len; d += 3.3) {
+      // roadside scenery — three bands each side for depth. Spacing is tuned so
+      // the (now longer) tracks stay lush without ballooning the draw-call count
+      // (that was the top-speed lag: thousands of separate meshes).
+      for (let d = 0; d < len; d += 5.2) {
         for (const side of [-1, 1]) {
           // near band (dense, right by the road)
-          if (rand() < 0.95) {
+          if (rand() < 0.85) {
             const kind = pickScenery(realm, rand);
             const obj = this.sceneryObject(kind, library, rand);
             // keep big monuments off the verge so they don't overhang the track
             const nearOff = LANDMARK_KINDS.has(kind) ? 34 + rand() * 22 : 5 + rand() * 13;
             const off = side * (ROAD_HALF_WIDTH + nearOff);
-            const p = track.pointAt(d + rand() * 3, off);
+            const p = track.pointAt(d + rand() * 4, off);
             obj.position.set(p.x, 0, p.z);
             this.scene.add(obj);
           }
           // mid band
-          if (rand() < 0.7) {
+          if (rand() < 0.55) {
             const obj = this.sceneryObject(pickScenery(realm, rand), library, rand);
             const off = side * (ROAD_HALF_WIDTH + 20 + rand() * 36);
-            const p = track.pointAt(d + rand() * 3, off);
+            const p = track.pointAt(d + rand() * 4, off);
             obj.position.set(p.x, 0, p.z);
             obj.scale.multiplyScalar(1.1 + rand() * 0.5);
             this.scene.add(obj);
           }
           // far band (big, fills the mid-distance out toward the mountains)
-          if (rand() < 0.4) {
+          if (rand() < 0.28) {
             const obj = this.sceneryObject(pickScenery(realm, rand), library, rand);
             const off = side * (ROAD_HALF_WIDTH + 58 + rand() * 70);
             const p = track.pointAt(d + rand() * 5, off);
@@ -683,14 +684,10 @@ export class Game {
 
     // boost pads — drive over the arrows for a speed surge (something to aim for)
     for (let d = 170; d < len - 50; d += 300) {
-      this.addEntity("boostpad", d, 0, makeBoostPad(), 0.14);
+      this.addEntity("boostpad", d, 0, makeBoostPad(), 0.02);
     }
 
-    // rocks on the road
-    for (let d = 90; d < len - 40; d += 200) {
-      const rock = instantiate(library, rand() < 0.5 ? "rockA" : "rockB", 2.2);
-      this.addEntity("rock", d, lane(), rock);
-    }
+    // (road-blocking rocks removed — they were pure race-stoppers, not fun)
 
     // nitro canisters
     for (let d = 150; d < len - 40; d += 280) {
@@ -701,7 +698,7 @@ export class Game {
     // with its own power, and the air-gem arc stretches to match)
     const rampKinds: RampKind[] = ["standard", "mega", "kicker", "wide"];
     let ri = 0;
-    for (let d = 200; d < len - 60; d += 270) {
+    for (let d = 200; d < len - 60; d += 520) {
       const l = 0; // centre lane so a launch always lands back on the road
       const kind = rampKinds[ri++ % rampKinds.length];
       const spec = RAMP_SPECS[kind];

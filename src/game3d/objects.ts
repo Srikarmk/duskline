@@ -844,28 +844,48 @@ export function makeItemBox(): THREE.Group {
 
 /** A flat glowing boost pad — three forward-pointing chevrons on the road.
  *  Drive over it for a speed surge. Sits just above the road surface. */
+/** A flat "travelator" boost strip flush with the road: a ribbed metal deck with
+ *  glowing side rails and forward chevrons — drive onto it for a speed surge. */
 export function makeBoostPad(): THREE.Group {
   const g = new THREE.Group();
-  const base = new THREE.Mesh(
-    new THREE.PlaneGeometry(ROAD_HALF_WIDTH * 1.0, 6.5),
+  const W = ROAD_HALF_WIDTH * 1.7;
+  const L = 13;
+  // dark ribbed deck, sitting flush with the road
+  const deck = new THREE.Mesh(
+    new THREE.BoxGeometry(W, 0.1, L),
     new THREE.MeshStandardMaterial({
-      color: 0x0e2440, emissive: 0x0891b2, emissiveIntensity: 0.35,
-      transparent: true, opacity: 0.6, roughness: 0.4,
+      color: 0x13233a, metalness: 0.6, roughness: 0.4,
+      emissive: 0x0891b2, emissiveIntensity: 0.2,
     })
   );
-  base.rotation.x = -Math.PI / 2;
-  g.add(base);
-  const chevMat = new THREE.MeshStandardMaterial({
-    color: 0x67e8f9, emissive: 0x22d3ee, emissiveIntensity: 0.9,
-  });
-  for (let i = 0; i < 3; i++) {
-    const chev = new THREE.Mesh(new THREE.ConeGeometry(ROAD_HALF_WIDTH * 0.32, 1.5, 3), chevMat);
-    chev.rotation.x = -Math.PI / 2;   // lie flat
-    chev.position.set(0, 0.06, -1.6 + i * 1.6); // point toward +z (forward)
-    chev.scale.z = 0.6;
-    g.add(chev);
+  deck.position.y = 0.05;
+  g.add(deck);
+  // tread rollers across the width (the escalator/travelator ribs)
+  const treadMat = new THREE.MeshStandardMaterial({ color: 0x2c4c6a, metalness: 0.75, roughness: 0.35 });
+  const treadGeo = new THREE.BoxGeometry(W * 0.92, 0.06, 0.16);
+  for (let z = -L / 2 + 0.6; z < L / 2; z += 0.72) {
+    const t = new THREE.Mesh(treadGeo, treadMat);
+    t.position.set(0, 0.11, z);
+    g.add(t);
   }
-  g.position.y = 0.12;
+  // glowing edge rails (moving-walkway handrail glow)
+  const railMat = new THREE.MeshStandardMaterial({ color: 0x67e8f9, emissive: 0x22d3ee, emissiveIntensity: 1.1 });
+  const railGeo = new THREE.BoxGeometry(0.22, 0.14, L);
+  for (const sx of [-1, 1]) {
+    const rail = new THREE.Mesh(railGeo, railMat);
+    rail.position.set(sx * (W / 2 - 0.11), 0.13, 0);
+    g.add(rail);
+  }
+  // forward direction chevrons glowing on the deck
+  const arrowMat = new THREE.MeshStandardMaterial({ color: 0x9df0ff, emissive: 0x22d3ee, emissiveIntensity: 1.3 });
+  const arrowGeo = new THREE.ConeGeometry(W * 0.26, 1.3, 3);
+  for (let i = 0; i < 4; i++) {
+    const a = new THREE.Mesh(arrowGeo, arrowMat);
+    a.rotation.x = -Math.PI / 2;
+    a.scale.z = 0.5;
+    a.position.set(0, 0.12, -L / 2 + 1.6 + i * 2.7);
+    g.add(a);
+  }
   return g;
 }
 

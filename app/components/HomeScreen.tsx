@@ -29,7 +29,6 @@ const MODES: { id: GameMode; name: string; blurb: string }[] = [
   { id: "timetrial", name: "TIME TRIAL", blurb: "Solo run — beat the clock over clean laps." },
   { id: "nitro", name: "NITRO SPRINT", blurb: "1 lap, full nitro, all-out sprint vs the pack." },
   { id: "transform", name: "TRANSFORMER RUSH", blurb: "Morph into a sword-mech — slash monsters and fly." },
-  { id: "grandprix", name: "GRAND PRIX", blurb: "All 3 realms back-to-back for the championship." },
   { id: "spacewars", name: "SPACE WARS", blurb: "Deep-space combat — start armed, weapons everywhere, blast the pack." },
 ];
 
