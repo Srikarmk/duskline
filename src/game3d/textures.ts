@@ -5,7 +5,9 @@ import * as THREE from "three";
 // ---------------------------------------------------------------------------
 
 export interface TexSet { diff: THREE.Texture; nor: THREE.Texture; }
-export interface PBRLib { ground: TexSet; road: TexSet; rock: TexSet; metal: TexSet; }
+export interface PBRLib {
+  ground: TexSet; road: TexSet; rock: TexSet; metal: TexSet; bark: TexSet; foliage: TexSet;
+}
 
 let PBR: PBRLib | null = null;
 export function pbr(): PBRLib | null { return PBR; }
@@ -33,10 +35,11 @@ async function loadSet(name: string): Promise<TexSet> {
 
 /** Load the PBR sets a realm needs (its ground + shared road/rock/metal). */
 export async function loadPBR(groundName: string): Promise<PBRLib> {
-  const [ground, road, rock, metal] = await Promise.all([
+  const [ground, road, rock, metal, bark, foliage] = await Promise.all([
     loadSet(groundName), loadSet("road"), loadSet("rock"), loadSet("metal"),
+    loadSet("bark"), loadSet("foliage"),
   ]);
-  PBR = { ground, road, rock, metal };
+  PBR = { ground, road, rock, metal, bark, foliage };
   return PBR;
 }
 

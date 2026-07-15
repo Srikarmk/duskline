@@ -31,7 +31,8 @@ import {
   makeMech, makeSlash, makeFlame, makeUnderGlow,
   makeItemBox, makeMissile, makeMine, makeShieldBubble,
   makeParticleField, makeStartGantry, varyTint, makeSpaceBackdrop,
-  type MechRig, type Placement, type ParticleField,
+  makeTree, makeTreeMaterials,
+  type MechRig, type Placement, type ParticleField, type TreeMats,
 } from "./objects";
 import { loadPBR } from "./textures";
 import { makeKart, CAR_SPECS, CAR_IDS, type CarStat } from "./cars";
@@ -151,6 +152,7 @@ export class Game {
   private spinners: Entity[] = [];
   private monsters: Entity[] = [];
   private ramps: { dist: number; power: number }[] = [];
+  private treeMats: TreeMats | null = null;
   private opponents: Opponent[] = [];
   private playerRoot = new THREE.Group();
   private playerBody = new THREE.Group();
@@ -468,6 +470,13 @@ export class Game {
 
   private sceneryObject(kind: SceneryKind, library: ModelLibrary, rand: () => number): THREE.Object3D {
     if (kind === "crystal") return makeCrystalCluster(rand, this.realm.palette.crystalColors);
+    // textured procedural trees (bark trunk + leaf foliage) instead of the flat
+    // low-poly kit models — shared materials so hundreds stay cheap
+    if (this.treeMats) {
+      if (kind === "treeA") return makeTree(rand, this.treeMats, "pine");
+      if (kind === "treeB") return makeTree(rand, this.treeMats, "round");
+      if (kind === "treeDark") return makeTree(rand, this.treeMats, "tall");
+    }
     let obj: THREE.Object3D;
     switch (kind) {
       case "treeA": obj = instantiate(library, "treeA", 3 + rand() * 2.2); break;
@@ -523,6 +532,7 @@ export class Game {
     const { track, realm } = this;
     const len = track.length;
     const pal = realm.palette;
+    this.treeMats = makeTreeMaterials(pal); // shared bark/foliage tree materials
     const lane = () => LANE_CENTERS[Math.floor(rand() * 3)];
 
     if (realm.style === "void") {

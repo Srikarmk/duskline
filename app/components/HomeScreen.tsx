@@ -32,9 +32,27 @@ const MODE_LABEL: Record<GameMode, string> = {
   classic: "CIRCUIT", timetrial: "TRIAL", nitro: "SPRINT", transform: "RUSH", grandprix: "GP",
 };
 
+const STEPS: { n: number; label: string; hint: string }[] = [
+  { n: 1, label: "REALM", hint: "Choose the world you'll tear through." },
+  { n: 2, label: "MACHINE", hint: "Pick the kart that fits your style." },
+  { n: 3, label: "RACE", hint: "Name your racer, set the rules, launch." },
+];
+
 function formatTime(ms: number) {
   const s = ms / 1000;
   return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+}
+
+/** Thematic fallback gradient for a realm preview, from its sky palette. */
+function realmFallback(id: RealmId): string {
+  const sky = REALMS[id].palette.sky;
+  return `linear-gradient(160deg, ${sky[0]} 0%, ${sky[1]} 38%, ${sky[2]} 72%, ${sky[3]} 100%)`;
+}
+
+/** Livery-tinted fallback gradient for a car preview. */
+function carFallback(id: CarId): string {
+  const c = carColorHex(id);
+  return `radial-gradient(130% 120% at 28% 18%, ${c}dd 0%, ${c}55 34%, transparent 62%), linear-gradient(160deg, #1c1740 0%, #0c0a22 100%)`;
 }
 
 export default function HomeScreen({ lastResult, onStart }: Props) {
@@ -43,6 +61,9 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
   const [realm, setRealm] = useState<RealmId>("forest");
   const [car, setCar] = useState<CarId>("comet");
   const [laps, setLaps] = useState(3);
+  const [step, setStep] = useState(1);
+  const [realmPicked, setRealmPicked] = useState(false);
+  const [carPicked, setCarPicked] = useState(false);
   const [localScores, setLocalScores] = useState<ScoreEntry[]>([]);
   const [globalScores, setGlobalScores] = useState<ScoreEntry[] | null>(null);
   const [isGlobal, setIsGlobal] = useState(false);
@@ -51,7 +72,10 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
   useEffect(() => {
     setName(loadLastName());
     const savedCar = loadLastCar();
-    if (savedCar && CAR_SPECS[savedCar]) setCar(savedCar);
+    if (savedCar && CAR_SPECS[savedCar]) {
+      setCar(savedCar);
+      setCarPicked(true);
+    }
     setLocalScores(loadScores());
     fetchGlobalScores().then((res) => {
       if (res) {
@@ -61,14 +85,28 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
     });
   }, []);
 
-  const canStart = name.trim().length > 0;
   const realmIds = Object.keys(REALMS) as RealmId[];
   const isGP = mode === "grandprix";
   const shownScores = board === "global" ? globalScores ?? [] : localScores;
+  const canStart = name.trim().length > 0 && realmPicked && carPicked;
+
+  // Which steps the breadcrumb lets you jump to.
+  const reachable = (n: number) =>
+    n === 1 || (n === 2 && realmPicked) || (n === 3 && realmPicked && carPicked);
+
+  const goStep = (n: number) => {
+    if (reachable(n)) setStep(n);
+  };
+
+  const launch = () => {
+    if (canStart) onStart(name.trim(), mode, realm, car, isGP ? 3 : laps);
+  };
+
+  const nextDisabled = (step === 1 && !realmPicked) || (step === 2 && !carPicked);
 
   return (
     <div className="home">
-      <div className="hero">
+      <div className="hero hero-compact">
         <div className="hero-glow" />
         <h1 className="title">FANTASY RACER</h1>
         <p className="subtitle">drift · boost · jump · transform — a 3D magic kart racer</p>
@@ -89,155 +127,252 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
         </div>
       )}
 
-      <label className="field">
-        <span>RACER NAME</span>
-        <input
-          value={name}
-          maxLength={14}
-          placeholder="enter your name"
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && canStart) onStart(name.trim(), mode, realm, car, isGP ? 3 : laps);
-          }}
-        />
-      </label>
-
-      {!isGP ? (
-        <>
-          <div className="section-label">REALM</div>
-          <div className="realms">
-            {realmIds.map((id) => (
-              <button
-                key={id}
-                className={`mode-card ${realm === id ? "selected" : ""}`}
-                onClick={() => setRealm(id)}
-              >
-                <strong>{REALMS[id].name}</strong>
-                <span>{REALMS[id].blurb}</span>
-              </button>
-            ))}
-          </div>
-        </>
-      ) : (
-        <div className="gp-note">
-          Grand Prix runs all three realms in order:
-          {" "}Enchanted Forest → Ember Wastes → Crystal Peaks. Championship
-          points each round.
-        </div>
-      )}
-
-      <div className="section-label">MACHINE</div>
-      <div className="cars">
-        {CAR_IDS.map((id) => {
-          const spec = CAR_SPECS[id];
-          const swatch = carColorHex(id);
-          return (
-            <button
-              key={id}
-              className={`car-card ${car === id ? "selected" : ""}`}
-              onClick={() => setCar(id)}
-              style={car === id ? { borderColor: swatch, boxShadow: `0 0 14px ${swatch}66` } : undefined}
-            >
-              <div className="car-head">
-                <span className="car-chip" style={{ background: swatch }} />
-                <strong>{spec.name}</strong>
+      <div className="wizard">
+        {/* Step indicator / breadcrumb */}
+        <div className="wiz-steps" role="tablist" aria-label="Setup steps">
+          {STEPS.map((s, i) => {
+            const state =
+              s.n === step ? "active" : s.n < step ? "done" : "";
+            const canGo = reachable(s.n);
+            return (
+              <div key={s.n} className="wiz-step-wrap">
+                <button
+                  className={`wiz-step ${state} ${canGo ? "reachable" : ""}`}
+                  onClick={() => goStep(s.n)}
+                  disabled={!canGo}
+                  aria-current={s.n === step ? "step" : undefined}
+                >
+                  <span className="wiz-step-num">
+                    {s.n < step ? "✓" : s.n}
+                  </span>
+                  <span className="wiz-step-label">{s.label}</span>
+                </button>
+                {i < STEPS.length - 1 && <span className="wiz-step-sep" />}
               </div>
-              <span className="car-blurb">{spec.blurb}</span>
-              <div className="car-stats">
-                <span>SPD <b style={{ color: swatch }}>{stars(spec.stars.speed)}</b></span>
-                <span>ACC <b style={{ color: swatch }}>{stars(spec.stars.accel)}</b></span>
-                <span>HDL <b style={{ color: swatch }}>{stars(spec.stars.handling)}</b></span>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="section-label">MODE</div>
-      <div className="modes">
-        {MODES.map((m) => (
-          <button
-            key={m.id}
-            className={`mode-card ${mode === m.id ? "selected" : ""}`}
-            onClick={() => setMode(m.id)}
-          >
-            <strong>{m.name}</strong>
-            <span>{m.blurb}</span>
-          </button>
-        ))}
-      </div>
-
-      {!isGP && mode !== "nitro" && (
-        <>
-          <div className="section-label">LAPS</div>
-          <div className="laps">
-            {LAP_OPTIONS.map((n) => (
-              <button
-                key={n}
-                className={`lap-pill ${laps === n ? "selected" : ""}`}
-                onClick={() => setLaps(n)}
-              >
-                {n}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-
-      <button
-        className="start"
-        disabled={!canStart}
-        onClick={() => onStart(name.trim(), mode, realm, car, isGP ? 3 : laps)}
-      >
-        {canStart
-          ? (isGP ? "▸ START GRAND PRIX" : `▸ START RACE — ${mode === "nitro" ? 1 : laps} LAP${(mode === "nitro" ? 1 : laps) > 1 ? "S" : ""}`)
-          : "ENTER A RACER NAME"}
-      </button>
-
-      <p className="controls-help">
-        drive: ARROWS / WASD · nitro: SPACE · use item: E · fly (mech): SHIFT ·
-        camera: C · sound: M · pause: ESC · spin mid-air for stunts
-      </p>
-
-      <div className="leaderboard">
-        <div className="board-head">
-          <h2>HALL OF LEGENDS</h2>
-          <div className="board-tabs">
-            <button
-              className={board === "global" ? "active" : ""}
-              onClick={() => setBoard("global")}
-            >
-              GLOBAL
-            </button>
-            <button
-              className={board === "local" ? "active" : ""}
-              onClick={() => setBoard("local")}
-            >
-              THIS DEVICE
-            </button>
-          </div>
+            );
+          })}
         </div>
-        {board === "global" && !isGlobal && (
-          <p className="board-hint">shared board activates once a KV store is connected</p>
-        )}
-        {shownScores.length === 0 ? (
-          <p className="board-hint">no scores yet — be the first!</p>
-        ) : (
-          <table>
-            <tbody>
-              {shownScores.map((s, i) => (
-                <tr key={i}>
-                  <td>{i + 1}.</td>
-                  <td>{s.name}</td>
-                  <td>{MODE_LABEL[s.mode] ?? s.mode}</td>
-                  <td>{formatTime(s.timeMs)}</td>
-                  <td className="score">{s.score}</td>
-                </tr>
+        <div className="wiz-progress" aria-hidden="true">
+          <div
+            className="wiz-progress-bar"
+            style={{ width: `${((step - 1) / (STEPS.length - 1)) * 100}%` }}
+          />
+        </div>
+
+        {/* Animated per-step panel */}
+        <div className="step-panel" key={step}>
+          <div className="step-head">
+            <div className="step-eyebrow">STEP {step} OF {STEPS.length}</div>
+            <h2 className="step-title">{STEPS[step - 1].label}</h2>
+            <p className="step-hint">{STEPS[step - 1].hint}</p>
+          </div>
+
+          {step === 1 && (
+            <div className="realms">
+              {realmIds.map((id, i) => (
+                <button
+                  key={id}
+                  className={`realm-card ${realmPicked && realm === id ? "selected" : ""}`}
+                  onClick={() => { setRealm(id); setRealmPicked(true); }}
+                >
+                  <div className="realm-media">
+                    <div
+                      className="realm-preview"
+                      style={{ backgroundImage: `url(/previews/realm-${id}.jpg), ${realmFallback(id)}` }}
+                    />
+                    <span className="realm-badge">REALM 0{i + 1}</span>
+                    <span className="realm-check">✓</span>
+                  </div>
+                  <div className="realm-body">
+                    <strong>{REALMS[id].name}</strong>
+                    <span>{REALMS[id].blurb}</span>
+                  </div>
+                </button>
               ))}
-            </tbody>
-          </table>
-        )}
+            </div>
+          )}
+
+          {step === 2 && (
+            <div className="cars">
+              {CAR_IDS.map((id) => {
+                const spec = CAR_SPECS[id];
+                const swatch = carColorHex(id);
+                const isSel = carPicked && car === id;
+                return (
+                  <button
+                    key={id}
+                    className={`car-card ${isSel ? "selected" : ""}`}
+                    onClick={() => { setCar(id); setCarPicked(true); }}
+                    style={isSel ? { borderColor: swatch, boxShadow: `0 0 18px ${swatch}66` } : undefined}
+                  >
+                    <div className="car-media">
+                      <div
+                        className="car-preview"
+                        style={{ backgroundImage: `url(/previews/car-${id}.jpg), ${carFallback(id)}` }}
+                      />
+                      <span className="car-check" style={{ background: swatch }}>✓</span>
+                    </div>
+                    <div className="car-head">
+                      <span className="car-chip" style={{ background: swatch }} />
+                      <strong>{spec.name}</strong>
+                    </div>
+                    <span className="car-blurb">{spec.blurb}</span>
+                    <div className="car-stats">
+                      <span>SPD <b style={{ color: swatch }}>{stars(spec.stars.speed)}</b></span>
+                      <span>ACC <b style={{ color: swatch }}>{stars(spec.stars.accel)}</b></span>
+                      <span>HDL <b style={{ color: swatch }}>{stars(spec.stars.handling)}</b></span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {step === 3 && (
+            <div className="race-step">
+              <div className="loadout">
+                <button className="loadout-chip" onClick={() => goStep(1)}>
+                  <em>REALM</em>
+                  <b>{isGP ? "ALL 3 REALMS" : REALMS[realm].name}</b>
+                </button>
+                <button className="loadout-chip" onClick={() => goStep(2)}>
+                  <em>MACHINE</em>
+                  <b style={{ color: carColorHex(car) }}>{CAR_SPECS[car].name}</b>
+                </button>
+              </div>
+
+              <label className="field">
+                <span>RACER NAME</span>
+                <input
+                  value={name}
+                  maxLength={14}
+                  placeholder="enter your name"
+                  onChange={(e) => setName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") launch();
+                  }}
+                />
+              </label>
+
+              <div className="section-label">MODE</div>
+              <div className="modes">
+                {MODES.map((m) => (
+                  <button
+                    key={m.id}
+                    className={`mode-card ${mode === m.id ? "selected" : ""}`}
+                    onClick={() => setMode(m.id)}
+                  >
+                    <strong>{m.name}</strong>
+                    <span>{m.blurb}</span>
+                  </button>
+                ))}
+              </div>
+
+              {isGP && (
+                <div className="gp-note">
+                  Grand Prix ignores the realm pick and runs all three worlds in
+                  order: Enchanted Forest → Ember Wastes → Crystal Peaks.
+                  Championship points each round.
+                </div>
+              )}
+
+              {!isGP && mode !== "nitro" && (
+                <>
+                  <div className="section-label">LAPS</div>
+                  <div className="laps">
+                    {LAP_OPTIONS.map((n) => (
+                      <button
+                        key={n}
+                        className={`lap-pill ${laps === n ? "selected" : ""}`}
+                        onClick={() => setLaps(n)}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              <button className="start" disabled={!canStart} onClick={launch}>
+                {canStart
+                  ? (isGP ? "▸ START GRAND PRIX" : `▸ START RACE — ${mode === "nitro" ? 1 : laps} LAP${(mode === "nitro" ? 1 : laps) > 1 ? "S" : ""}`)
+                  : "ENTER A RACER NAME"}
+              </button>
+
+              <p className="controls-help">
+                drive: ARROWS / WASD · nitro: SPACE · use item: E · fly (mech): SHIFT ·
+                camera: C · sound: M · pause: ESC · spin mid-air for stunts
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Wizard navigation */}
+        <div className="wiz-nav">
+          <button
+            className="wiz-btn ghost"
+            onClick={() => setStep((s) => Math.max(1, s - 1))}
+            disabled={step === 1}
+          >
+            ◂ BACK
+          </button>
+          {step < 3 ? (
+            <button
+              className="wiz-btn next"
+              onClick={() => setStep((s) => Math.min(3, s + 1))}
+              disabled={nextDisabled}
+            >
+              {step === 1 ? "NEXT — MACHINE ▸" : "NEXT — RACE ▸"}
+            </button>
+          ) : (
+            <span className="wiz-nav-note">
+              {canStart ? "ready to launch" : "name your racer to launch"}
+            </span>
+          )}
+        </div>
       </div>
+
+      {step === 3 && (
+        <div className="leaderboard">
+          <div className="board-head">
+            <h2>HALL OF LEGENDS</h2>
+            <div className="board-tabs">
+              <button
+                className={board === "global" ? "active" : ""}
+                onClick={() => setBoard("global")}
+              >
+                GLOBAL
+              </button>
+              <button
+                className={board === "local" ? "active" : ""}
+                onClick={() => setBoard("local")}
+              >
+                THIS DEVICE
+              </button>
+            </div>
+          </div>
+          {board === "global" && !isGlobal && (
+            <p className="board-hint">shared board activates once a KV store is connected</p>
+          )}
+          {shownScores.length === 0 ? (
+            <p className="board-hint">no scores yet — be the first!</p>
+          ) : (
+            <table>
+              <tbody>
+                {shownScores.map((s, i) => (
+                  <tr key={i}>
+                    <td>{i + 1}.</td>
+                    <td>{s.name}</td>
+                    <td>{MODE_LABEL[s.mode] ?? s.mode}</td>
+                    <td>{formatTime(s.timeMs)}</td>
+                    <td className="score">{s.score}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
     </div>
   );
 }

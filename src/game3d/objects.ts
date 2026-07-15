@@ -670,6 +670,74 @@ export function makeRamp(kind: RampKind = "standard"): THREE.Group {
   return group;
 }
 
+// --- textured trees --------------------------------------------------------
+
+export interface TreeMats { trunk: THREE.Material; foliage: THREE.Material; }
+export type TreeKind = "pine" | "round" | "tall";
+
+/** Shared trunk (bark) + foliage (leaf) materials for a realm, from the CC0
+ *  bark/foliage PBR sets (falls back to flat colours). Reused across every tree
+ *  so hundreds of trees don't each allocate materials. */
+export function makeTreeMaterials(pal: RealmPalette): TreeMats {
+  const lib = pbr();
+  if (lib) {
+    const bark = tileSet(lib.bark, 1, 2.2);
+    const fol = tileSet(lib.foliage, 2.2, 2.2);
+    return {
+      trunk: new THREE.MeshStandardMaterial({ map: bark.diff, normalMap: bark.nor, roughness: 1, metalness: 0 }),
+      foliage: new THREE.MeshStandardMaterial({
+        color: pal.clutter, map: fol.diff, normalMap: fol.nor, roughness: 1, metalness: 0,
+      }),
+    };
+  }
+  return {
+    trunk: new THREE.MeshStandardMaterial({ color: 0x5a3a22, roughness: 1 }),
+    foliage: new THREE.MeshStandardMaterial({ color: pal.clutter, roughness: 1 }),
+  };
+}
+
+/** A low-poly tree with a bark trunk and textured foliage — pine (stacked
+ *  cones), round (leafy blobs) or tall (slim conifer). Meshes only; the shared
+ *  materials come from makeTreeMaterials. */
+export function makeTree(rand: () => number, mats: TreeMats, kind: TreeKind): THREE.Group {
+  const g = new THREE.Group();
+  const h = kind === "tall" ? 4 + rand() * 3.5 : 2.6 + rand() * 2.4;
+  const trunkH = h * (kind === "round" ? 0.42 : 0.3);
+  const trunkR = 0.1 + h * 0.035;
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(trunkR * 0.7, trunkR, trunkH, 6), mats.trunk);
+  trunk.position.y = trunkH / 2;
+  trunk.rotation.z = (rand() - 0.5) * 0.05;
+  g.add(trunk);
+
+  if (kind === "round") {
+    const baseY = trunkH + h * 0.18;
+    const blobs = 2 + Math.floor(rand() * 2);
+    for (let i = 0; i < blobs; i++) {
+      const r = h * 0.34 * (1 - i * 0.16);
+      const blob = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), mats.foliage);
+      blob.position.set((rand() - 0.5) * r * 0.7, baseY + i * r * 0.55, (rand() - 0.5) * r * 0.7);
+      blob.scale.set(1, 0.92, 1);
+      blob.rotation.y = rand() * Math.PI;
+      g.add(blob);
+    }
+  } else {
+    const layers = kind === "tall" ? 5 : 4;
+    let y = trunkH * 0.7;
+    for (let i = 0; i < layers; i++) {
+      const t = i / layers;
+      const r = h * (kind === "tall" ? 0.3 : 0.42) * (1 - t * 0.82);
+      const ch = h * 0.42;
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(r, ch, 7), mats.foliage);
+      cone.position.y = y + ch * 0.42;
+      cone.rotation.y = rand() * Math.PI;
+      g.add(cone);
+      y += ch * 0.44;
+    }
+  }
+  g.rotation.y = rand() * Math.PI * 2;
+  return g;
+}
+
 export function makeCrystalCluster(rand: () => number, colors: number[]): THREE.Group {
   const group = new THREE.Group();
   const shards = 2 + Math.floor(rand() * 3);

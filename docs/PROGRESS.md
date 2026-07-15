@@ -257,6 +257,30 @@ parallel while the engine work went in alongside):
 ![Rebuilt cars + a dense, fuller forest](screenshots/cars-forest.jpg)
 ![The void realm as a real asteroid field](screenshots/space.jpg)
 
+### 18. Stage 2 — real cars, textured trees, a wizard menu (this pass)
+Three focused sub-agents + engine work, in parallel:
+
+- **Cars now read as real cars** (Hot-Shot-Racing / arcade-GT feel): crisp
+  *faceted* (flat-shaded) bodywork instead of a smooth blob — a front grille +
+  bumper, flared **wheel arches** over every tyre, a proper greenhouse with
+  slanted windshield/backlight and A/B **pillars**, and a **visible driver**
+  (helmet) in the cockpit; distinct silhouettes per type (GT coupe / long
+  prototype / wide muscle-car / open kart), glow kept subtle.
+- **Textured trees.** Swapped the flat kit foliage for procedural trees with a
+  real **bark** trunk and **leaf** canopy (CC0 Poly Haven bark + foliage
+  textures), tinted per realm — the world finally has surface texture, not just
+  shaded shapes.
+- **The menu is a 3-step wizard.** Map → Machine → Race, with a **real preview
+  image above every realm and car**, a breadcrumb + progress rail, back/next,
+  and a "professionally funky" neon layout — captured straight from the game.
+- Cars **no longer sink** into the road; opponents each have a **distinct
+  personality** (cornering, lane bias, boost strategy); the **void** is a dense
+  **asteroid field** with a gas-giant backdrop; glow, stars, density and turn
+  feel all tuned.
+
+![Faceted cars with drivers + textured world (Ember)](screenshots/stage2-cars.jpg)
+![Crystal Peaks — textured snow, open-kart driver](screenshots/stage2-peaks.jpg)
+
 ---
 
 ## Where it stands now

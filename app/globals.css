@@ -196,6 +196,434 @@ main {
   background: rgba(124, 58, 237, 0.12);
 }
 
+/* Compact header variant for the wizard layout. */
+.hero-compact {
+  padding: 4px 0 2px;
+}
+
+.hero-compact .title {
+  font-size: clamp(30px, 5.2vw, 52px);
+  letter-spacing: 7px;
+}
+
+.hero-compact .subtitle {
+  font-size: 12px;
+}
+
+.hero-compact .hero-tags {
+  margin-top: 10px;
+}
+
+/* --- wizard shell --- */
+
+.wizard {
+  width: 100%;
+  border: 1px solid #2c2650;
+  border-radius: 16px;
+  background:
+    radial-gradient(120% 90% at 50% -10%, rgba(124, 58, 237, 0.18), transparent 60%),
+    rgba(15, 12, 34, 0.72);
+  box-shadow: 0 18px 60px rgba(6, 4, 20, 0.55), inset 0 1px 0 rgba(192, 132, 252, 0.08);
+  padding: 20px 22px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  backdrop-filter: blur(4px);
+}
+
+/* breadcrumb / step indicator */
+.wiz-steps {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.wiz-step-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.wiz-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: #7d769c;
+  font: inherit;
+  padding: 6px 12px 6px 6px;
+  cursor: default;
+  transition: color 0.18s, border-color 0.18s, background 0.18s;
+}
+
+.wiz-step.reachable {
+  cursor: pointer;
+}
+
+.wiz-step.reachable:hover {
+  color: #d8d0f0;
+}
+
+.wiz-step-num {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid #3b3355;
+  background: #171430;
+  font-size: 13px;
+  font-weight: 700;
+  color: #8b85a8;
+  transition: all 0.18s;
+}
+
+.wiz-step-label {
+  font-size: 11px;
+  letter-spacing: 2px;
+  font-weight: 700;
+}
+
+.wiz-step.done .wiz-step-num {
+  border-color: #22d3ee;
+  color: #07061a;
+  background: linear-gradient(180deg, #67e8f9, #22d3ee);
+  box-shadow: 0 0 12px rgba(34, 211, 238, 0.5);
+}
+
+.wiz-step.done {
+  color: #9fb9d4;
+}
+
+.wiz-step.active {
+  color: #fdf4ff;
+  border-color: rgba(192, 132, 252, 0.45);
+  background: rgba(124, 58, 237, 0.16);
+}
+
+.wiz-step.active .wiz-step-num {
+  border-color: #c084fc;
+  color: #fdf4ff;
+  background: linear-gradient(180deg, #a855f7, #7c3aed);
+  box-shadow: 0 0 16px rgba(192, 132, 252, 0.6);
+}
+
+.wiz-step-sep {
+  width: 26px;
+  height: 2px;
+  border-radius: 2px;
+  background: #2c2650;
+}
+
+/* progress rail */
+.wiz-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: #201b40;
+  overflow: hidden;
+}
+
+.wiz-progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #22d3ee, #a855f7 60%, #f0abfc);
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.6);
+  transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* animated step panel */
+.step-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  animation: step-in 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes step-in {
+  0% { opacity: 0; transform: translateY(10px) scale(0.995); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.step-head {
+  text-align: left;
+}
+
+.step-eyebrow {
+  font-size: 10px;
+  letter-spacing: 4px;
+  color: #67e8f9;
+  font-weight: 700;
+}
+
+.step-title {
+  font-size: clamp(20px, 3vw, 28px);
+  letter-spacing: 3px;
+  font-weight: 900;
+  color: #f0abfc;
+  margin-top: 2px;
+}
+
+.step-hint {
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: #8b85a8;
+  margin-top: 2px;
+}
+
+/* --- step 1: realm cards --- */
+.realm-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, #1a1636, #121026);
+  border: 1px solid #3b3355;
+  border-radius: 12px;
+  overflow: hidden;
+  color: #e8e0ff;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.18s, transform 0.14s, box-shadow 0.18s;
+}
+
+.realm-card:hover {
+  transform: translateY(-3px);
+  border-color: #7c3aed;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4);
+}
+
+.realm-media {
+  position: relative;
+  height: 118px;
+  overflow: hidden;
+}
+
+.realm-preview {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.realm-card:hover .realm-preview {
+  transform: scale(1.08);
+}
+
+.realm-media::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 40%, rgba(10, 8, 26, 0.85) 100%);
+  pointer-events: none;
+}
+
+.realm-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 1;
+  font-size: 9px;
+  letter-spacing: 2px;
+  font-weight: 700;
+  color: #d8d0f0;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(10, 8, 26, 0.7);
+  border: 1px solid rgba(192, 132, 252, 0.4);
+  backdrop-filter: blur(2px);
+}
+
+.realm-check,
+.car-check {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 900;
+  color: #07061a;
+  background: linear-gradient(180deg, #a855f7, #7c3aed);
+  opacity: 0;
+  transform: scale(0.5);
+  transition: opacity 0.18s, transform 0.18s;
+}
+
+.realm-card.selected .realm-check,
+.car-card.selected .car-check {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.realm-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px 12px;
+}
+
+.realm-body strong {
+  color: #f0abfc;
+  letter-spacing: 1px;
+  font-size: 14px;
+}
+
+.realm-body span {
+  font-size: 11px;
+  color: #8b85a8;
+  line-height: 1.4;
+}
+
+.realm-card.selected {
+  border-color: #c084fc;
+  box-shadow: 0 0 18px rgba(192, 132, 252, 0.4);
+}
+
+/* --- step 2: car media --- */
+.car-card {
+  overflow: hidden;
+}
+
+.car-media {
+  position: relative;
+  height: 96px;
+  margin: -12px -12px 4px;
+  overflow: hidden;
+}
+
+.car-preview {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.car-card:hover .car-preview {
+  transform: scale(1.08);
+}
+
+.car-media::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 45%, rgba(20, 17, 38, 0.9) 100%);
+  pointer-events: none;
+}
+
+/* --- step 3: loadout summary chips --- */
+.race-step {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.loadout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.loadout-chip {
+  flex: 1;
+  min-width: 150px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+  background: rgba(23, 20, 48, 0.7);
+  border: 1px solid #3b3355;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.loadout-chip:hover {
+  border-color: #c084fc;
+  background: rgba(124, 58, 237, 0.16);
+}
+
+.loadout-chip em {
+  font-style: normal;
+  font-size: 9px;
+  letter-spacing: 3px;
+  color: #8b85a8;
+}
+
+.loadout-chip b {
+  font-size: 14px;
+  letter-spacing: 1px;
+  color: #e8e0ff;
+}
+
+/* --- wizard navigation --- */
+.wiz-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 2px;
+}
+
+.wiz-btn {
+  font: inherit;
+  font-weight: 700;
+  letter-spacing: 2px;
+  font-size: 13px;
+  padding: 12px 22px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s, transform 0.1s, box-shadow 0.15s;
+}
+
+.wiz-btn.ghost {
+  background: transparent;
+  border: 1px solid #3b3355;
+  color: #b6a9e0;
+}
+
+.wiz-btn.ghost:hover:not(:disabled) {
+  border-color: #c084fc;
+  color: #f0abfc;
+}
+
+.wiz-btn.next {
+  border: 1px solid transparent;
+  background: linear-gradient(100deg, #7c3aed, #a855f7 60%, #d946ef);
+  color: #fdf4ff;
+  box-shadow: 0 6px 20px rgba(124, 58, 237, 0.4);
+}
+
+.wiz-btn.next:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 28px rgba(217, 70, 239, 0.55);
+}
+
+.wiz-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+.wiz-nav-note {
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: #8b85a8;
+  text-transform: uppercase;
+}
+
 .laps {
   display: flex;
   gap: 10px;
