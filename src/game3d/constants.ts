@@ -14,16 +14,35 @@ export const DECEL = -MAX_SPEED / 5;
 export const OFF_ROAD_DECEL = -MAX_SPEED / 2;
 export const OFF_ROAD_LIMIT = MAX_SPEED / 4;
 
-// --- steering & drift (lateral-velocity model, not positional) ---
-/** target lateral velocity (playerX units/s) per unit steer at full speed */
-export const STEER_ACCEL = 3.2;
-/** how fast lateral velocity chases its target when gripping (higher = tighter) */
-export const GRIP = 6.5;
-/** low grip while drifting — the car slides instead of biting */
-export const DRIFT_GRIP = 2.1;
-/** outward lateral velocity from a curve, per (curvature × speed) — gentle so
- *  turns don't fling you off the road unless you ignore the steering */
-export const CENTRIFUGAL = 0.9;
+// --- arcade handling (grip-limited lateral model) -------------------------
+// The car carries lateral velocity (playerX units/s). Steering asks for a
+// lateral acceleration; the tires can only deliver up to a grip limit, so a
+// too-fast corner pushes you wide (understeer) — you feel the limit. Weight
+// transfer, steering inertia and speed-sensitive authority give it heft.
+
+/** how fast the "wheel" turns toward the input (steering inertia = weight) */
+export const STEER_RESPONSE = 8.5;
+/** how fast steering re-centers when released */
+export const STEER_RETURN = 10;
+/** lateral accel from full steer at speed (playerX units/s²) */
+export const TURN_ACCEL = 10.5;
+/** steering authority loss with speed (higher = heavier at top speed) */
+export const STEER_SPEED_FALLOFF = 0.014;
+/** max lateral accel the tires can produce — the grip ceiling (playerX u/s²) */
+export const GRIP_LIMIT = 8.5;
+/** tire scrub: bleeds off sideways velocity so the car settles / self-centers */
+export const LATERAL_DAMP = 5.0;
+/** strength of the v²/r push toward the outside of a curve */
+export const CENTRI_K = 1.25;
+/** grip while braking (weight forward → sharper turn-in) */
+export const WEIGHT_BRAKE_GRIP = 1.3;
+/** grip while on the throttle (weight back → a touch looser) */
+export const WEIGHT_THROTTLE_GRIP = 0.92;
+/** grip multiplier while drifting — the car slides instead of biting */
+export const DRIFT_GRIP_MULT = 0.5;
+/** extra steering authority into a drift */
+export const DRIFT_STEER_MULT = 1.5;
+
 /** seconds of drift before a boost is earned */
 export const DRIFT_MIN_CHARGE = 0.55;
 export const DRIFT_BOOST_FACTOR = 1.28;

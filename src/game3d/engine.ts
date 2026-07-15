@@ -2,11 +2,14 @@ import * as THREE from "three";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import {
   WIDTH, HEIGHT, STEP,
   ROAD_HALF_WIDTH, LANE_CENTERS,
   MAX_SPEED, ACCEL, BRAKING, DECEL, OFF_ROAD_DECEL, OFF_ROAD_LIMIT,
-  STEER_ACCEL, GRIP, DRIFT_GRIP, CENTRIFUGAL, DRIFT_MIN_CHARGE, DRIFT_BOOST_FACTOR,
+  STEER_RESPONSE, STEER_RETURN, TURN_ACCEL, STEER_SPEED_FALLOFF,
+  GRIP_LIMIT, LATERAL_DAMP, CENTRI_K, WEIGHT_BRAKE_GRIP, WEIGHT_THROTTLE_GRIP,
+  DRIFT_GRIP_MULT, DRIFT_STEER_MULT, DRIFT_MIN_CHARGE, DRIFT_BOOST_FACTOR,
   OUT_OF_BOUNDS_X, OUT_OF_BOUNDS_PENALTY,
   NITRO_MAX_CHARGES, NITRO_DURATION, NITRO_SPEED_FACTOR,
   GRAVITY, RAMP_LAUNCH, FLY_LIFT, MAX_ALT, AIR_GEM_ALT, AIR_GEM_TOLERANCE,
@@ -36,7 +39,7 @@ import { Minimap } from "./minimap";
 import { Sound } from "./sound";
 import { loadSetting, loadSettings, type Settings } from "../ui/settings";
 import { Input } from "../game/input";
-import { drawHud, drawToasts, drawCenterText, type Toast } from "../game/render";
+import { drawHud, drawToasts, drawCenterText, drawSpeedFx, type Toast } from "../game/render";
 import type { GameMode, GameResult, GameOptions, RaceStanding, CarId } from "../game/engine";
 
 type Phase = "loading" | "countdown" | "racing" | "finished";
@@ -167,9 +170,12 @@ export class Game {
   // player state
   private position = 0;
   private playerX = 0;
-  private playerVX = 0; // lateral velocity (drift inertia)
+  private playerVX = 0; // lateral velocity (playerX units/s)
   private speed = 0;
-  private steer = 0;
+  private steer = 0;       // smoothed analog steer (-1..1), with inertia
+  private steerInput = 0;
+  private slipping = false; // tires past their grip limit (understeer/slide)
+  private shake = 0;        // camera shake amount, decays over time
   private carYaw = 0; // visual heading offset from the track tangent
   private drifting = false;
   private driftDir = 0;
@@ -231,6 +237,9 @@ export class Game {
     this.renderer.setSize(w, h, false);
     this.renderer.domElement.className = "game-layer";
     this.renderer.setClearColor(this.realm.palette.fog);
+    // filmic tone mapping → richer colors + smooth highlight roll-off
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.25;
 
     const hudCanvas = document.createElement("canvas");
     hudCanvas.className = "game-layer game-hud";
@@ -253,6 +262,8 @@ export class Game {
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.4, 0.4, 0.85);
     this.composer.addPass(this.bloomPass);
+    // final pass applies tone mapping + sRGB so the composed image is graded
+    this.composer.addPass(new OutputPass());
     this.bloomPass.enabled = loadSetting("bloom", true);
     this.cameraIndex = loadSetting("camera", 0) % CAMERA_PRESETS.length;
     this.camera.fov = CAMERA_PRESETS[this.cameraIndex].fov;
@@ -345,6 +356,7 @@ export class Game {
 
     if (!isVoid) scene.add(track.buildVergeMesh(makeGrassTexture(pal)));
     scene.add(track.buildRoadMesh(makeRoadTexture(pal)));
+    if (!isVoid) scene.add(track.buildEdgePosts(pal.rumbleB, pal.edgeLine));
     scene.add(track.buildStartLine(makeCheckerTexture()));
     if (isVoid) {
       scene.add(track.buildTube());
@@ -757,37 +769,64 @@ export class Game {
     this.raceTime += dt;
     const speedPercent = Math.min(this.speed / MAX_SPEED, 1);
     const airborne = this.alt > 0.15;
+    this.shake = Math.max(0, this.shake - dt * 2.2);
 
-    // steering / drift / air tricks
-    this.steer = this.input.left ? -1 : this.input.right ? 1 : 0;
+    // analog steering with inertia (weight): the "wheel" eases to the input and
+    // re-centers when released — no instant snap.
+    const rawSteer = this.input.left ? -1 : this.input.right ? 1 : 0;
+    const steerRate = rawSteer === 0 ? STEER_RETURN : STEER_RESPONSE;
+    this.steerInput += (rawSteer - this.steerInput) * Math.min(1, dt * steerRate);
+    if (Math.abs(this.steerInput) < 0.003) this.steerInput = 0;
+    this.steer = this.steerInput;
+
     this.driftBoostT = Math.max(0, this.driftBoostT - dt);
     if (!airborne) {
-      // lateral-velocity model: the car carries sideways momentum, so you
-      // steer *through* a corner and slide if you don't. Curves push you out.
+      // grip-limited lateral model: steering asks for lateral acceleration, but
+      // the tires cap it (grip). A too-fast corner exceeds the cap and washes
+      // you wide — you feel the limit. Braking loads the front for sharper
+      // turn-in; power-on loosens it.
       const curve = this.track.curvatureAt(this.position);
-      const centri = curve * this.speed * CENTRIFUGAL * speedPercent;
+      const LAT_M = ROAD_HALF_WIDTH * 0.9; // meters per playerX unit
+
+      const load = this.input.brake ? WEIGHT_BRAKE_GRIP
+        : this.input.accelerate ? WEIGHT_THROTTLE_GRIP : 1;
+      const carGrip = this.carStat.grip * load;
 
       // drift: brake + steer at speed → slide and build a boost charge
-      const wantDrift = this.input.brake && this.steer !== 0 && speedPercent > 0.35;
+      const wantDrift = this.input.brake && this.steerInput !== 0 && speedPercent > 0.35;
       if (wantDrift && !this.drifting) {
         this.drifting = true;
-        this.driftDir = this.steer;
+        this.driftDir = Math.sign(this.steerInput);
         this.driftCharge = 0;
       }
-      if (this.drifting && (!this.input.brake || speedPercent < 0.18 || this.steer === 0)) {
+      if (this.drifting && (!this.input.brake || speedPercent < 0.18 || this.steerInput === 0)) {
         this.endDrift();
       }
+      const gripMul = this.drifting ? DRIFT_GRIP_MULT : 1;
 
-      const grip = (this.drifting ? DRIFT_GRIP : GRIP) * this.carStat.grip;
-      const steerPow = (this.drifting ? STEER_ACCEL * 1.6 : STEER_ACCEL) * this.carStat.grip;
-      const targetVX = this.steer * steerPow * speedPercent;
-      this.playerVX += (targetVX - centri - this.playerVX) * Math.min(1, dt * grip);
+      // steering authority drops with speed; sharper into a drift
+      const authority = (this.drifting ? DRIFT_STEER_MULT : 1) / (1 + this.speed * STEER_SPEED_FALLOFF);
+      const aSteer = this.steerInput * TURN_ACCEL * authority * (0.35 + 0.65 * speedPercent);
+      // centrifugal: v²/r pushes toward the outside of the curve
+      const aCentri = (curve * this.speed * this.speed / LAT_M) * CENTRI_K;
+
+      // grip ceiling on the net lateral acceleration
+      let aLat = aSteer - aCentri;
+      const gripLimit = GRIP_LIMIT * carGrip * gripMul;
+      this.slipping = Math.abs(aLat) > gripLimit + 0.5;
+      aLat = clamp(aLat, -gripLimit, gripLimit);
+
+      this.playerVX += aLat * dt;
+      // tire scrub bleeds off sideways velocity (self-centering), weaker in a drift
+      const scrub = LATERAL_DAMP * carGrip * (this.drifting ? 0.35 : 1);
+      this.playerVX -= this.playerVX * Math.min(1, dt * scrub);
       this.playerX += this.playerVX * dt;
       if (this.drifting) this.driftCharge += dt;
 
-      // car body yaws toward the steer, and kicks out further while drifting
-      const yawTarget = this.steer * 0.24 + (this.drifting ? this.driftDir * 0.55 : 0);
-      this.carYaw += (yawTarget - this.carYaw) * Math.min(1, dt * 8);
+      // point the car where it's actually heading (slip), plus a steer lean
+      const slipYaw = clamp(this.playerVX * 0.085, -0.5, 0.5);
+      const yawTarget = this.steerInput * 0.13 + slipYaw + (this.drifting ? this.driftDir * 0.5 : 0);
+      this.carYaw += (yawTarget - this.carYaw) * Math.min(1, dt * 9);
     } else if (this.stuntAir) {
       // mid-air: left/right = barrel roll, up/down = flips
       this.spin += this.steer * 1.25 * dt;
@@ -870,10 +909,12 @@ export class Game {
     // out of bounds
     if (Math.abs(this.playerX) > OUT_OF_BOUNDS_X) {
       this.playerX = Math.sign(this.playerX) * 1;
+      this.playerVX = 0;
       this.speed *= 0.3;
       this.score -= OUT_OF_BOUNDS_PENALTY;
       this.penalties += OUT_OF_BOUNDS_PENALTY;
       this.crashFlash = 0.5;
+      this.shake = Math.max(this.shake, 1);
       this.sound.play("oob");
       this.toast(`OUT OF BOUNDS -${OUT_OF_BOUNDS_PENALTY}`, "#f87171");
     }
@@ -975,6 +1016,7 @@ export class Game {
 
   private land() {
     this.stuntAir = false;
+    this.shake = Math.max(this.shake, 0.7); // touchdown thump
     const rollAmt = Math.abs(this.spin);
     const flipAmt = Math.abs(this.flip);
     const rollRevs = Math.round(rollAmt);
@@ -1395,8 +1437,17 @@ export class Game {
       if (this.particles) this.particles.update(this.time, this.playerRoot.position);
       // monsters are positioned in updateMonsters (they move + charge)
 
-      // camera
+      // camera — chase with feel: FOV kicks with speed/boost, banks into
+      // corners, looks ahead into the turn, and shakes on impacts.
       const preset = CAMERA_PRESETS[this.cameraIndex];
+      const spd = this.speed / MAX_SPEED;
+      const curve = track.curvatureAt(this.position);
+
+      // speed/boost FOV kick for a sense of velocity ('boosting' declared above)
+      const targetFov = preset.fov + spd * 9 + (boosting ? 7 : 0) + (this.slipping ? 2 : 0);
+      this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, 0.08);
+      this.camera.updateProjectionMatrix();
+
       const camAnchor = track.pointAt(this.position - preset.back, lateralM * 0.7);
       camAnchor.y += preset.height + this.alt * 0.55;
       if (this.camSnap) {
@@ -1406,9 +1457,20 @@ export class Game {
         this.camPos.lerp(camAnchor, 0.55);
       }
       this.camera.position.copy(this.camPos);
-      const lookAt = track.pointAt(this.position + preset.ahead, lateralM * 0.5);
+      // impact/landing shake
+      if (this.shake > 0.01) {
+        const s = this.shake * 0.35;
+        this.camera.position.x += (Math.random() - 0.5) * s;
+        this.camera.position.y += (Math.random() - 0.5) * s;
+      }
+      // look ahead, biased into the corner so the turn opens up before you
+      const aheadBias = clamp(curve * this.speed * 2.2, -3, 3) + this.playerVX * 0.6;
+      const lookAt = track.pointAt(this.position + preset.ahead, lateralM * 0.5 + aheadBias);
       lookAt.y += preset.lookHeight + this.alt * 0.8;
       this.camera.lookAt(lookAt);
+      // bank the camera into the corner + with the slide
+      const bank = clamp(-curve * this.speed * 0.02 - this.playerVX * 0.02 - this.steer * 0.02, -0.14, 0.14);
+      this.camera.rotateZ(bank);
 
       this.composer.render();
     }
@@ -1427,6 +1489,12 @@ export class Game {
       ctx.fillRect(0, 0, vw, vh);
       drawCenterText(ctx, "SUMMONING REALM…", 32, "#c084fc", vw, vh);
       return;
+    }
+
+    // sense-of-speed overlay sits under the HUD panels
+    if (this.phase === "racing" || this.phase === "finished") {
+      const boosting = this.nitroT > 0 || this.driftBoostT > 0 || this.boostT > 0;
+      drawSpeedFx(ctx, vw, vh, this.speed / MAX_SPEED, boosting, this.time);
     }
 
     const position = this.opponents.length ? this.computePosition() : undefined;

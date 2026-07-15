@@ -216,6 +216,56 @@ export class Track {
     return g;
   }
 
+  /** Glowing marker posts down both road edges — a real-circuit look and a
+   *  speed reference that whips past as you go. Colors alternate; fullbright so
+   *  they read as neon and the bloom catches them. */
+  buildEdgePosts(colorA: THREE.ColorRepresentation, colorB: THREE.ColorRepresentation): THREE.Group {
+    const g = new THREE.Group();
+    const edge = ROAD_HALF_WIDTH * 1.25 + 0.7;
+    const step = 13;
+    const count = Math.max(2, Math.floor(this.length / step));
+
+    // dark stems (lit) + bright caps (fullbright) as two instanced meshes
+    const stemGeo = new THREE.CylinderGeometry(0.13, 0.18, 1.35, 6);
+    stemGeo.translate(0, 0.675, 0);
+    const stemMat = new THREE.MeshStandardMaterial({ color: 0x2a2438, metalness: 0.5, roughness: 0.5 });
+    const stems = new THREE.InstancedMesh(stemGeo, stemMat, count * 2);
+
+    const capGeo = new THREE.SphereGeometry(0.32, 10, 8);
+    capGeo.translate(0, 1.5, 0);
+    const capMat = new THREE.MeshBasicMaterial({ vertexColors: true });
+    const caps = new THREE.InstancedMesh(capGeo, capMat, count * 2);
+
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const s = new THREE.Vector3(1, 1, 1);
+    const p = new THREE.Vector3();
+    const cA = new THREE.Color(colorA);
+    const cB = new THREE.Color(colorB);
+    let idx = 0;
+    for (let i = 0; i < count; i++) {
+      const d = (i / count) * this.length;
+      const t = this.wrap(d) / this.length;
+      const pt = this.curve.getPointAt(t);
+      const tan = this.curve.getTangentAt(t);
+      const nx = -tan.z, nz = tan.x;
+      const y = Math.max(GROUND_FLOOR, pt.y) + 0.1;
+      const col = i % 2 === 0 ? cA : cB;
+      for (const side of [-1, 1]) {
+        p.set(pt.x + nx * edge * side, y, pt.z + nz * edge * side);
+        m.compose(p, q, s);
+        stems.setMatrixAt(idx, m);
+        caps.setMatrixAt(idx, m);
+        caps.setColorAt(idx, col);
+        idx++;
+      }
+    }
+    stems.instanceMatrix.needsUpdate = true;
+    caps.instanceMatrix.needsUpdate = true;
+    g.add(stems, caps);
+    return g;
+  }
+
   buildStartLine(texture: THREE.Texture): THREE.Mesh {
     const geo = new THREE.PlaneGeometry(ROAD_HALF_WIDTH * 2, 4);
     const mat = new THREE.MeshBasicMaterial({ map: texture });

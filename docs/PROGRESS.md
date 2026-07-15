@@ -122,6 +122,30 @@ A big look-and-feel pass:
 ![Full-width grid start — nine distinct karts, staggered lanes](screenshots/grid.jpg)
 ![Full-width race — textured road, fireflies, the pack ahead](screenshots/race.jpg)
 
+### 13. Grip, weight & a graded look (this pass)
+The driving used to feel like a sprite sliding across a screen — on rails, no
+weight. Studied Mario Kart / Hot Shots Racing / Asphalt for what makes them
+feel and read well, and rebuilt around it:
+
+- **Grip-limited handling.** Steering now asks the tires for lateral
+  acceleration, and the tires have a **grip ceiling** — take a corner too fast
+  and you wash wide (understeer), so you have to brake and commit to a line.
+  **Weight transfer** (braking loads the front for sharper turn-in),
+  **steering inertia** (the wheel eases in and self-centers), **speed-sensitive
+  steering** (heavier at top speed), and tire scrub that settles the car. The
+  kart visibly yaws into the slip.
+- **Camera with feel.** FOV kicks with speed and flares on boost, the view
+  banks into corners and looks *ahead into* the turn, and impacts / hard
+  landings shake the camera.
+- **A graded, finished look.** **ACES filmic tone mapping** + an output pass
+  give richer colours and smooth highlight roll-off (the moons and neon now
+  bloom cleanly). An **Asphalt-style speed overlay** — vignette + radial
+  streaks that build with speed and flare on boost. Glowing **edge-marker
+  posts** line the track for a real-circuit look and a speed reference that
+  whips past.
+
+![Grip + grading — banked camera, edge posts, speed streaks](screenshots/handling.jpg)
+
 ---
 
 ## Where it stands now
@@ -129,11 +153,13 @@ A big look-and-feel pass:
 - **4 realms**: Enchanted Forest, Ember Wastes, Crystal Peaks, Void Circuit
 - **5 modes**: Classic, Time Trial, Nitro Sprint, Transformer Rush, Grand Prix
 - **9-racer grid** with live position + a top-down minimap
-- **Drift + boost**, barrel-roll/flip **stunts** with combos
+- **Grip-limited handling** (weight transfer, drift + boost) with a camera
+  that banks and kicks FOV; barrel-roll/flip **stunts** with combos
 - **Transformer mech** with an energy sword + monster combat
 - **Power-ups**: boost / shield / homing missile / mines, item boxes, and
   opponents that fight back — press **E** to fire
-- **Bloom** lighting (toned down), textured car, procedural sound, pause + settings
+- **Bloom** + **ACES tone mapping**, speed-FX overlay, edge-post markers,
+  procedural sound, pause + settings
 - **Global leaderboard** (activates fully once a KV store is connected)
 
 **Stack:** Next.js 15 · React 19 · TypeScript · Three.js · Web Audio ·

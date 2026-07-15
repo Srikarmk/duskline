@@ -679,6 +679,45 @@ export function drawHud(
   }
 }
 
+/** Sense-of-speed overlay: a darkening vignette + radial streaks that build up
+ *  with speed and flare during a boost. Drawn under the HUD panels. */
+export function drawSpeedFx(
+  ctx: CanvasRenderingContext2D,
+  vw: number, vh: number, speed01: number, boost: boolean, time: number
+) {
+  const intensity = Math.max(0, speed01 - 0.35) / 0.65;
+  const amt = Math.min(1, intensity * 1.15 + (boost ? 0.5 : 0));
+  if (amt <= 0.01) return;
+  const cx = vw / 2, cy = vh * 0.52;
+
+  // vignette
+  const vg = ctx.createRadialGradient(cx, cy, Math.min(vw, vh) * 0.28, cx, cy, Math.max(vw, vh) * 0.62);
+  vg.addColorStop(0, "rgba(0,0,0,0)");
+  vg.addColorStop(1, `rgba(3,2,12,${(0.3 * amt + (boost ? 0.12 : 0)).toFixed(3)})`);
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, vw, vh);
+
+  // radial motion streaks (re-seeded per frame → shimmering rush)
+  const n = Math.round(amt * 64);
+  let seed = (Math.floor(time * 42) % 4096) + 1;
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const rad = Math.max(vw, vh);
+  ctx.lineWidth = 2;
+  for (let i = 0; i < n; i++) {
+    const a = rnd() * Math.PI * 2;
+    const r0 = rad * (0.34 + rnd() * 0.16);
+    const len = (26 + rnd() * 90) * (0.5 + amt);
+    const ca = Math.cos(a), sa = Math.sin(a);
+    ctx.strokeStyle = boost
+      ? `rgba(251,176,90,${(rnd() * 0.5 * amt).toFixed(3)})`
+      : `rgba(206,222,255,${(rnd() * 0.42 * amt).toFixed(3)})`;
+    ctx.beginPath();
+    ctx.moveTo(cx + ca * r0, cy + sa * r0);
+    ctx.lineTo(cx + ca * (r0 + len), cy + sa * (r0 + len));
+    ctx.stroke();
+  }
+}
+
 export interface Toast {
   text: string;
   color: string;
