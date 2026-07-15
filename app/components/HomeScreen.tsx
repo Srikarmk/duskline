@@ -4,10 +4,14 @@ import { useEffect, useState } from "react";
 import type { GameMode, RealmId, CarId, GameResult } from "@/src/game/engine";
 import { REALMS } from "@/src/game3d/realms";
 import { CAR_SPECS, CAR_IDS, carColorHex } from "@/src/game3d/carData";
+import dynamic from "next/dynamic";
 import {
   loadScores, loadLastName, loadLastCar, fetchGlobalScores,
   type ScoreEntry,
 } from "@/src/ui/leaderboard";
+
+// live 3D garage preview — client-only (WebGL), so it must never be SSR'd
+const CarShowroom = dynamic(() => import("./CarShowroom"), { ssr: false });
 
 interface Props {
   lastResult: GameResult | null;
@@ -47,12 +51,6 @@ function formatTime(ms: number) {
 function realmFallback(id: RealmId): string {
   const sky = REALMS[id].palette.sky;
   return `linear-gradient(160deg, ${sky[0]} 0%, ${sky[1]} 38%, ${sky[2]} 72%, ${sky[3]} 100%)`;
-}
-
-/** Livery-tinted fallback gradient for a car preview. */
-function carFallback(id: CarId): string {
-  const c = carColorHex(id);
-  return `radial-gradient(130% 120% at 28% 18%, ${c}dd 0%, ${c}55 34%, transparent 62%), linear-gradient(160deg, #1c1740 0%, #0c0a22 100%)`;
 }
 
 export default function HomeScreen({ lastResult, onStart }: Props) {
@@ -111,7 +109,7 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
         <h1 className="title">FANTASY RACER</h1>
         <p className="subtitle">drift · boost · jump · transform — a 3D magic kart racer</p>
         <div className="hero-tags">
-          <span>4 REALMS</span><span>4 KARTS</span><span>9-RACER GRID</span>
+          <span>4 REALMS</span><span>8 KARTS</span><span>9-RACER GRID</span>
           <span>POWER-UPS</span><span>GRAND PRIX</span>
         </div>
       </div>
@@ -193,38 +191,43 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
           )}
 
           {step === 2 && (
-            <div className="cars">
-              {CAR_IDS.map((id) => {
-                const spec = CAR_SPECS[id];
-                const swatch = carColorHex(id);
-                const isSel = carPicked && car === id;
-                return (
-                  <button
-                    key={id}
-                    className={`car-card ${isSel ? "selected" : ""}`}
-                    onClick={() => { setCar(id); setCarPicked(true); }}
-                    style={isSel ? { borderColor: swatch, boxShadow: `0 0 18px ${swatch}66` } : undefined}
-                  >
-                    <div className="car-media">
-                      <div
-                        className="car-preview"
-                        style={{ backgroundImage: `url(/previews/car-${id}.jpg), ${carFallback(id)}` }}
-                      />
+            <div className="garage">
+              <div className="showroom" style={{ ["--livery" as string]: carColorHex(car) }}>
+                <CarShowroom car={car} color={CAR_SPECS[car].color} />
+                <div className="showroom-info">
+                  <div className="showroom-name">
+                    <span className="car-chip" style={{ background: carColorHex(car), color: carColorHex(car) }} />
+                    <strong style={{ color: carColorHex(car) }}>{CAR_SPECS[car].name}</strong>
+                  </div>
+                  <p className="showroom-blurb">{CAR_SPECS[car].blurb}</p>
+                </div>
+              </div>
+              <div className="cars">
+                {CAR_IDS.map((id) => {
+                  const spec = CAR_SPECS[id];
+                  const swatch = carColorHex(id);
+                  const isSel = car === id;
+                  return (
+                    <button
+                      key={id}
+                      className={`car-card ${isSel ? "selected" : ""}`}
+                      onClick={() => { setCar(id); setCarPicked(true); }}
+                      style={isSel ? { borderColor: swatch, boxShadow: `0 0 16px ${swatch}55` } : undefined}
+                    >
                       <span className="car-check" style={{ background: swatch }}>✓</span>
-                    </div>
-                    <div className="car-head">
-                      <span className="car-chip" style={{ background: swatch }} />
-                      <strong>{spec.name}</strong>
-                    </div>
-                    <span className="car-blurb">{spec.blurb}</span>
-                    <div className="car-stats">
-                      <span>SPD <b style={{ color: swatch }}>{stars(spec.stars.speed)}</b></span>
-                      <span>ACC <b style={{ color: swatch }}>{stars(spec.stars.accel)}</b></span>
-                      <span>HDL <b style={{ color: swatch }}>{stars(spec.stars.handling)}</b></span>
-                    </div>
-                  </button>
-                );
-              })}
+                      <div className="car-head">
+                        <span className="car-chip" style={{ background: swatch, color: swatch }} />
+                        <strong>{spec.name}</strong>
+                      </div>
+                      <div className="car-stats">
+                        <span>SPD <b style={{ color: swatch }}>{stars(spec.stars.speed)}</b></span>
+                        <span>ACC <b style={{ color: swatch }}>{stars(spec.stars.accel)}</b></span>
+                        <span>HDL <b style={{ color: swatch }}>{stars(spec.stars.handling)}</b></span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
 

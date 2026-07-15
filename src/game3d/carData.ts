@@ -62,6 +62,38 @@ export const CAR_SPECS: Record<CarId, CarSpec> = {
     stars: { speed: 2, accel: 4, handling: 5 },
     stat: { speed: 0.9, accel: 1.1, grip: 1.25 },
   },
+  apex: {
+    id: "apex",
+    name: "APEX",
+    blurb: "Formula thoroughbred. Surgical grip and blistering top end — punishes mistakes.",
+    color: 0xef4444,
+    stars: { speed: 5, accel: 3, handling: 5 },
+    stat: { speed: 1.16, accel: 1.0, grip: 1.3 },
+  },
+  goliath: {
+    id: "goliath",
+    name: "GOLIATH",
+    blurb: "Monster truck. Enormous tyres crush anything, rockets off the line, wallows in bends.",
+    color: 0x84cc16,
+    stars: { speed: 3, accel: 5, handling: 1 },
+    stat: { speed: 0.92, accel: 1.25, grip: 0.72 },
+  },
+  corsair: {
+    id: "corsair",
+    name: "CORSAIR",
+    blurb: "Landlocked galleon. Rides high and glides through corners like it's on water.",
+    color: 0x0ea5e9,
+    stars: { speed: 3, accel: 3, handling: 4 },
+    stat: { speed: 1.0, accel: 0.95, grip: 1.12 },
+  },
+  baron: {
+    id: "baron",
+    name: "BARON",
+    blurb: "Stretch limo. Absurdly long, imperious top speed, steers like an ocean liner.",
+    color: 0xeab308,
+    stars: { speed: 4, accel: 2, handling: 2 },
+    stat: { speed: 1.1, accel: 0.85, grip: 0.85 },
+  },
 };
 
 export const CAR_IDS = Object.keys(CAR_SPECS) as CarId[];

@@ -6,13 +6,15 @@ stunts, a championship mode, sound, and a global leaderboard.
 
 **Play it:** https://fantasy-racer.vercel.app
 
-![Enchanted Forest, with bloom](screenshots/forest.jpg)
-![Void Circuit — anti-gravity glass tube](screenshots/void.jpg)
-![Power-ups — item boxes on track, missile held in the slot](screenshots/powerups.jpg)
+![Fantasy Racer — six stages from prototype to today](screenshots/evolution.jpg)
+
+> **The full before → after story lives in [EVOLUTION.md](EVOLUTION.md)** — a
+> LinkedIn-ready montage plus each stage broken out.
+
+![Enchanted Forest — moonlit woods, rebuilt cars](screenshots/cars-forest.jpg)
 
 > Screenshots live in `docs/screenshots/`. They're captured straight from the
-> game canvas (512×384 JPEG). Add more any time — the renderer keeps its
-> drawing buffer, so `renderer.domElement.toDataURL()` works.
+> game canvas via `renderer.domElement.toDataURL()`.
 
 ---
 
@@ -298,9 +300,41 @@ Three focused sub-agents + engine work, in parallel:
 
 ---
 
+## Eight machines + a live 3D garage
+
+The roster doubled to **eight karts**, and the select screen became a real
+showroom.
+
+**Four new cars**, each a distinct hand-built silhouette (not recolors):
+
+- **APEX** — a Formula open-wheeler: pointed nose cone, exposed wheels on
+  suspension arms, front + rear wings, driver halo, airbox.
+- **GOLIATH** — a monster truck towering on four enormous tyres, with a roll
+  cage and visible shocks.
+- **CORSAIR** — a landlocked galleon: raised bow, portholed deckhouse, a mast
+  and pennant.
+- **BARON** — an absurd **six-wheel** stretch limo with a row of side windows.
+
+Each carries its own speed / accel / grip, so the pick changes how it drives.
+
+**The garage is now a live 3D showroom.** Instead of a flat thumbnail, the
+chosen car rotates in a lit studio with a soft contact shadow — built from the
+exact same mesh the race uses (`makeKart`), so it never drifts from the in-game
+model and there are no pre-rendered images to go stale. It scales to any number
+of cars for free.
+
+And the docs got what they were missing: a **before → after evolution gallery**
+(the montage up top, and **[EVOLUTION.md](EVOLUTION.md)**) — six stages from the
+day-one pseudo-3D canvas to today, each captured straight from that build.
+
+---
+
 ## Where it stands now
 
 - **4 realms**: Enchanted Forest, Ember Wastes, Crystal Peaks, Void Circuit
+- **8 karts**: Comet, Bolt, Titan, Wisp, Apex (F1), Goliath (monster truck),
+  Corsair (ship), Baron (limo) — each a distinct model + stat line, picked in
+  a live 3D garage
 - **5 modes**: Classic, Time Trial, Nitro Sprint, Transformer Rush, Grand Prix
 - **9-racer grid** with live position + a top-down minimap
 - **Grip-limited handling** (weight transfer, drift + boost) with a camera
@@ -323,9 +357,9 @@ The look and UX are in good shape; the next arc is depth of play.
 
 - ~~**Power-ups & combat**~~ — ✅ shipped in milestone 11: item boxes, boost,
   shield, homing missile, mines, and opponents that fight back.
-- **Karts & progression** — unlockable karts with distinct speed / accel /
-  handling stats, gems as currency, a garage/select screen, unlock
-  milestones.
+- ~~**Karts & a garage**~~ — ✅ eight distinct karts with their own speed /
+  accel / handling, chosen in a live 3D showroom. Still open: unlocks, gems as
+  currency, progression milestones.
 - **More content & routes** — shortcuts and alternate paths, hazards,
   weather / time-of-day variety, more tracks and modes.
 - **Feel & polish** — real counter-steer drift, boost chaining, speed lines,

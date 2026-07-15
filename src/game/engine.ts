@@ -19,7 +19,7 @@ import {
 
 export type GameMode = "classic" | "timetrial" | "nitro" | "transform" | "grandprix";
 export type RealmId = "forest" | "ember" | "peaks" | "void";
-export type CarId = "comet" | "bolt" | "titan" | "wisp";
+export type CarId = "comet" | "bolt" | "titan" | "wisp" | "apex" | "goliath" | "corsair" | "baron";
 
 export interface RaceStanding {
   name: string;

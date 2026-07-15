@@ -717,25 +717,77 @@ main {
   width: 100%;
 }
 
+.garage {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+}
+
+.showroom {
+  position: relative;
+  height: 300px;
+  border: 1px solid #3b3355;
+  border-radius: 12px;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 85% at 50% 14%, color-mix(in srgb, var(--livery, #22d3ee) 26%, transparent) 0%, transparent 58%),
+    radial-gradient(120% 130% at 50% 128%, #251b46 0%, #0b0920 72%);
+}
+
+.showroom-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.showroom-info {
+  position: absolute;
+  left: 22px;
+  right: 22px;
+  bottom: 16px;
+  pointer-events: none;
+}
+
+.showroom-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.showroom-name strong {
+  font-size: 23px;
+  letter-spacing: 3px;
+}
+
+.showroom-blurb {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #c9c2e6;
+  max-width: 62%;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7);
+}
+
 .cars {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
+  gap: 10px;
   width: 100%;
 }
 
 .car-card {
+  position: relative;
   background: #171430;
   border: 1px solid #3b3355;
   color: #e8e0ff;
   font: inherit;
-  padding: 12px;
+  padding: 10px 12px;
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   text-align: left;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.12s;
 }
 
 .car-head {
