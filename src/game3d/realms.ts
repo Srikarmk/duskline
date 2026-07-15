@@ -78,6 +78,22 @@ export const REALM_RIVERS: Record<RealmId, number[]> = {
   nebula: [],
 };
 
+/** Fork zones per realm: the road splits around a central island into a LEFT
+ *  and RIGHT route (with a different quirk on each side) that rejoin. `at` is
+ *  the start fraction (0..1) of the lap; `len` is the fork length in metres.
+ *  Placed to steer clear of each realm's tunnels and river crossings. */
+export const REALM_SPLITS: Record<RealmId, { at: number; len: number }[]> = {
+  forest: [{ at: 0.78, len: 88 }],
+  ember: [{ at: 0.24, len: 112 }],
+  peaks: [], // too twisty — no room for a clean fork
+  void: [], // single glass tube
+  sands: [{ at: 0.68, len: 120 }],
+  castle: [{ at: 0.44, len: 84 }],
+  circuit: [{ at: 0.55, len: 110 }],
+  metro: [{ at: 0.55, len: 92 }],
+  nebula: [],
+};
+
 /** A line of flavour for each world — shown on the loadout before a race. */
 export const REALM_LORE: Record<RealmId, string> = {
   forest:

@@ -38,9 +38,10 @@ import {
 import { makeWeather, type WeatherSystem } from "./weather";
 import { makeTunnelArch, makeTunnelPortal } from "./setpieces";
 import { makeBoostGate, makeRingArch } from "./props/gates";
+import { makeSplitMedian, makeForkSign } from "./props/split";
 import { loadPBR } from "./textures";
 import { makeKart, CAR_SPECS, CAR_IDS, type CarStat } from "./cars";
-import { REALMS, pickScenery, REALM_WEATHER, REALM_AMBIENCE, REALM_TUNNELS, REALM_RIVERS, type RealmSpec, type SceneryKind } from "./realms";
+import { REALMS, pickScenery, REALM_WEATHER, REALM_AMBIENCE, REALM_TUNNELS, REALM_RIVERS, REALM_SPLITS, type RealmSpec, type SceneryKind } from "./realms";
 import { makePyramid, makeObelisk, makeSphinx, makePalm, makeSandRock } from "./props/egyptian";
 import { makeTower, makeGatehouse, makeCastleWall, makeBanner, makeTorch } from "./props/castle";
 import { makeGrandstand, makeTyreStack, makeFloodlight, makePitBuilding, makeMarshalBoard } from "./props/circuit";
@@ -168,6 +169,9 @@ export class Game {
   private spinners: Entity[] = [];
   private monsters: Entity[] = [];
   private ramps: { dist: number; power: number; lane: number; len: number; height: number }[] = [];
+  /** fork zones: the road splits around a central island over [d0,d1] (wrapped
+   *  distances). A central soft barrier pushes you onto one side or the other. */
+  private splits: { d0: number; d1: number }[] = [];
   private wasOnRamp = false;
   private lastRampPower = 1;
   private lastRampT = 0;
@@ -640,6 +644,48 @@ export class Game {
     }
   }
 
+  /** Build the fork zones from REALM_SPLITS: a central island (tiled median) that
+   *  splits the road into a LEFT route (boost gate) and a RIGHT route (jump ramp),
+   *  fronted by a fork sign. Both routes rejoin where the island ends. */
+  private placeSplits() {
+    const pal = this.realm.palette;
+    const len = this.track.length;
+    const rand = mulberry32(9001);
+    const SEG = 4; // median segment length (m) — tiled to fill the fork
+    for (const s of REALM_SPLITS[this.realm.id] ?? []) {
+      const d0 = s.at * len;
+      const d1 = d0 + s.len;
+      this.splits.push({ d0: this.track.wrap(d0), d1: this.track.wrap(d1) });
+      // fork sign at the mouth, facing the oncoming cars
+      const sign = makeForkSign(pal);
+      this.placeOnTrack(sign, d0);
+      this.scene.add(sign);
+      // tile the central median down the middle of the fork
+      for (let d = d0 + SEG * 0.5; d < d1 - SEG * 0.5; d += SEG) {
+        const seg = makeSplitMedian(pal);
+        this.placeOnTrack(seg, d);
+        this.scene.add(seg);
+      }
+      // the choice that matters: LEFT route = boost gate, RIGHT route = jump ramp
+      const mid = (d0 + d1) / 2;
+      this.addEntity("boostgate", mid, -0.72, makeBoostGate(rand), 0.1);
+      const spec = RAMP_SPECS.wide;
+      this.addEntity("ramp", mid - 6, 0.72, makeRamp("wide"), 0, spec.power);
+      this.ramps.push({ dist: this.track.wrap(mid - 6), power: spec.power, lane: 0.72, len: spec.l, height: spec.h });
+      for (const off of [12, 18]) this.addEntity("airGem", mid + off, 0.72, makeGem(0xfbbf24, true), AIR_GEM_ALT);
+      // trailing gems on the left route so both sides are worth taking
+      for (const off of [-8, -2, 6, 12]) this.addEntity("gem", mid + off, -0.72, makeGem(pal.gem, false), 0.8);
+    }
+  }
+
+  /** true while `dist` falls inside a fork zone (used by the central soft barrier
+   *  and by opponents to pick a side instead of ploughing the island). */
+  private inSplitZone(dist: number): boolean {
+    const d = this.track.wrap(dist);
+    for (const s of this.splits) if (d >= s.d0 && d <= s.d1) return true;
+    return false;
+  }
+
   private decorate(library: ModelLibrary) {
     const rand = mulberry32(1337);
     const { track, realm } = this;
@@ -647,6 +693,7 @@ export class Game {
     const pal = realm.palette;
     this.placeTunnels();
     this.placeRivers();
+    this.placeSplits();
     this.treeMats = makeTreeMaterials(pal); // shared bark/foliage tree materials
     const lane = () => LANE_CENTERS[Math.floor(rand() * 3)];
     // big monuments/buildings shouldn't hug the verge (they'd overhang the road)
@@ -1083,6 +1130,18 @@ export class Game {
       this.playerVX *= 0.9;                                // and damp it
     }
 
+    // central fork island: while in a split zone, a soft barrier down the middle
+    // nudges you onto whichever side you're already leaning toward — commit to a
+    // route (left = boost gate, right = ramp). Airborne cars fly over it freely.
+    const ISLAND_HALF = 0.32;
+    if (!this.transformed && this.alt < 0.6 && Math.abs(this.playerX) < ISLAND_HALF && this.inSplitZone(this.position)) {
+      const side = this.playerX >= 0 ? 1 : -1;
+      const into = ISLAND_HALF - Math.abs(this.playerX);
+      this.playerX += side * into * Math.min(1, dt * 6);
+      this.playerVX += side * into * 40 * dt;
+      this.playerVX *= 0.9;
+    }
+
     // throttle (car type sets acceleration; boost/nitro still override)
     const boosting = this.nitroT > 0 || this.driftBoostT > 0 || this.boostT > 0;
     const accel = ACCEL * this.carStat.accel;
@@ -1276,12 +1335,18 @@ export class Game {
   private updateOpponents(dt: number) {
     const mine = this.playerProgress();
     const len = this.track.length;
-    for (const o of this.opponents) {
+    for (const [oi, o] of this.opponents.entries()) {
       const gap = mine - o.progress(len); // + means player ahead
       // each racer holds its own pace so the field strings out; only a gentle
       // rubber-band keeps it competitive around the player
       const base = MAX_SPEED * o.pace * (1 + clamp(gap / 500, -0.05, 0.08));
       o.update(dt, this.track, base, this.cfg.laps);
+      // in fork zones (and ~40m before), opponents commit to a side — spread
+      // across both routes — instead of ploughing the central island. Set after
+      // update so it overrides the AI's own periodic lane picks.
+      if (o.alt < 0.5 && (this.inSplitZone(o.dist) || this.inSplitZone(this.track.wrap(o.dist + 40)))) {
+        o.targetLane = oi % 2 === 0 ? -0.72 : 0.72;
+      }
 
       // hop ramps (full-width, so any lane) when reaching one on the ground
       if (o.alt < 0.4 && !o.finished) {
