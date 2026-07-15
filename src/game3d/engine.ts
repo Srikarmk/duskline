@@ -222,6 +222,7 @@ export class Game {
   private driftBoostT = 0;
   private alt = 0;
   private vAlt = 0;
+  private carPitch = 0; // smoothed nose pitch: ramp face / air arc / road slope
   private stuntAir = false;
   private spin = 0; // barrel-roll revolutions
   private flip = 0; // pitch-flip revolutions
@@ -1345,6 +1346,22 @@ export class Game {
       if (this.stuntAir) this.land();
     }
 
+    // nose pitch (negative = nose up): angle UP a ramp face, arc in the air (up
+    // while rising, down while falling), and follow the road's slope on the
+    // ground — so the car rides surfaces instead of floating flat through them.
+    let pitchTarget: number;
+    if (onRamp) {
+      pitchTarget = -Math.atan2(onRamp.height * onRamp.power, onRamp.len);
+    } else if (this.alt > 0.25) {
+      pitchTarget = clamp(-this.vAlt * 0.045, -0.7, 0.55);
+    } else {
+      const latM = this.playerX * ROAD_HALF_WIDTH * 0.9;
+      const a = this.pathPoint(3.5, latM), b = this.pathPoint(-3.5, latM);
+      const h = Math.hypot(a.x - b.x, a.z - b.z) || 7;
+      pitchTarget = -Math.atan2(a.y - b.y, h);
+    }
+    this.carPitch += (pitchTarget - this.carPitch) * Math.min(1, dt * 10);
+
     // out of bounds
     if (Math.abs(this.playerX) > OUT_OF_BOUNDS_X) {
       this.playerX = Math.sign(this.playerX) * 1.3; // nudge back to the verge, not the centre
@@ -1873,12 +1890,16 @@ export class Game {
       const p = this.pathPoint(0, lateralM);
       this.playerRoot.position.set(p.x, p.y + this.alt + CAR_LIFT, p.z);
       const tan = this.pathTangent(0);
+      this.playerRoot.rotation.order = "YXZ";
       this.playerRoot.rotation.y = Math.atan2(tan.x, tan.z);
+      // nose pitch: rides up ramps, arcs in the air, follows the road slope on
+      // the ground (computed + smoothed in update) — no more flat "sinking"
+      this.playerRoot.rotation.x = this.carPitch;
 
       // pitch = flips + air tilt, yaw = steer/drift heading, roll = barrel roll +
       // lean + the road's bank (so the car sits flat on banked corners)
       const bankRoll = (!this.onBranch && this.alt < 0.4) ? track.bankAt(this.position) : 0;
-      this.playerBody.rotation.x = this.flip * Math.PI * 2 + clamp(-this.vAlt * 0.03, -0.35, 0.35);
+      this.playerBody.rotation.x = this.flip * Math.PI * 2; // barrel-roll/flip stunts only
       this.playerBody.rotation.y = this.carYaw;
       this.playerBody.rotation.z =
         this.spin * Math.PI * 2 - this.steer * 0.09 - (this.drifting ? this.driftDir * 0.1 : 0) + bankRoll;
