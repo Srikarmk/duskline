@@ -1058,6 +1058,18 @@ export class Game {
       this.carYaw += (this.steer * 0.2 - this.carYaw) * Math.min(1, dt * 6);
     }
 
+    // soft edge barrier: a springy push-back once you're out past the verge, so
+    // a fast corner or a nudge doesn't fling you straight off the track. You can
+    // still run wide onto the grass, but the edge resists like a barrier.
+    const EDGE_SOFT = 1.45;
+    if (!this.transformed && Math.abs(this.playerX) > EDGE_SOFT) {
+      const over = Math.abs(this.playerX) - EDGE_SOFT;
+      const sign = Math.sign(this.playerX);
+      this.playerX -= sign * over * Math.min(1, dt * 5);   // ease back toward the edge
+      this.playerVX -= sign * over * 26 * dt;              // spring the velocity in
+      this.playerVX *= 0.9;                                // and damp it
+    }
+
     // throttle (car type sets acceleration; boost/nitro still override)
     const boosting = this.nitroT > 0 || this.driftBoostT > 0 || this.boostT > 0;
     const accel = ACCEL * this.carStat.accel;
@@ -1151,6 +1163,15 @@ export class Game {
           this.spin = 0;
           this.playerVX = 0;
           this.toast(this.lastRampPower > 1.3 ? "MEGA JUMP!" : "JUMP!", "#c084fc");
+        } else if (this.lastRampT > 0.2 && this.alt > 0.4) {
+          // slid off the SIDE of the ramp mid-climb → a clumsy tumble, not a jump
+          this.speed *= 0.6;
+          this.playerVX += (Math.random() - 0.5) * 0.8;
+          this.spin = 0.3;
+          this.crashFlash = 0.35;
+          this.shake = Math.max(this.shake, 0.6);
+          this.sound.play("crash");
+          this.toast("SIDESWIPE!", "#f87171");
         }
       }
       if (this.transformed && this.input.fly) {
@@ -1172,13 +1193,13 @@ export class Game {
 
     // out of bounds
     if (Math.abs(this.playerX) > OUT_OF_BOUNDS_X) {
-      this.playerX = Math.sign(this.playerX) * 1;
+      this.playerX = Math.sign(this.playerX) * 1.3; // nudge back to the verge, not the centre
       this.playerVX = 0;
-      this.speed *= 0.3;
+      this.speed *= 0.55; // less of a dead stop
       this.score -= OUT_OF_BOUNDS_PENALTY;
       this.penalties += OUT_OF_BOUNDS_PENALTY;
-      this.crashFlash = 0.5;
-      this.shake = Math.max(this.shake, 1);
+      this.crashFlash = 0.4;
+      this.shake = Math.max(this.shake, 0.8);
       this.sound.play("oob");
       this.toast(`OUT OF BOUNDS -${OUT_OF_BOUNDS_PENALTY}`, "#f87171");
     }
