@@ -166,7 +166,10 @@ export class Game {
   private buckets = new Map<number, Entity[]>();
   private spinners: Entity[] = [];
   private monsters: Entity[] = [];
-  private ramps: { dist: number; power: number }[] = [];
+  private ramps: { dist: number; power: number; lane: number; len: number; height: number }[] = [];
+  private wasOnRamp = false;
+  private lastRampPower = 1;
+  private lastRampT = 0;
   private treeMats: TreeMats | null = null;
   private opponents: Opponent[] = [];
   private playerRoot = new THREE.Group();
@@ -629,7 +632,7 @@ export class Game {
       // launch ramp a bit before the bridge, so you jump the river
       const rampD = this.track.wrap(d - 18);
       this.addEntity("ramp", rampD, 0, makeRamp("mega"), 0, RAMP_SPECS.mega.power);
-      this.ramps.push({ dist: rampD, power: RAMP_SPECS.mega.power });
+      this.ramps.push({ dist: rampD, power: RAMP_SPECS.mega.power, lane: 0, len: RAMP_SPECS.mega.l, height: RAMP_SPECS.mega.h });
       for (const off of [16, 22, 28]) {
         this.addEntity("airGem", rampD + off, 0, makeGem(0xfbbf24, true), AIR_GEM_ALT);
       }
@@ -730,11 +733,12 @@ export class Game {
     const rampKinds: RampKind[] = ["standard", "mega", "kicker", "wide"];
     let ri = 0;
     for (let d = 200; d < len - 60; d += 520) {
-      const l = 0; // centre lane so a launch always lands back on the road
-      const kind = rampKinds[ri++ % rampKinds.length];
+      const kind = rampKinds[ri % rampKinds.length];
+      const l = LANE_CENTERS[ri % LANE_CENTERS.length]; // each ramp sits in ONE lane
+      ri++;
       const spec = RAMP_SPECS[kind];
       this.addEntity("ramp", d, l, makeRamp(kind), 0, spec.power);
-      this.ramps.push({ dist: this.track.wrap(d), power: spec.power });
+      this.ramps.push({ dist: this.track.wrap(d), power: spec.power, lane: l, len: spec.l, height: spec.h });
       for (const off of [15, 21, 27]) {
         const gap = Math.round(off * (0.7 + 0.35 * spec.power));
         this.addEntity("airGem", d + gap, l, makeGem(0xfbbf24, true), AIR_GEM_ALT);
@@ -1103,13 +1107,59 @@ export class Game {
       }
     }
 
-    // altitude
-    if (this.transformed && this.input.fly) {
-      this.vAlt = Math.min(this.vAlt + FLY_LIFT * dt, 9);
-    } else if (this.alt > 0) {
-      this.vAlt -= GRAVITY * dt;
+    // --- ramp ride-up ---------------------------------------------------------
+    // Drive UP a ramp's face (altitude tracks how far along it you are), then
+    // launch off the lip into an arc — instead of popping straight up on contact.
+    // Only fires when you're actually in the ramp's lane; clip it half-on and you
+    // get a partial pop, not a clean launch (hit it sideways at your peril).
+    let onRamp: (typeof this.ramps)[number] | null = null;
+    let rampT = 0;
+    if (!this.transformed) {
+      const trackLen = this.track.length;
+      for (const r of this.ramps) {
+        if (Math.abs(this.playerX - r.lane) > 0.42) continue; // not in this ramp's lane
+        let gap = this.position - r.dist;
+        if (gap > trackLen / 2) gap -= trackLen;
+        else if (gap < -trackLen / 2) gap += trackLen;
+        if (gap >= -r.len / 2 && gap <= r.len / 2) {
+          onRamp = r;
+          rampT = (gap + r.len / 2) / r.len; // 0 at the base → 1 at the lip
+          break;
+        }
+      }
     }
-    this.alt += this.vAlt * dt;
+
+    // altitude
+    if (onRamp) {
+      // riding up the face: altitude is driven by your position along the ramp
+      const peak = onRamp.height * onRamp.power;
+      this.alt = Math.max(this.alt, peak * rampT);
+      this.vAlt = 0;
+      this.stuntAir = true;
+      this.lastRampPower = onRamp.power;
+      this.lastRampT = rampT;
+      if (!this.wasOnRamp) {
+        this.wasOnRamp = true;
+        this.sound.play("jump");
+      }
+    } else {
+      if (this.wasOnRamp) {
+        this.wasOnRamp = false;
+        if (this.lastRampT > 0.6) {
+          // launched cleanly off the lip → arc through the air
+          this.vAlt = RAMP_LAUNCH * this.lastRampPower * clamp(speedPercent, 0.4, 1);
+          this.spin = 0;
+          this.playerVX = 0;
+          this.toast(this.lastRampPower > 1.3 ? "MEGA JUMP!" : "JUMP!", "#c084fc");
+        }
+      }
+      if (this.transformed && this.input.fly) {
+        this.vAlt = Math.min(this.vAlt + FLY_LIFT * dt, 9);
+      } else if (this.alt > 0) {
+        this.vAlt -= GRAVITY * dt;
+      }
+      this.alt += this.vAlt * dt;
+    }
     if (this.alt >= MAX_ALT) {
       this.alt = MAX_ALT;
       this.vAlt = Math.min(this.vAlt, 0);
@@ -1424,15 +1474,8 @@ export class Game {
         }
         break;
       case "ramp":
-        if (this.alt < 0.5 && speedPercent > 0.15) {
-          this.vAlt = RAMP_LAUNCH * e.power * clamp(speedPercent, 0.4, 1);
-          this.stuntAir = !this.transformed;
-          this.spin = 0;
-          this.playerVX = 0;               // launch straight — no sideways carry
-          this.playerX += (e.lateral - this.playerX) * 0.5; // snap toward ramp centre
-          this.sound.play("jump");
-          this.toast(e.power > 1.3 ? "MEGA JUMP!" : "JUMP!", "#c084fc");
-        }
+        // ramps are handled physically by the ride-up in update() (climb the face,
+        // launch off the lip); the entity is now just the visual marker.
         break;
       case "rock":
         if (this.alt < 1.2) {

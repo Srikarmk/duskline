@@ -29,7 +29,6 @@ const MODES: { id: GameMode; name: string; blurb: string }[] = [
   { id: "timetrial", name: "TIME TRIAL", blurb: "Solo run — beat the clock over clean laps." },
   { id: "nitro", name: "NITRO SPRINT", blurb: "1 lap, full nitro, all-out sprint vs the pack." },
   { id: "transform", name: "TRANSFORMER RUSH", blurb: "Morph into a sword-mech — slash monsters and fly." },
-  { id: "spacewars", name: "SPACE WARS", blurb: "Deep-space combat — start armed, weapons everywhere, blast the pack." },
 ];
 
 const MODE_LABEL: Record<GameMode, string> = {
@@ -112,7 +111,7 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
         <h1 className="title">FANTASY RACER</h1>
         <p className="subtitle">drift · boost · jump · blast</p>
         <div className="hero-tags">
-          <span>8 WORLDS</span><span>8 KARTS</span><span>5 MODES</span>
+          <span>8 WORLDS</span><span>8 KARTS</span><span>4 MODES</span>
         </div>
       </div>
 

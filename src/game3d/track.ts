@@ -10,8 +10,10 @@ const VERGE_WIDTH = 18; // grass bank from road edge out to flat ground
 const GROUND_FLOOR = 0.35;
 // banking: the road tilts INTO corners (velodrome-style). Bank angle is the
 // smoothed signed curvature scaled by BANK_K, capped at MAX_BANK.
-const BANK_K = 15;
-const MAX_BANK = 0.44; // ~25°
+const BANK_K = 11;
+const MAX_BANK = 0.28; // ~16° — gentle lean; the road is lifted into a berm so
+                       // the inner edge never dips below the ground (no sinking)
+const BANK_EDGE = ROAD_HALF_WIDTH * 1.25; // road half-width used for the berm lift
 
 const clampN = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
@@ -87,13 +89,19 @@ export class Track {
     const t = this.wrap(dist) / this.length;
     const p = this.curve.getPointAt(t, out);
     if (p.y < GROUND_FLOOR) p.y = GROUND_FLOOR;
+    const bank = flat ? 0 : this.bankAt(dist);
+    if (bank !== 0) {
+      // lift the whole cross-section so a banked corner reads as a raised berm
+      // whose INNER edge stays at road level — otherwise the inner edge (and the
+      // car on it) drops below the flat ground plane and sinks through it.
+      p.y += BANK_EDGE * Math.abs(Math.sin(bank));
+    }
     if (lateral !== 0) {
       const tan = this.curve.getTangentAt(t);
       // road "right" vector, rotated around the tangent by the bank so the
       // cross-section tilts (outer edge lifts). `flat` skips it (roadside scenery
       // must stay on the ground, not ride up the banked plane).
       let rx = -tan.z, ry = 0, rz = tan.x;
-      const bank = flat ? 0 : this.bankAt(dist);
       if (bank !== 0) {
         const c = Math.cos(bank), s = Math.sin(bank);
         const ux = tan.y * rz - tan.z * ry;
@@ -150,7 +158,9 @@ export class Track {
         const uz = tan.x * ry - tan.y * rx;
         rx = rx * c + ux * s; ry = ry * c + uy * s; rz = rz * c + uz * s;
       }
-      const cy = Math.max(GROUND_FLOOR, p.y) + 0.1;
+      // match pointAt's berm lift so the banked ribbon rises with the car
+      const lift = bank !== 0 ? BANK_EDGE * Math.abs(Math.sin(bank)) : 0;
+      const cy = Math.max(GROUND_FLOOR, p.y) + 0.1 + lift;
       positions.push(p.x + rx * edge, cy + ry * edge, p.z + rz * edge);
       positions.push(p.x - rx * edge, cy - ry * edge, p.z - rz * edge);
       const v = d / TEX_TILE_METERS;

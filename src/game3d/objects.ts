@@ -995,12 +995,12 @@ export type RampKind = "standard" | "mega" | "kicker" | "wide";
 export const RAMP_SPECS: Record<RampKind, {
   w: number; l: number; h: number; body: number; glow: number; chev: number; power: number;
 }> = {
-  // widths span the road so you can't drive past one in a side lane; lengths
-  // and heights are bumped up so every ramp reads as a bold, dramatic take-off
-  standard: { w: 5.0, l: 4.2, h: 2.4, body: 0x5a2c0e, glow: 0xf59e0b, chev: 0xfbbf24, power: 1.0 },
-  mega:     { w: 5.2, l: 5.6, h: 3.6, body: 0x0e3a4a, glow: 0x22d3ee, chev: 0x67e8f9, power: 1.5 },
-  kicker:   { w: 5.0, l: 2.8, h: 1.55, body: 0x143a20, glow: 0x4ade80, chev: 0xa7f3d0, power: 0.7 },
-  wide:     { w: 5.8, l: 3.6, h: 2.1, body: 0x3b1046, glow: 0xd946ef, chev: 0xf5d0fe, power: 1.05 },
+  // single-lane ramps — each occupies ONE lane so you choose to take it (or a
+  // clear lane past it); lengths/heights read as bold take-offs you drive up
+  standard: { w: 3.2, l: 4.6, h: 2.4, body: 0x5a2c0e, glow: 0xf59e0b, chev: 0xfbbf24, power: 1.0 },
+  mega:     { w: 3.4, l: 6.0, h: 3.6, body: 0x0e3a4a, glow: 0x22d3ee, chev: 0x67e8f9, power: 1.5 },
+  kicker:   { w: 3.0, l: 3.0, h: 1.55, body: 0x143a20, glow: 0x4ade80, chev: 0xa7f3d0, power: 0.7 },
+  wide:     { w: 4.2, l: 4.0, h: 2.1, body: 0x3b1046, glow: 0xd946ef, chev: 0xf5d0fe, power: 1.05 },
 };
 
 // curved slope profiles (t: 0 at entry → 1 at lip). All start flat at 0 and
