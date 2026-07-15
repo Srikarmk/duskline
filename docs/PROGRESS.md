@@ -146,6 +146,14 @@ feel and read well, and rebuilt around it:
 
 ![Grip + grading — banked camera, edge posts, speed streaks](screenshots/handling.jpg)
 
+**Tuning after playtest feedback:** the tracks were **flattened** so the road
+hugs the terrain instead of sitting on a tall embankment (no more "valley"
+beside the road); **ambient particles cut** by ~70% and kept low so they don't
+bury the cars; **out-of-bounds tightened** (you can put a wheel on the grass
+but can't drive off into the scenery); grip made a little more forgiving so you
+hold the road; and the **contrast softened** (lifted ambient light + lower
+exposure) so it's less harsh neon-on-black.
+
 ---
 
 ## Where it stands now

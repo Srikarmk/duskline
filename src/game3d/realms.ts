@@ -96,7 +96,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     controlPoints: loopTrack(
       18, 175,
       [{ k: 2, amp: 38, phase: 0.3 }, { k: 3, amp: 18, phase: 1.0 }],
-      9, [{ k: 2, amp: 9, phase: 0 }, { k: 4, amp: 6, phase: 1.5 }]
+      1.5, [{ k: 2, amp: 3, phase: 0 }, { k: 4, amp: 2, phase: 1.5 }]
     ),
     palette: {
       sky: ["#0d0821", "#1a1033", "#4a2d6e", "#6d4a9e"],
@@ -129,7 +129,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     controlPoints: loopTrack(
       16, 225,
       [{ k: 1, amp: 60, phase: 0.5 }, { k: 2, amp: 20, phase: 0 }],
-      3, [{ k: 2, amp: 7, phase: 0.5 }]
+      1, [{ k: 2, amp: 2.5, phase: 0.5 }]
     ),
     palette: {
       sky: ["#1a0805", "#3b1206", "#7c2d12", "#b45309"],
@@ -158,7 +158,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     controlPoints: loopTrack(
       20, 170,
       [{ k: 3, amp: 30, phase: 0.2 }, { k: 5, amp: 13, phase: 0.8 }],
-      18, [{ k: 3, amp: 16, phase: 0 }, { k: 2, amp: 11, phase: 1.0 }]
+      2, [{ k: 3, amp: 4, phase: 0 }, { k: 2, amp: 2.5, phase: 1.0 }]
     ),
     palette: {
       sky: ["#081428", "#0e2540", "#2a5a8a", "#7ec8e8"],

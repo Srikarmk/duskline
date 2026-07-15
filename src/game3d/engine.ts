@@ -239,7 +239,7 @@ export class Game {
     this.renderer.setClearColor(this.realm.palette.fog);
     // filmic tone mapping → richer colors + smooth highlight roll-off
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.25;
+    this.renderer.toneMappingExposure = 1.1;
 
     const hudCanvas = document.createElement("canvas");
     hudCanvas.className = "game-layer game-hud";
@@ -346,11 +346,14 @@ export class Game {
     }
 
     scene.add(new THREE.HemisphereLight(pal.hemiSky, pal.hemiGround, pal.hemiInt * 1.4));
+    // low ambient lift so shadows aren't pure black — cuts the harsh neon-on-black
+    // contrast and lets the ground/scenery read
+    scene.add(new THREE.AmbientLight(pal.hemiSky, 0.32));
     const sun = new THREE.DirectionalLight(pal.sun, pal.sunInt * 1.2);
     sun.position.set(80, 130, 40);
     scene.add(sun);
     // cool fill from the opposite side so nothing reads as a black silhouette
-    const fill = new THREE.DirectionalLight(pal.hemiSky, 0.45);
+    const fill = new THREE.DirectionalLight(pal.hemiSky, 0.5);
     fill.position.set(-70, 45, -90);
     scene.add(fill);
 

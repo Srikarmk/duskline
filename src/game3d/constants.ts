@@ -29,11 +29,11 @@ export const TURN_ACCEL = 10.5;
 /** steering authority loss with speed (higher = heavier at top speed) */
 export const STEER_SPEED_FALLOFF = 0.014;
 /** max lateral accel the tires can produce — the grip ceiling (playerX u/s²) */
-export const GRIP_LIMIT = 8.5;
+export const GRIP_LIMIT = 9.5;
 /** tire scrub: bleeds off sideways velocity so the car settles / self-centers */
-export const LATERAL_DAMP = 5.0;
+export const LATERAL_DAMP = 5.5;
 /** strength of the v²/r push toward the outside of a curve */
-export const CENTRI_K = 1.25;
+export const CENTRI_K = 0.95;
 /** grip while braking (weight forward → sharper turn-in) */
 export const WEIGHT_BRAKE_GRIP = 1.3;
 /** grip while on the throttle (weight back → a touch looser) */
@@ -48,7 +48,9 @@ export const DRIFT_MIN_CHARGE = 0.55;
 export const DRIFT_BOOST_FACTOR = 1.28;
 
 export const TOTAL_LAPS = 3;
-export const OUT_OF_BOUNDS_X = 2.9;
+// |playerX| > 1 = a wheel on the grass; past this you're fully off the track
+// and get snapped back. Kept tight so you can't just drive off into the scenery.
+export const OUT_OF_BOUNDS_X = 1.7;
 export const OUT_OF_BOUNDS_PENALTY = 100;
 
 export const NITRO_DURATION = 2.2;

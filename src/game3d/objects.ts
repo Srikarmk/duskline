@@ -227,10 +227,10 @@ export function makeParticleField(
     realmId === "void" ? "stardust" : "firefly";
 
   const conf = {
-    firefly:  { count: 520, color: 0xfde68a, size: 2.6, R: 200, HY: 70 },
-    ember:    { count: 620, color: 0xf97316, size: 2.2, R: 200, HY: 80 },
-    snow:     { count: 900, color: 0xf0f9ff, size: 2.4, R: 200, HY: 90 },
-    stardust: { count: 700, color: 0xa5b4fc, size: 2.4, R: 260, HY: 120 },
+    firefly:  { count: 130, color: 0xfde68a, size: 1.7, R: 150, HY: 24 },
+    ember:    { count: 190, color: 0xf97316, size: 1.6, R: 160, HY: 52 },
+    snow:     { count: 320, color: 0xeaf4ff, size: 1.8, R: 170, HY: 70 },
+    stardust: { count: 240, color: 0xa5b4fc, size: 2.0, R: 240, HY: 90 },
   }[kind];
 
   const { count, R, HY } = conf;
@@ -254,7 +254,7 @@ export function makeParticleField(
     size: conf.size,
     sizeAttenuation: true,
     transparent: true,
-    opacity: kind === "snow" ? 0.9 : 0.85,
+    opacity: kind === "snow" ? 0.75 : 0.6,
     depthWrite: false,
     blending: kind === "snow" ? THREE.NormalBlending : THREE.AdditiveBlending,
     fog: false,
