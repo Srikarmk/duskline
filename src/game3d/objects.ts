@@ -490,9 +490,24 @@ export function makeMine(): THREE.Group {
   return g;
 }
 
-export function makeRamp(): THREE.Group {
+export type RampKind = "standard" | "mega" | "kicker" | "wide";
+
+// each kind: size (half-width, half-length, height), body/glow colours, and
+// the launch-power multiplier the engine reads. Widths stay within the ramp
+// collision window so you always launch when you drive onto one.
+export const RAMP_SPECS: Record<RampKind, {
+  w: number; l: number; h: number; body: number; glow: number; chev: number; power: number;
+}> = {
+  standard: { w: 2.5, l: 3.0, h: 2.0, body: 0x5a2c0e, glow: 0xf59e0b, chev: 0xfbbf24, power: 1.0 },
+  mega:     { w: 2.7, l: 4.2, h: 3.2, body: 0x0e3a4a, glow: 0x22d3ee, chev: 0x67e8f9, power: 1.55 },
+  kicker:   { w: 2.3, l: 1.9, h: 1.15, body: 0x143a20, glow: 0x4ade80, chev: 0xa7f3d0, power: 0.7 },
+  wide:     { w: 2.8, l: 2.5, h: 1.7, body: 0x3b1046, glow: 0xd946ef, chev: 0xf5d0fe, power: 1.05 },
+};
+
+export function makeRamp(kind: RampKind = "standard"): THREE.Group {
   const group = new THREE.Group();
-  const w = 2.3, l = 3.0, h = 2.0;
+  const spec = RAMP_SPECS[kind];
+  const { w, l, h } = spec;
 
   // solid wedge body (slope rises toward +z / the direction of travel)
   const verts = new Float32Array([
@@ -507,14 +522,14 @@ export function makeRamp(): THREE.Group {
   geo.computeVertexNormals();
   const body = new THREE.Mesh(
     geo,
-    new THREE.MeshStandardMaterial({ color: 0x5a2c0e, metalness: 0.4, roughness: 0.6 })
+    new THREE.MeshStandardMaterial({ color: spec.body, metalness: 0.4, roughness: 0.6 })
   );
   group.add(body);
 
   const pitch = Math.atan2(h, 2 * l);
   const slopeLen = Math.hypot(2 * l, h);
   const glow = new THREE.MeshStandardMaterial({
-    color: 0xfde68a, emissive: 0xf59e0b, emissiveIntensity: 1.3,
+    color: 0xfde68a, emissive: spec.glow, emissiveIntensity: 1.3,
   });
 
   // glowing launch strip down the middle of the slope
@@ -525,9 +540,10 @@ export function makeRamp(): THREE.Group {
 
   // glowing chevrons pointing up the ramp
   const chevMat = new THREE.MeshStandardMaterial({
-    color: 0xfef3c7, emissive: 0xfbbf24, emissiveIntensity: 1.6,
+    color: 0xfef3c7, emissive: spec.chev, emissiveIntensity: 1.6,
   });
-  for (let i = 0; i < 3; i++) {
+  const chevN = kind === "kicker" ? 2 : 3;
+  for (let i = 0; i < chevN; i++) {
     const t = 0.28 + i * 0.22;
     const chev = new THREE.Mesh(new THREE.ConeGeometry(w * 0.4, 0.5, 3), chevMat);
     chev.position.set(0, h * t + 0.22, -l + 2 * l * t);

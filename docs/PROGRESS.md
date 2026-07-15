@@ -154,6 +154,17 @@ but can't drive off into the scenery); grip made a little more forgiving so you
 hold the road; and the **contrast softened** (lifted ambient light + lower
 exposure) so it's less harsh neon-on-black.
 
+**Second fix round:** ramps had a collision window narrower than the ramp
+itself, so you could drive straight through one — widened it (you now launch
+reliably) and added **four ramp kinds** (standard / mega / kicker / wide) with
+their own launch power and colour. Item boxes only respond when your slot is
+empty; hitting one while full now shows a **"SLOT FULL"** prompt instead of
+silently doing nothing, and pickup tolerances were widened so gems/boxes catch
+reliably. And the **motion-sickness culprits** were dialled right back — the
+FOV kick, camera bank, look-ahead swing and shake are now gentle, and the speed
+streaks no longer strobe (re-seeded ~5 Hz, far fewer, faint), with bloom
+reduced so bright edges don't halo.
+
 ---
 
 ## Where it stands now

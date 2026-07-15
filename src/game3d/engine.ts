@@ -26,7 +26,8 @@ import { loadModels, instantiate, type ModelLibrary } from "./assets";
 import {
   makeSkyDome, makeGround, makeGroundTexture, makeGrassTexture,
   makeGrassField, makeRockField, makeMountainRing,
-  makeGem, makeNitroCan, makeOrb, makeRamp, makeCrystalCluster, makeMonster,
+  makeGem, makeNitroCan, makeOrb, makeRamp, RAMP_SPECS, type RampKind,
+  makeCrystalCluster, makeMonster,
   makeMech, makeSlash, makeFlame, makeUnderGlow,
   makeItemBox, makeMissile, makeMine, makeShieldBubble,
   makeParticleField, makeStartGantry,
@@ -60,6 +61,7 @@ interface Entity {
   baseY: number;
   phase: number;
   home: number; // spawn lateral, for monster patrol
+  power: number; // launch-power multiplier for ramps (1 otherwise)
 }
 
 interface Projectile {
@@ -88,11 +90,11 @@ const MODE_CONFIG: Record<GameMode, ModeConfig> = {
 };
 
 const COLLIDE_WIDTH: Record<EntityType, number> = {
-  gem: 0.24, airGem: 0.3, nitro: 0.24, orb: 0.32, ramp: 0.42, rock: 0.3, monster: 0.36, itembox: 0.4,
+  gem: 0.36, airGem: 0.42, nitro: 0.36, orb: 0.44, ramp: 0.62, rock: 0.34, monster: 0.38, itembox: 0.56,
 };
 
 const BUCKET_METERS = 5;
-const COLLIDE_DIST = 2.8;
+const COLLIDE_DIST = 3.4;
 
 function clamp(v: number, min: number, max: number) {
   return Math.max(min, Math.min(max, v));
@@ -127,6 +129,7 @@ export class Game {
   private sound = new Sound();
   private slashCooldown = 0;
   private bumpCd = 0;
+  private slotFullCd = 0;
   private lastBeep = 99;
   private realm: RealmSpec;
   private track: Track;
@@ -260,7 +263,7 @@ export class Game {
     this.composer.setPixelRatio(this.renderer.getPixelRatio());
     this.composer.setSize(w, h);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.4, 0.4, 0.85);
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.3, 0.5, 0.9);
     this.composer.addPass(this.bloomPass);
     // final pass applies tone mapping + sRGB so the composed image is graded
     this.composer.addPass(new OutputPass());
@@ -346,9 +349,9 @@ export class Game {
     }
 
     scene.add(new THREE.HemisphereLight(pal.hemiSky, pal.hemiGround, pal.hemiInt * 1.4));
-    // low ambient lift so shadows aren't pure black — cuts the harsh neon-on-black
-    // contrast and lets the ground/scenery read
-    scene.add(new THREE.AmbientLight(pal.hemiSky, 0.32));
+    // ambient lift so shadows aren't pure black — cuts the harsh neon-on-black
+    // contrast and lets the ground/scenery read clearly
+    scene.add(new THREE.AmbientLight(pal.hemiSky, 0.45));
     const sun = new THREE.DirectionalLight(pal.sun, pal.sunInt * 1.2);
     sun.position.set(80, 130, 40);
     scene.add(sun);
@@ -453,7 +456,7 @@ export class Game {
     }
   }
 
-  private addEntity(type: EntityType, dist: number, lateral: number, obj: THREE.Object3D, extraY = 0) {
+  private addEntity(type: EntityType, dist: number, lateral: number, obj: THREE.Object3D, extraY = 0, power = 1) {
     const d = this.track.wrap(dist);
     const p = this.track.pointAt(d, lateral * ROAD_HALF_WIDTH);
     obj.position.set(p.x, p.y + extraY, p.z);
@@ -470,7 +473,7 @@ export class Game {
     this.scene.add(obj);
     const entity: Entity = {
       type, dist: d, lateral, collectedLap: 0, obj,
-      baseY: obj.position.y, phase: Math.random() * Math.PI * 2, home: lateral,
+      baseY: obj.position.y, phase: Math.random() * Math.PI * 2, home: lateral, power,
     };
     this.entities.push(entity);
     if (type === "monster") {
@@ -549,12 +552,18 @@ export class Game {
       this.addEntity("nitro", d, lane(), makeNitroCan());
     }
 
-    // ramps + air gem arcs
-    for (let d = 200; d < len - 60; d += 380) {
+    // ramps + air gem arcs — cycle the ramp kinds for variety (each launches
+    // with its own power, and the air-gem arc stretches to match)
+    const rampKinds: RampKind[] = ["standard", "mega", "kicker", "wide"];
+    let ri = 0;
+    for (let d = 200; d < len - 60; d += 340) {
       const l = lane();
-      this.addEntity("ramp", d, l, makeRamp());
+      const kind = rampKinds[ri++ % rampKinds.length];
+      const spec = RAMP_SPECS[kind];
+      this.addEntity("ramp", d, l, makeRamp(kind), 0, spec.power);
       for (const off of [15, 21, 27]) {
-        this.addEntity("airGem", d + off, l, makeGem(0xfbbf24, true), AIR_GEM_ALT);
+        const gap = Math.round(off * (0.7 + 0.35 * spec.power));
+        this.addEntity("airGem", d + gap, l, makeGem(0xfbbf24, true), AIR_GEM_ALT);
       }
     }
 
@@ -719,6 +728,7 @@ export class Game {
     this.swingT = Math.max(0, this.swingT - dt);
     this.slashCooldown = Math.max(0, this.slashCooldown - dt);
     this.bumpCd = Math.max(0, this.bumpCd - dt);
+    this.slotFullCd = Math.max(0, this.slotFullCd - dt);
 
     if (this.input.cameraCycle) {
       this.cameraIndex = (this.cameraIndex + 1) % CAMERA_PRESETS.length;
@@ -1186,12 +1196,12 @@ export class Game {
         }
         break;
       case "ramp":
-        if (this.alt < 0.4 && speedPercent > 0.2) {
-          this.vAlt = RAMP_LAUNCH * clamp(speedPercent, 0.4, 1);
+        if (this.alt < 0.5 && speedPercent > 0.15) {
+          this.vAlt = RAMP_LAUNCH * e.power * clamp(speedPercent, 0.4, 1);
           this.stuntAir = !this.transformed;
           this.spin = 0;
           this.sound.play("jump");
-          this.toast("JUMP!", "#c084fc");
+          this.toast(e.power > 1.3 ? "MEGA JUMP!" : "JUMP!", "#c084fc");
         }
         break;
       case "rock":
@@ -1216,11 +1226,17 @@ export class Game {
         }
         break;
       case "itembox":
-        if (this.alt < 1.2 && !this.heldItem) {
-          this.collect(e);
-          this.heldItem = this.randomItem();
-          this.sound.play("nitroCharge");
-          this.toast(`ITEM: ${ITEM_LABEL[this.heldItem]}  [E]`, "#f0abfc");
+        if (this.alt < 1.2) {
+          if (!this.heldItem) {
+            this.collect(e);
+            this.heldItem = this.randomItem();
+            this.sound.play("nitroCharge");
+            this.toast(`ITEM: ${ITEM_LABEL[this.heldItem]}  [E]`, "#f0abfc");
+          } else if (this.slotFullCd <= 0) {
+            // already holding one — tell the player instead of silently ignoring
+            this.slotFullCd = 1.2;
+            this.toast(`SLOT FULL — [E] TO USE ${ITEM_LABEL[this.heldItem]}`, "#8b85a8");
+          }
         }
         break;
     }
@@ -1446,9 +1462,9 @@ export class Game {
       const spd = this.speed / MAX_SPEED;
       const curve = track.curvatureAt(this.position);
 
-      // speed/boost FOV kick for a sense of velocity ('boosting' declared above)
-      const targetFov = preset.fov + spd * 9 + (boosting ? 7 : 0) + (this.slipping ? 2 : 0);
-      this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, 0.08);
+      // gentle speed/boost FOV kick — kept small to avoid motion sickness
+      const targetFov = preset.fov + spd * 4 + (boosting ? 4 : 0);
+      this.camera.fov += (targetFov - this.camera.fov) * 0.06;
       this.camera.updateProjectionMatrix();
 
       const camAnchor = track.pointAt(this.position - preset.back, lateralM * 0.7);
@@ -1460,19 +1476,19 @@ export class Game {
         this.camPos.lerp(camAnchor, 0.55);
       }
       this.camera.position.copy(this.camPos);
-      // impact/landing shake
+      // subtle impact/landing shake
       if (this.shake > 0.01) {
-        const s = this.shake * 0.35;
+        const s = this.shake * 0.18;
         this.camera.position.x += (Math.random() - 0.5) * s;
         this.camera.position.y += (Math.random() - 0.5) * s;
       }
-      // look ahead, biased into the corner so the turn opens up before you
-      const aheadBias = clamp(curve * this.speed * 2.2, -3, 3) + this.playerVX * 0.6;
+      // look slightly ahead into the corner (small, so the view doesn't swing)
+      const aheadBias = clamp(curve * this.speed * 0.9, -1.4, 1.4);
       const lookAt = track.pointAt(this.position + preset.ahead, lateralM * 0.5 + aheadBias);
       lookAt.y += preset.lookHeight + this.alt * 0.8;
       this.camera.lookAt(lookAt);
-      // bank the camera into the corner + with the slide
-      const bank = clamp(-curve * this.speed * 0.02 - this.playerVX * 0.02 - this.steer * 0.02, -0.14, 0.14);
+      // slight bank into the corner
+      const bank = clamp(-curve * this.speed * 0.008 - this.steer * 0.012, -0.055, 0.055);
       this.camera.rotateZ(bank);
 
       this.composer.render();
