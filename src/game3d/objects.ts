@@ -202,20 +202,22 @@ export function makeGrassTexture(pal: RealmPalette): THREE.Texture {
   return noiseTexture(pal.groundBase, pal.groundSpeck, pal.groundDark, 40);
 }
 
-export function makeGround(groundTex: THREE.Texture): THREE.Mesh {
+export function makeGround(pal: RealmPalette): THREE.Mesh {
   const geo = new THREE.CircleGeometry(1400, 64);
   const lib = pbr();
   let mat: THREE.MeshStandardMaterial;
   if (lib) {
-    // real CC0 ground albedo + normal, tiled across the terrain
+    // real CC0 ground albedo + normal, tiled across the terrain. Realms that
+    // borrow another realm's albedo set `groundTint` to recolour it to theirs.
     const t = tileSet(lib.ground, 220);
     mat = new THREE.MeshStandardMaterial({
       map: t.diff, normalMap: t.nor, normalScale: new THREE.Vector2(1, 1),
       metalness: 0, roughness: 1,
+      color: pal.groundTint !== undefined ? new THREE.Color(pal.groundTint) : 0xffffff,
     });
   } else {
     mat = new THREE.MeshStandardMaterial({
-      map: groundTex, bumpMap: terrainBump(120), bumpScale: 0.6, metalness: 0, roughness: 1,
+      map: makeGroundTexture(pal), bumpMap: terrainBump(120), bumpScale: 0.6, metalness: 0, roughness: 1,
     });
   }
   const mesh = new THREE.Mesh(geo, mat);

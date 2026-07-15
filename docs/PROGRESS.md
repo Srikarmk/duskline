@@ -329,9 +329,28 @@ day-one pseudo-3D canvas to today, each captured straight from that build.
 
 ---
 
+## Eight worlds
+
+Four new themed realms join the original four:
+
+![Eight worlds — the full realm lineup](screenshots/realms.jpg)
+
+- **Sunspire Sands** — a blazing Egyptian desert of pyramids, obelisks and palms.
+- **Ravenspire Keep** — a torchlit medieval castle circuit with towers, ramparts and banners.
+- **Apex Speedway** — a real F1 stadium: grandstands, tyre barriers, floodlights, red-and-white kerbs.
+- **Neon Metro** — a midnight New-York street circuit under a skyline of lit towers and neon billboards.
+
+Each realm ships its own track shape, sky, lighting and a full set of hand-built
+procedural props (a dedicated builder file per theme), and drops straight into the
+same wizard, Grand Prix and time-trial flow as the rest.
+
+---
+
 ## Where it stands now
 
-- **4 realms**: Enchanted Forest, Ember Wastes, Crystal Peaks, Void Circuit
+- **8 realms**: Enchanted Forest, Ember Wastes, Crystal Peaks, Void Circuit,
+  Sunspire Sands (Egypt), Ravenspire Keep (castle), Apex Speedway (F1 stadium),
+  Neon Metro (NYC)
 - **8 karts**: Comet, Bolt, Titan, Wisp, Apex (F1), Goliath (monster truck),
   Corsair (ship), Baron (limo) — each a distinct model + stat line, picked in
   a live 3D garage

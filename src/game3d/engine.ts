@@ -25,7 +25,7 @@ import {
 import { Track, makeRoadTexture, makeCheckerTexture } from "./track";
 import { loadModels, instantiate, type ModelLibrary } from "./assets";
 import {
-  makeSkyDome, makeGround, makeGroundTexture, makeGrassTexture,
+  makeSkyDome, makeGround, makeGrassTexture,
   makeGrassField, makeRockField, makeMountainRing,
   makeGem, makeNitroCan, makeOrb, makeRamp, RAMP_SPECS, type RampKind,
   makeCrystalCluster, makeMonster,
@@ -38,6 +38,10 @@ import {
 import { loadPBR } from "./textures";
 import { makeKart, CAR_SPECS, CAR_IDS, type CarStat } from "./cars";
 import { REALMS, pickScenery, type RealmSpec, type SceneryKind } from "./realms";
+import { makePyramid, makeObelisk, makeSphinx, makePalm, makeSandRock } from "./props/egyptian";
+import { makeTower, makeGatehouse, makeCastleWall, makeBanner, makeTorch } from "./props/castle";
+import { makeGrandstand, makeTyreStack, makeFloodlight, makePitBuilding, makeMarshalBoard } from "./props/circuit";
+import { makeSkyscraper, makeBrownstone, makeStreetlight, makeBillboard, makeWaterTower } from "./props/metro";
 import { Opponent } from "./ai";
 import { Minimap } from "./minimap";
 import { Sound } from "./sound";
@@ -332,8 +336,14 @@ export class Game {
   }
 
   private async init() {
-    // load the CC0 PBR textures for this realm alongside the models
-    const groundName = this.realm.style === "void" ? "ground_peaks" : `ground_${this.realm.id}`;
+    // load the CC0 PBR textures for this realm alongside the models. New realms
+    // reuse a close-matching shipped ground albedo (then tint it via palette).
+    const GROUND: Record<string, string> = {
+      forest: "ground_forest", ember: "ground_ember", peaks: "ground_peaks",
+      void: "ground_peaks", sands: "ground_peaks", castle: "ground_forest",
+      circuit: "ground_forest", metro: "ground_peaks",
+    };
+    const groundName = GROUND[this.realm.id] ?? "ground_forest";
     const [library] = await Promise.all([loadModels(), loadPBR(groundName)]);
     if (this.stopped) return;
     this.buildWorld(library);
@@ -350,7 +360,7 @@ export class Game {
     scene.add(makeSkyDome(pal));
 
     if (!isVoid) {
-      scene.add(makeGround(makeGroundTexture(pal)));
+      scene.add(makeGround(pal));
       // horizon-filling mountain ring
       const cx = (track.bounds.minX + track.bounds.maxX) / 2;
       const cz = (track.bounds.minZ + track.bounds.maxZ) / 2;
@@ -479,6 +489,29 @@ export class Game {
       if (kind === "treeB") return makeTree(rand, this.treeMats, "round");
       if (kind === "treeDark") return makeTree(rand, this.treeMats, "tall");
     }
+    // themed-realm props (self-contained procedural builders)
+    switch (kind) {
+      case "pyramid": return makePyramid(rand);
+      case "obelisk": return makeObelisk(rand);
+      case "sphinx": return makeSphinx(rand);
+      case "palm": return makePalm(rand);
+      case "sandRock": return makeSandRock(rand);
+      case "tower": return makeTower(rand);
+      case "gatehouse": return makeGatehouse(rand);
+      case "castleWall": return makeCastleWall(rand);
+      case "banner": return makeBanner(rand);
+      case "torch": return makeTorch(rand);
+      case "grandstand": return makeGrandstand(rand);
+      case "tyreStack": return makeTyreStack(rand);
+      case "floodlight": return makeFloodlight(rand);
+      case "pitBuilding": return makePitBuilding(rand);
+      case "marshalBoard": return makeMarshalBoard(rand);
+      case "skyscraper": return makeSkyscraper(rand);
+      case "brownstone": return makeBrownstone(rand);
+      case "streetlight": return makeStreetlight(rand);
+      case "billboard": return makeBillboard(rand);
+      case "waterTower": return makeWaterTower(rand);
+    }
     let obj: THREE.Object3D;
     switch (kind) {
       case "treeA": obj = instantiate(library, "treeA", 3 + rand() * 2.2); break;
@@ -536,6 +569,10 @@ export class Game {
     const pal = realm.palette;
     this.treeMats = makeTreeMaterials(pal); // shared bark/foliage tree materials
     const lane = () => LANE_CENTERS[Math.floor(rand() * 3)];
+    // big monuments/buildings shouldn't hug the verge (they'd overhang the road)
+    const LANDMARK_KINDS = new Set<SceneryKind>([
+      "pyramid", "tower", "gatehouse", "grandstand", "floodlight", "pitBuilding", "skyscraper",
+    ]);
 
     if (realm.style === "void") {
       this.decorateVoid(library, rand);
@@ -546,8 +583,11 @@ export class Game {
         for (const side of [-1, 1]) {
           // near band (dense, right by the road)
           if (rand() < 0.95) {
-            const obj = this.sceneryObject(pickScenery(realm, rand), library, rand);
-            const off = side * (ROAD_HALF_WIDTH + 5 + rand() * 13);
+            const kind = pickScenery(realm, rand);
+            const obj = this.sceneryObject(kind, library, rand);
+            // keep big monuments off the verge so they don't overhang the track
+            const nearOff = LANDMARK_KINDS.has(kind) ? 34 + rand() * 22 : 5 + rand() * 13;
+            const off = side * (ROAD_HALF_WIDTH + nearOff);
             const p = track.pointAt(d + rand() * 3, off);
             obj.position.set(p.x, 0, p.z);
             this.scene.add(obj);

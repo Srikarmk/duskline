@@ -109,7 +109,7 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
         <h1 className="title">FANTASY RACER</h1>
         <p className="subtitle">drift · boost · jump · transform — a 3D magic kart racer</p>
         <div className="hero-tags">
-          <span>4 REALMS</span><span>8 KARTS</span><span>9-RACER GRID</span>
+          <span>8 REALMS</span><span>8 KARTS</span><span>9-RACER GRID</span>
           <span>POWER-UPS</span><span>GRAND PRIX</span>
         </div>
       </div>

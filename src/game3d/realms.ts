@@ -4,7 +4,15 @@ export type SceneryKind =
   | "treeA" | "treeB" | "treeDark"
   | "mushroom" | "mushroomTall"
   | "rockA" | "rockB"
-  | "crystal";
+  | "crystal"
+  // egyptian
+  | "pyramid" | "obelisk" | "sphinx" | "palm" | "sandRock"
+  // castle
+  | "tower" | "gatehouse" | "castleWall" | "banner" | "torch"
+  // f1 stadium
+  | "grandstand" | "tyreStack" | "floodlight" | "pitBuilding" | "marshalBoard"
+  // nyc
+  | "skyscraper" | "brownstone" | "streetlight" | "billboard" | "waterTower";
 
 export interface RealmPalette {
   // sky gradient stops, top -> bottom (canvas)
@@ -25,6 +33,9 @@ export interface RealmPalette {
   groundBase: string;
   groundSpeck: string;
   groundDark: string;
+  /** optional multiply-tint for the PBR ground albedo (realms that reuse
+   *  another realm's shipped ground texture recolour it to their own hue) */
+  groundTint?: number;
   // road texture (canvas)
   road: string;
   roadDark: string;
@@ -204,6 +215,124 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       mountain: 0x1a1040, mountainDark: 0x0d0a2e, clutter: 0x1a1040, gem: 0xf0abfc,
     },
     scenery: [{ kind: "crystal", weight: 1 }],
+  },
+
+  sands: {
+    id: "sands",
+    name: "Sunspire Sands",
+    blurb: "Blazing desert circuit — vast dunes, ancient monuments, long sun-baked straights.",
+    controlPoints: loopTrack(
+      22, 215,
+      [{ k: 1, amp: 58, phase: 0.2 }, { k: 2, amp: 24, phase: 1.1 }, { k: 3, amp: 12, phase: 2.3 }],
+      1.2, [{ k: 1, amp: 4, phase: 0 }, { k: 3, amp: 2.5, phase: 1.0 }]
+    ),
+    palette: {
+      sky: ["#2f6bb0", "#5f97cc", "#b8d6e6", "#f2e2b8"],
+      stars: false,
+      moons: [{ x: 680, y: 120, r: 46, tint: "#fff4d0" }],
+      fog: 0xe8d3a0, fogNear: 90, fogFar: 640,
+      hemiSky: 0xbfd8ff, hemiGround: 0xd9b47a, hemiInt: 1.2,
+      sun: 0xfff2d0, sunInt: 1.9,
+      groundBase: "#d9b47a", groundSpeck: "#c79a5c", groundDark: "#a9793f",
+      groundTint: 0xcaa46a,
+      road: "#7d6f52", roadDark: "#6b5f45", rumbleA: "#b3892f", rumbleB: "#e6c458",
+      laneLine: "#f7ecd0", edgeLine: "#fff6e0",
+      crystalColors: [0xe6c458, 0xf0d878, 0xfff0b0],
+      mountain: 0xc79a5c, mountainDark: 0x9a713c, clutter: 0xc79a5c, gem: 0xf59e0b,
+    },
+    scenery: [
+      { kind: "palm", weight: 4 }, { kind: "sandRock", weight: 5 },
+      { kind: "obelisk", weight: 2 }, { kind: "sphinx", weight: 1 },
+      { kind: "pyramid", weight: 1 },
+    ],
+  },
+
+  castle: {
+    id: "castle",
+    name: "Ravenspire Keep",
+    blurb: "A twisting run through a haunted castle — torchlit walls, banners, misty ramparts.",
+    controlPoints: loopTrack(
+      24, 168,
+      [{ k: 3, amp: 34, phase: 0.4 }, { k: 4, amp: 16, phase: 1.2 }, { k: 6, amp: 8, phase: 0.6 }],
+      2, [{ k: 2, amp: 5, phase: 0.5 }, { k: 4, amp: 3, phase: 1.4 }]
+    ),
+    palette: {
+      sky: ["#0b1020", "#161e33", "#2c3350", "#4a4a6e"],
+      stars: true,
+      moons: [{ x: 640, y: 110, r: 38, tint: "#cdd6ef" }],
+      fog: 0x1a2033, fogNear: 60, fogFar: 470,
+      hemiSky: 0x9aa8cc, hemiGround: 0x2a2a38, hemiInt: 1.0,
+      sun: 0xb8c0e0, sunInt: 1.2,
+      groundBase: "#2f3a2c", groundSpeck: "#3c4a38", groundDark: "#232c22",
+      road: "#4a4650", roadDark: "#3c3944", rumbleA: "#6d28d9", rumbleB: "#a01f2e",
+      laneLine: "#dcd8ec", edgeLine: "#efeaff",
+      crystalColors: [0x6d28d9, 0x8b5cf6, 0xa01f2e],
+      mountain: 0x2a2c40, mountainDark: 0x1c1e2e, clutter: 0x4c505a, gem: 0xa78bfa,
+    },
+    scenery: [
+      { kind: "castleWall", weight: 4 }, { kind: "torch", weight: 3 },
+      { kind: "banner", weight: 2 }, { kind: "tower", weight: 1 },
+      { kind: "gatehouse", weight: 1 }, { kind: "treeDark", weight: 2 },
+    ],
+  },
+
+  circuit: {
+    id: "circuit",
+    name: "Apex Speedway",
+    blurb: "A real grand-prix stadium — grandstands, floodlights, flat-out sweepers and a stadium roar.",
+    controlPoints: loopTrack(
+      26, 220,
+      [{ k: 2, amp: 46, phase: 0.5 }, { k: 3, amp: 20, phase: 2.4 }, { k: 5, amp: 10, phase: 1.0 }],
+      1, [{ k: 2, amp: 2, phase: 0 }]
+    ),
+    palette: {
+      sky: ["#1c3a6e", "#2f5a9e", "#6a9ad0", "#cfe4f5"],
+      stars: false,
+      moons: [{ x: 720, y: 100, r: 34, tint: "#fffbe6" }],
+      fog: 0xbcd4ec, fogNear: 100, fogFar: 700,
+      hemiSky: 0xbcd8ff, hemiGround: 0x4a5240, hemiInt: 1.25,
+      sun: 0xfffbe6, sunInt: 1.7,
+      groundBase: "#3f7a3a", groundSpeck: "#4f8f45", groundDark: "#2f5f2c",
+      road: "#2e3238", roadDark: "#24272c", rumbleA: "#e23b3b", rumbleB: "#f5f5f5",
+      laneLine: "#f5f5f5", edgeLine: "#ffffff",
+      crystalColors: [0x22d3ee, 0xe23b3b, 0xf5f5f5],
+      mountain: 0x5a6270, mountainDark: 0x3c414c, clutter: 0x9aa1ab, gem: 0x22d3ee,
+    },
+    scenery: [
+      { kind: "tyreStack", weight: 4 }, { kind: "marshalBoard", weight: 3 },
+      { kind: "grandstand", weight: 2 }, { kind: "floodlight", weight: 2 },
+      { kind: "pitBuilding", weight: 1 },
+    ],
+  },
+
+  metro: {
+    id: "metro",
+    name: "Neon Metro",
+    blurb: "A midnight street circuit through the city — glass towers, neon billboards, wet asphalt.",
+    controlPoints: loopTrack(
+      22, 188,
+      [{ k: 2, amp: 40, phase: 1.2 }, { k: 4, amp: 18, phase: 0.3 }, { k: 1, amp: 22, phase: 2.0 }],
+      1, [{ k: 2, amp: 3, phase: 0.5 }]
+    ),
+    palette: {
+      sky: ["#05060f", "#0b1024", "#161a3a", "#2a2450"],
+      stars: true,
+      moons: [{ x: 700, y: 90, r: 26, tint: "#cfd8ff" }],
+      fog: 0x0e1226, fogNear: 70, fogFar: 520,
+      hemiSky: 0x5a6ab0, hemiGround: 0x1a1e2a, hemiInt: 0.95,
+      sun: 0x9fb0ff, sunInt: 1.1,
+      groundBase: "#23262e", groundSpeck: "#2e323c", groundDark: "#16181e",
+      groundTint: 0x3c4048,
+      road: "#26282e", roadDark: "#1c1e24", rumbleA: "#ff3ea5", rumbleB: "#22d3ee",
+      laneLine: "#f0e9c0", edgeLine: "#fff6c8",
+      crystalColors: [0xff3ea5, 0x22d3ee, 0xbcd4ff],
+      mountain: 0x1a1e33, mountainDark: 0x0e1122, clutter: 0x3a3f4a, gem: 0x22d3ee,
+    },
+    scenery: [
+      { kind: "skyscraper", weight: 3 }, { kind: "brownstone", weight: 3 },
+      { kind: "streetlight", weight: 4 }, { kind: "billboard", weight: 2 },
+      { kind: "waterTower", weight: 1 },
+    ],
   },
 };
 

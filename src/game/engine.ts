@@ -18,7 +18,9 @@ import {
 } from "./render";
 
 export type GameMode = "classic" | "timetrial" | "nitro" | "transform" | "grandprix";
-export type RealmId = "forest" | "ember" | "peaks" | "void";
+export type RealmId =
+  | "forest" | "ember" | "peaks" | "void"
+  | "sands" | "castle" | "circuit" | "metro";
 export type CarId = "comet" | "bolt" | "titan" | "wisp" | "apex" | "goliath" | "corsair" | "baron";
 
 export interface RaceStanding {

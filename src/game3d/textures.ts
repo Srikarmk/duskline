@@ -35,8 +35,11 @@ async function loadSet(name: string): Promise<TexSet> {
 
 /** Load the PBR sets a realm needs (its ground + shared road/rock/metal). */
 export async function loadPBR(groundName: string): Promise<PBRLib> {
+  // a realm may point at a ground texture we don't ship — fall back rather than
+  // reject (which would hang the race on "SUMMONING REALM…")
+  const groundSafe = loadSet(groundName).catch(() => loadSet("ground_forest"));
   const [ground, road, rock, metal, bark, foliage] = await Promise.all([
-    loadSet(groundName), loadSet("road"), loadSet("rock"), loadSet("metal"),
+    groundSafe, loadSet("road"), loadSet("rock"), loadSet("metal"),
     loadSet("bark"), loadSet("foliage"),
   ]);
   PBR = { ground, road, rock, metal, bark, foliage };
