@@ -17,6 +17,7 @@ import {
   SCORE_GEM, SCORE_AIR_GEM, SCORE_STUNT, SCORE_LANE_BONUS, SCORE_SMASH,
   SCORE_MONSTER, SCORE_FINISH, LANE_BONUS_SECONDS,
   OPPONENTS, CAMERA_PRESETS, SWING_DURATION,
+  PAD_BOOST_DURATION,
   ITEM_BOOST_DURATION, ITEM_BOOST_FACTOR, ITEM_SHIELD_DURATION,
   MISSILE_SPEED, MISSILE_MAX_DIST, STUN_DURATION, ITEM_LATERAL_TOL,
   SCORE_HIT, OPPONENT_MINE_CHANCE,
@@ -29,7 +30,7 @@ import {
   makeGem, makeNitroCan, makeOrb, makeRamp, RAMP_SPECS, type RampKind,
   makeCrystalCluster, makeMonster,
   makeMech, makeSlash, makeFlame, makeUnderGlow,
-  makeItemBox, makeMissile, makeMine, makeShieldBubble,
+  makeItemBox, makeMissile, makeMine, makeShieldBubble, makeBoostPad,
   makeParticleField, makeStartGantry, varyTint, makeSpaceBackdrop,
   makeTree, makeTreeMaterials,
   type MechRig, type Placement, type ParticleField, type TreeMats,
@@ -47,7 +48,7 @@ import type { GameMode, GameResult, GameOptions, RaceStanding, CarId } from "../
 
 type Phase = "loading" | "countdown" | "racing" | "finished";
 
-type EntityType = "gem" | "airGem" | "nitro" | "orb" | "ramp" | "rock" | "monster" | "itembox";
+type EntityType = "gem" | "airGem" | "nitro" | "orb" | "ramp" | "rock" | "monster" | "itembox" | "boostpad";
 
 type ItemKind = "boost" | "shield" | "missile" | "mine";
 const ITEM_LABEL: Record<ItemKind, string> = {
@@ -93,6 +94,7 @@ const MODE_CONFIG: Record<GameMode, ModeConfig> = {
 
 const COLLIDE_WIDTH: Record<EntityType, number> = {
   gem: 0.36, airGem: 0.42, nitro: 0.36, orb: 0.44, ramp: 1.45, rock: 0.34, monster: 0.38, itembox: 0.56,
+  boostpad: 1.0,
 };
 
 const BUCKET_METERS = 5;
@@ -500,8 +502,8 @@ export class Game {
     const tan = this.track.tangentAt(d);
     obj.rotation.order = "YXZ";
     obj.rotation.y = Math.atan2(tan.x, tan.z);
-    // ramps/rocks sit on the road, so pitch them to match its slope on hills
-    if (type === "ramp" || type === "rock") {
+    // ramps/rocks/pads sit on the road, so pitch them to match its slope on hills
+    if (type === "ramp" || type === "rock" || type === "boostpad") {
       const a = this.track.pointAt(d - 2);
       const b = this.track.pointAt(d + 2);
       const horiz = Math.hypot(b.x - a.x, b.z - a.z) || 4;
@@ -579,12 +581,23 @@ export class Game {
       this.scene.add(makeRockField(pal, pebbles));
     }
 
-    // gem runs
-    for (let d = 40; d < len - 40; d += 120) {
-      const l = lane();
+    // gem runs — patterned (line / zigzag / lane-sweep) so they're a mini
+    // skill challenge, not just a straight line to hold
+    let gi = 0;
+    for (let d = 40; d < len - 40; d += 100) {
+      const pattern = gi++ % 3;
+      const startLane = lane();
       for (let k = 0; k < 6; k++) {
+        let l = startLane;
+        if (pattern === 1) l = LANE_CENTERS[k % 2 === 0 ? 0 : 2];          // zigzag edges
+        else if (pattern === 2) l = LANE_CENTERS[Math.min(2, Math.floor(k / 2))]; // sweep across
         this.addEntity("gem", d + k * 3.5, l, makeGem(pal.gem, false), 0.8);
       }
+    }
+
+    // boost pads — drive over the arrows for a speed surge (something to aim for)
+    for (let d = 170; d < len - 50; d += 300) {
+      this.addEntity("boostpad", d, 0, makeBoostPad(), 0.14);
     }
 
     // rocks on the road
@@ -602,7 +615,7 @@ export class Game {
     // with its own power, and the air-gem arc stretches to match)
     const rampKinds: RampKind[] = ["standard", "mega", "kicker", "wide"];
     let ri = 0;
-    for (let d = 200; d < len - 60; d += 340) {
+    for (let d = 200; d < len - 60; d += 270) {
       const l = 0; // centre lane so a launch always lands back on the road
       const kind = rampKinds[ri++ % rampKinds.length];
       const spec = RAMP_SPECS[kind];
@@ -1267,6 +1280,16 @@ export class Game {
           this.nitroCharges++;
           this.sound.play("nitroCharge");
           this.toast("NITRO CHARGE", "#67e8f9");
+        }
+        break;
+      case "boostpad":
+        // reusable pad — refresh the boost while driving over it
+        if (this.alt < 1.0) {
+          if (this.boostT < 0.35) {
+            this.sound.play("nitro");
+            this.toast("BOOST!", "#22d3ee");
+          }
+          this.boostT = Math.max(this.boostT, PAD_BOOST_DURATION);
         }
         break;
       case "orb":

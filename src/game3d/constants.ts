@@ -24,19 +24,20 @@ export const OFF_ROAD_LIMIT = MAX_SPEED / 4;
 // transfer, steering inertia and speed-sensitive authority give it heft.
 
 /** how fast the "wheel" turns toward the input (steering inertia = weight) */
-export const STEER_RESPONSE = 8.5;
+export const STEER_RESPONSE = 12;
 /** how fast steering re-centers when released */
-export const STEER_RETURN = 10;
+export const STEER_RETURN = 13;
 /** lateral accel from full steer at speed (playerX units/s²) */
-export const TURN_ACCEL = 10.5;
+export const TURN_ACCEL = 13;
 /** steering authority loss with speed (higher = heavier at top speed) */
-export const STEER_SPEED_FALLOFF = 0.014;
+export const STEER_SPEED_FALLOFF = 0.007;
 /** max lateral accel the tires can produce — the grip ceiling (playerX u/s²) */
-export const GRIP_LIMIT = 9.5;
+export const GRIP_LIMIT = 14;
 /** tire scrub: bleeds off sideways velocity so the car settles / self-centers */
-export const LATERAL_DAMP = 5.5;
-/** strength of the v²/r push toward the outside of a curve */
-export const CENTRI_K = 0.95;
+export const LATERAL_DAMP = 7.5;
+/** strength of the v²/r push toward the outside of a curve — gentle so corners
+ *  don't fling you wide (arcade-forgiving) */
+export const CENTRI_K = 0.55;
 /** grip while braking (weight forward → sharper turn-in) */
 export const WEIGHT_BRAKE_GRIP = 1.3;
 /** grip while on the throttle (weight back → a touch looser) */
@@ -52,8 +53,9 @@ export const DRIFT_BOOST_FACTOR = 1.28;
 
 export const TOTAL_LAPS = 3;
 // |playerX| > 1 = a wheel on the grass; past this you're fully off the track
-// and get snapped back. Kept tight so you can't just drive off into the scenery.
-export const OUT_OF_BOUNDS_X = 1.7;
+// and get snapped back. A little forgiving margin so minor wobbles aren't
+// punished, but you still can't drive off into the scenery.
+export const OUT_OF_BOUNDS_X = 2.0;
 export const OUT_OF_BOUNDS_PENALTY = 100;
 
 export const NITRO_DURATION = 2.2;
@@ -93,6 +95,9 @@ export const OPPONENTS: { name: string; color: number; skill: number }[] = [
 
 // sword swing (transformer melee)
 export const SWING_DURATION = 0.35;
+
+// boost pads on the track (drive over the arrows for a speed surge)
+export const PAD_BOOST_DURATION = 1.1;
 
 // power-ups
 export const ITEM_BOOST_DURATION = 1.7;

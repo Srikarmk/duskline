@@ -94,8 +94,8 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     name: "Enchanted Forest",
     blurb: "Moonlit woods, glowing mushrooms, gentle rolling hills.",
     controlPoints: loopTrack(
-      18, 175,
-      [{ k: 2, amp: 38, phase: 0.3 }, { k: 3, amp: 18, phase: 1.0 }],
+      24, 175,
+      [{ k: 2, amp: 38, phase: 0.3 }, { k: 3, amp: 18, phase: 1.0 }, { k: 5, amp: 11, phase: 2.0 }],
       1.5, [{ k: 2, amp: 3, phase: 0 }, { k: 4, amp: 2, phase: 1.5 }]
     ),
     palette: {
@@ -127,8 +127,8 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     name: "Ember Wastes",
     blurb: "Volcanic flats — long straights, sweeping fast bends, ash sky.",
     controlPoints: loopTrack(
-      16, 225,
-      [{ k: 1, amp: 60, phase: 0.5 }, { k: 2, amp: 20, phase: 0 }],
+      22, 225,
+      [{ k: 1, amp: 60, phase: 0.5 }, { k: 2, amp: 20, phase: 0 }, { k: 4, amp: 15, phase: 1.6 }],
       1, [{ k: 2, amp: 2.5, phase: 0.5 }]
     ),
     palette: {

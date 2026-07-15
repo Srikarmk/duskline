@@ -281,6 +281,21 @@ Three focused sub-agents + engine work, in parallel:
 ![Faceted cars with drivers + textured world (Ember)](screenshots/stage2-cars.jpg)
 ![Crystal Peaks — textured snow, open-kart driver](screenshots/stage2-peaks.jpg)
 
+### 19. Easier to control + more to do on track (this pass)
+- **Handling is much more forgiving.** Cranked up grip and steering response and
+  eased the centrifugal push — the car now holds its line instead of washing
+  wide, so it's arcade-easy to control (a hold-the-line test that used to drift
+  ~1.35 off-centre now stays within ~0.33), with a slightly more generous
+  out-of-bounds margin.
+- **Boost pads.** Glowing chevron pads on the track — drive over the arrows for
+  a speed surge. Something to aim for on every lap.
+- **Livelier tracks.** Gem runs are now patterned (straight / zigzag /
+  lane-sweep) as mini skill lines, ramps come ~25% more often, and the forest
+  and ember layouts got extra corner harmonics so the circuits have more
+  character (tighter turns + sweeps) instead of one monotonous curve.
+
+![Boost pad chevrons on a livelier forest circuit](screenshots/boost-pads.jpg)
+
 ---
 
 ## Where it stands now

@@ -553,6 +553,33 @@ export function makeItemBox(): THREE.Group {
   return wrapper;
 }
 
+/** A flat glowing boost pad — three forward-pointing chevrons on the road.
+ *  Drive over it for a speed surge. Sits just above the road surface. */
+export function makeBoostPad(): THREE.Group {
+  const g = new THREE.Group();
+  const base = new THREE.Mesh(
+    new THREE.PlaneGeometry(ROAD_HALF_WIDTH * 1.0, 6.5),
+    new THREE.MeshStandardMaterial({
+      color: 0x0e2440, emissive: 0x0891b2, emissiveIntensity: 0.35,
+      transparent: true, opacity: 0.6, roughness: 0.4,
+    })
+  );
+  base.rotation.x = -Math.PI / 2;
+  g.add(base);
+  const chevMat = new THREE.MeshStandardMaterial({
+    color: 0x67e8f9, emissive: 0x22d3ee, emissiveIntensity: 0.9,
+  });
+  for (let i = 0; i < 3; i++) {
+    const chev = new THREE.Mesh(new THREE.ConeGeometry(ROAD_HALF_WIDTH * 0.32, 1.5, 3), chevMat);
+    chev.rotation.x = -Math.PI / 2;   // lie flat
+    chev.position.set(0, 0.06, -1.6 + i * 1.6); // point toward +z (forward)
+    chev.scale.z = 0.6;
+    g.add(chev);
+  }
+  g.position.y = 0.12;
+  return g;
+}
+
 export function makeMissile(): THREE.Mesh {
   const geo = new THREE.ConeGeometry(0.3, 1.2, 8);
   geo.rotateX(Math.PI / 2); // point along +z (travel direction)
