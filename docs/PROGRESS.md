@@ -420,24 +420,83 @@ On top of the layouts:
 
 ---
 
+## A fun front-end + a real Hogwarts (this pass)
+
+- **Four-step launch wizard** — Realm → Machine → **Mode** → Race. Mode is now its
+  own step (it used to be buried), and the home page leads with visuals, not walls
+  of text: a trimmed hero (`drift · boost · jump · blast`, `8 WORLDS / 8 KARTS /
+  4 MODES`) and a live 3D kart in the garage step.
+- **Better type** — a display face (Orbitron) for titles + a body face (Rajdhani)
+  for everything else, so the UI reads like an arcade cabinet, not a form.
+- **Hogwarts, properly** — the castle realm is a real wizarding lap: the castle
+  itself, the Hogwarts Express, Quidditch hoops, a Whomping Willow, floating
+  candles and a golden snitch strewn around the course as easter eggs.
+- **Trimmed the fat** — Grand Prix and the half-baked Space Wars were cut; the
+  mode list is now four tight, distinct choices.
+- **Single-race results screen** — placement, lap time, a score breakdown, the
+  finishing order and a "new personal best" flag, with Race Again / Menu.
+
+## Physics feel — rideable ramps, no sinking, no cheap wall-rides (this pass)
+
+The driving had three long-standing bugs; this pass fixed the *feel*.
+
+- **Ramps you actually ride** — a ramp used to fling you skyward the instant you
+  touched it. Now your altitude tracks your position up the ramp face and you
+  **launch off the lip** with power scaled to the ramp and your speed. Ramps (and
+  boosters) occupy **one lane** — clip one sideways and you get a **sideswipe
+  crash** instead of a free launch.
+- **No more sinking** — banked corners used to drop the inner road edge below the
+  ground and swallow the car. The whole cross-section now rides up on a berm so
+  the surface stays put (0 sink frames under a full-throttle full-lock stress
+  test).
+- **A soft edge barrier** — running wide now springs you back like an armco
+  instead of flinging you out of the world; going properly off snaps you back at
+  reduced speed rather than dumping you into the void.
+- **Booster = a flat escalator strip**, and the race-stopping **rocks are gone**.
+
+## Forks, gates & a calmer glow (this pass)
+
+![A branching fork on Apex Speedway — boost gate on the left route, a central
+island splitting the road, and the right route rejoining ahead](screenshots/branching.jpg)
+
+- **Branching routes** — at set points the road **splits around a central
+  island** into a LEFT and a RIGHT route that rejoin, Mario-Kart style. Each side
+  carries a different quirk — **left = a boost gate, right = a jump ramp** — so
+  the line you pick actually matters. A soft barrier down the middle makes you
+  commit to a side; rivals spread across both routes instead of ploughing the
+  island. Six of the eight realms get a fork (placed clear of their tunnels and
+  river crossings).
+- **Boost gates** — a new drive-**through** speed ring: thread it on its lane for
+  a strong surge (it's lane-specific — the wrong lane does nothing), alongside
+  decorative checkpoint hoops for set-dressing.
+- **Calmer glow** — the "odd glow" on the bright maps is gone: exposure and bloom
+  strength came down and the bloom threshold went up, so only the genuinely bright
+  things bloom.
+
+---
+
 ## Where it stands now
 
 - **8 realms**: Enchanted Forest, Ember Wastes, Crystal Peaks, Void Circuit,
-  Sunspire Sands (Egypt), Ravenspire Keep (castle), Apex Speedway (F1 stadium),
-  Neon Metro (NYC)
+  Sunspire Sands (Egypt), Hogwarts (wizarding castle), Apex Speedway (F1 stadium),
+  Neon Metro (NYC) — each with its own weather, ambience, lore and set-pieces
 - **8 karts**: Comet, Bolt, Titan, Wisp, Apex (F1), Goliath (monster truck),
   Corsair (ship), Baron (limo) — each a distinct model + stat line, picked in
   a live 3D garage
-- **6 modes**: Classic, Time Trial, Nitro Sprint, Transformer Rush, Grand Prix,
-  Space Wars (deep-space combat)
-- **9-racer grid** with live position + a top-down minimap
+- **4 modes**: Classic, Time Trial, Nitro Sprint, Transformer Rush
+- **8-car F1 grid** (7 rivals + you) with live position + a top-down minimap
+- **Branching routes** — forks that split around a central island into two
+  routes (a boost gate one way, a jump ramp the other) and rejoin
+- **Track quirks** — rideable single-lane ramps (sideways = crash), drive-through
+  boost gates, flat escalator boosters, tunnels, waterfalls and river-bridge jumps
 - **Grip-limited handling** (weight transfer, drift + boost) with a camera
-  that banks and kicks FOV; barrel-roll/flip **stunts** with combos
+  that banks and kicks FOV; barrel-roll/flip **stunts** with combos, a soft
+  edge barrier and berm-banked corners
 - **Transformer mech** with an energy sword + monster combat
 - **Power-ups**: boost / shield / homing missile / mines, item boxes, and
   opponents that fight back — press **E** to fire
-- **Bloom** + **ACES tone mapping**, speed-FX overlay, edge-post markers,
-  procedural sound, pause + settings
+- **Bloom** + **ACES tone mapping** (dialled to a calm glow), speed-FX overlay,
+  procedural sound + per-realm ambience, pause + settings, a results screen
 - **Global leaderboard** (activates fully once a KV store is connected)
 
 **Stack:** Next.js 15 · React 19 · TypeScript · Three.js · Web Audio ·
@@ -454,10 +513,13 @@ The look and UX are in good shape; the next arc is depth of play.
 - ~~**Karts & a garage**~~ — ✅ eight distinct karts with their own speed /
   accel / handling, chosen in a live 3D showroom. Still open: unlocks, gems as
   currency, progression milestones.
-- **More content & routes** — shortcuts and alternate paths, hazards,
-  weather / time-of-day variety, more tracks and modes.
+- ~~**More content & routes**~~ — ✅ branching forks that split and rejoin,
+  per-realm weather + ambience, tunnels, waterfalls and river-bridge jumps, and
+  new track quirks (boost gates, escalators, rideable ramps). Still open: hazards,
+  time-of-day variety, more modes.
 - **Feel & polish** — real counter-steer drift, boost chaining, speed lines,
   screen shake, dynamic camera, juicier hit/pickup feedback.
 
 Also open: textured foliage (the nature kit ships no atlas — needs custom UV
-maps), banked curves, a shared KV leaderboard, and touch controls for mobile.
+maps), a shared KV leaderboard, and touch controls for mobile. (Banked corners
+now ship as berm-lifted turns.)
