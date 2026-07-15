@@ -532,7 +532,7 @@ export interface HudState {
   totalRacers?: number;
   cameraName?: string;
   soundMuted?: boolean;
-  heldItem?: string | null;
+  heldItems?: string[];
   shieldActive?: boolean;
   carName?: string;
 }
@@ -650,21 +650,33 @@ export function drawHud(
     ctx.fillText("TRANSFORMED — SHIFT TO FLY", vw / 2, 30);
   }
 
-  // --- held-item slot (top center, below the transform banner) ---
-  const iw = 180;
-  const iy = hud.transformT > 0 ? 52 : 16;
-  panel(ctx, vw / 2 - iw / 2, iy, iw, 34, hud.heldItem ? "#f0abfc" : "#3b3355");
+  // --- power-up bar (BOTTOM center) — up to 3 stacked, fire oldest with E ---
+  const items = hud.heldItems ?? [];
+  const slots = 3;
+  const slotW = 118, slotH = 30, slotGap = 8;
+  const barW = slots * slotW + (slots - 1) * slotGap;
+  const bx0 = vw / 2 - barW / 2;
+  const by = vh - 54;
   ctx.textBaseline = "middle";
   ctx.textAlign = "center";
-  if (hud.heldItem) {
-    ctx.fillStyle = "#f0abfc";
-    ctx.font = "bold 16px monospace";
-    ctx.fillText(`◆ ${hud.heldItem}  [E]`, vw / 2, iy + 18);
-  } else {
-    ctx.fillStyle = "#55506e";
-    ctx.font = "12px monospace";
-    ctx.fillText("— ITEM SLOT —", vw / 2, iy + 18);
+  for (let i = 0; i < slots; i++) {
+    const x = bx0 + i * (slotW + slotGap);
+    const has = i < items.length;
+    const next = has && i === 0; // the oldest item fires next
+    panel(ctx, x, by, slotW, slotH, has ? (next ? "#f0abfc" : "#8b5cf6") : "#2c264a");
+    if (has) {
+      ctx.fillStyle = next ? "#f7d0ff" : "#c9a5f7";
+      ctx.font = "bold 14px monospace";
+      ctx.fillText(`◆ ${items[i]}`, x + slotW / 2, by + slotH / 2 + 1);
+    } else {
+      ctx.fillStyle = "#55506e";
+      ctx.font = "11px monospace";
+      ctx.fillText("—", x + slotW / 2, by + slotH / 2 + 1);
+    }
   }
+  ctx.fillStyle = items.length ? "#8b85a8" : "#55506e";
+  ctx.font = "10px monospace";
+  ctx.fillText(items.length ? "POWER-UPS · [E] FIRE" : "POWER-UPS", vw / 2, by - 9);
 
   // shield = cyan border glow
   if (hud.shieldActive) {

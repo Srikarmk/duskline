@@ -3,14 +3,20 @@
 import { useState } from "react";
 import type { GameMode, RealmId, CarId, GameResult, RaceStanding } from "@/src/game/engine";
 import { REALMS } from "@/src/game3d/realms";
-import { saveScore, saveLastName, saveLastCar, submitGlobalScore } from "@/src/ui/leaderboard";
+import { saveScore, saveLastName, saveLastCar, submitGlobalScore, loadScores } from "@/src/ui/leaderboard";
 import HomeScreen from "./HomeScreen";
 import GameCanvas from "./GameCanvas";
+import ResultsScreen from "./ResultsScreen";
 
-type Screen = "home" | "race" | "intermission" | "gpresult";
+type Screen = "home" | "race" | "intermission" | "gpresult" | "result";
 
 const GP_ORDER: RealmId[] = ["forest", "ember", "peaks"];
 const CHAMP_PTS = [10, 6, 3, 1];
+
+const MODE_TITLE: Record<GameMode, string> = {
+  classic: "Classic Circuit", timetrial: "Time Trial", nitro: "Nitro Sprint",
+  transform: "Transformer Rush", grandprix: "Grand Prix", spacewars: "Space Wars",
+};
 
 interface GpState {
   round: number;
@@ -43,6 +49,7 @@ export default function GameApp() {
   const [lastResult, setLastResult] = useState<GameResult | null>(null);
   const [gp, setGp] = useState<GpState | null>(null);
   const [gpFinal, setGpFinal] = useState<ChampRow[] | null>(null);
+  const [resultBest, setResultBest] = useState({ prev: 0, isNew: false });
 
   const applyStandings = (champ: Record<string, number>, standings: RaceStanding[]) => {
     const next = { ...champ };
@@ -94,11 +101,13 @@ export default function GameApp() {
       return;
     }
 
-    // single race modes
+    // single race modes — show a results screen (was: dump straight to home)
+    const prevBest = loadScores().reduce((m, s) => Math.max(m, s.score), 0);
     saveScore(name, result);
     void submitGlobalScore(name, result);
+    setResultBest({ prev: prevBest, isNew: result.score > prevBest });
     setLastResult(result);
-    setScreen("home");
+    setScreen("result");
   };
 
   if (screen === "race") {
@@ -176,6 +185,26 @@ export default function GameApp() {
           BACK TO MENU
         </button>
       </div>
+    );
+  }
+
+  if (screen === "result" && lastResult) {
+    return (
+      <ResultsScreen
+        result={lastResult}
+        modeLabel={MODE_TITLE[lastResult.mode] ?? lastResult.mode}
+        realmName={mode === "spacewars" ? "Deep Space" : REALMS[realm].name}
+        isNewBest={resultBest.isNew}
+        prevBest={resultBest.prev}
+        onRaceAgain={() => {
+          setLastResult(null);
+          setScreen("race");
+        }}
+        onMenu={() => {
+          setLastResult(null);
+          setScreen("home");
+        }}
+      />
     );
   }
 

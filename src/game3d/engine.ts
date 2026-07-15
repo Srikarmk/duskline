@@ -106,6 +106,8 @@ const COLLIDE_WIDTH: Record<EntityType, number> = {
 
 const BUCKET_METERS = 5;
 const COLLIDE_DIST = 3.4;
+/** how many power-ups you can bank at once (fire with E, oldest first) */
+const MAX_ITEMS = 3;
 
 function clamp(v: number, min: number, max: number) {
   return Math.max(min, Math.min(max, v));
@@ -182,6 +184,7 @@ export class Game {
   private raceTime = 0;
   private finished = false;
   private finalPosition = 1;
+  private finalStandings: RaceStanding[] = [];
 
   // player state
   private position = 0;
@@ -210,7 +213,7 @@ export class Game {
   private transformT = 0;
 
   // power-ups
-  private heldItem: ItemKind | null = null;
+  private heldItems: ItemKind[] = [];
   private boostT = 0;
   private shieldT = 0;
   private missiles: Projectile[] = [];
@@ -247,7 +250,7 @@ export class Game {
     this.onFinish = options.onFinish;
     this.lap = 1;
     this.nitroCharges = this.cfg.startNitro;
-    if (this.cfg.combat) this.heldItem = "missile"; // start armed
+    if (this.cfg.combat) this.heldItems = ["missile", "missile"]; // start armed
     this.carId = options.car ?? "comet";
     this.carStat = CAR_SPECS[this.carId].stat;
 
@@ -906,7 +909,7 @@ export class Game {
           timeMs: Math.round(this.raceTime * 1000),
           position: this.finalPosition,
           totalRacers: this.opponents.length + 1,
-          standings: this.computeStandings(),
+          standings: this.finalStandings,
         });
       }
       return;
@@ -1026,7 +1029,7 @@ export class Game {
     // power-ups
     this.boostT = Math.max(0, this.boostT - dt);
     this.shieldT = Math.max(0, this.shieldT - dt);
-    if (this.input.usePressed && this.heldItem) this.useItem();
+    if (this.input.usePressed && this.heldItems.length) this.useItem();
     this.updateProjectiles(dt);
 
     // transform timer
@@ -1104,7 +1107,10 @@ export class Game {
       if (this.lap > this.cfg.laps) {
         this.phase = "finished";
         this.finishT = 2.5;
-        this.finalPosition = this.computePosition();
+        // snapshot placement + order at the line so the results screen's
+        // "Nth of M" header and finishing-order list always agree
+        this.finalStandings = this.computeStandings();
+        this.finalPosition = this.finalStandings.find((s) => s.isPlayer)?.position ?? 1;
         this.score += SCORE_FINISH;
         this.sound.play("finish");
         this.toast(`FINISH +${SCORE_FINISH}`, "#fbbf24");
@@ -1390,15 +1396,16 @@ export class Game {
         break;
       case "itembox":
         if (this.alt < 1.2) {
-          if (!this.heldItem) {
+          if (this.heldItems.length < MAX_ITEMS) {
             this.collect(e);
-            this.heldItem = this.randomItem();
+            const it = this.randomItem();
+            this.heldItems.push(it);
             this.sound.play("nitroCharge");
-            this.toast(`ITEM: ${ITEM_LABEL[this.heldItem]}  [E]`, "#f0abfc");
+            this.toast(`ITEM: ${ITEM_LABEL[it]}  [E]`, "#f0abfc");
           } else if (this.slotFullCd <= 0) {
-            // already holding one — tell the player instead of silently ignoring
+            // all three slots banked — nudge the player to fire one
             this.slotFullCd = 1.2;
-            this.toast(`SLOT FULL — [E] TO USE ${ITEM_LABEL[this.heldItem]}`, "#8b85a8");
+            this.toast("SLOTS FULL — [E] TO FIRE", "#8b85a8");
           }
         }
         break;
@@ -1420,8 +1427,8 @@ export class Game {
   }
 
   private useItem() {
-    const item = this.heldItem;
-    this.heldItem = null;
+    const item = this.heldItems.shift(); // fire the oldest banked item first
+    if (!item) return;
     const half = ROAD_HALF_WIDTH * 0.9;
     switch (item) {
       case "boost":
@@ -1696,7 +1703,7 @@ export class Game {
       totalRacers: this.opponents.length ? this.opponents.length + 1 : undefined,
       cameraName: CAMERA_PRESETS[this.cameraIndex].name,
       soundMuted: this.sound.isMuted,
-      heldItem: this.heldItem ? ITEM_LABEL[this.heldItem] : null,
+      heldItems: this.heldItems.map((i) => ITEM_LABEL[i]),
       shieldActive: this.shieldT > 0,
       carName: CAR_SPECS[this.carId].name,
     }, vw, vh);

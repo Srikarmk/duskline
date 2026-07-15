@@ -482,49 +482,147 @@ export function makeMountainRing(pal: RealmPalette, cx: number, cz: number, radi
 // --- pickups & obstacles ---------------------------------------------------
 
 export function makeGem(color: number, air: boolean): THREE.Mesh {
-  const geo = new THREE.OctahedronGeometry(0.45);
-  geo.scale(0.7, 1, 0.7);
-  const mat = new THREE.MeshStandardMaterial({
-    color: air ? 0xfbbf24 : color,
-    emissive: air ? 0xb45309 : color,
-    emissiveIntensity: air ? 0.45 : 0.6,
-    metalness: 0.3,
-    roughness: 0.2,
+  // A sharp, cheap cut crystal: an elongated octahedron (bipyramid) with a
+  // bright emissive interior, a hotter core that blooms through the facets, and
+  // a thin rim tracing every edge. Air (mid-air bonus) gems are bigger, glow
+  // harder and carry a faceted halo ring so they read as high-value.
+  const base = new THREE.Color(air ? 0xfbbf24 : color);
+  const r = air ? 0.58 : 0.46;
+
+  const geo = new THREE.OctahedronGeometry(r, 0);
+  geo.scale(0.7, 1.3, 0.7); // stretch into a tall gem
+  const shell = new THREE.MeshStandardMaterial({
+    color: base,
+    emissive: base.clone().offsetHSL(0, 0.06, -0.04),
+    emissiveIntensity: air ? 1.15 : 0.85,
+    metalness: 0.2,
+    roughness: 0.12,
+    flatShading: true,
+    transparent: true,
+    opacity: 0.86,
   });
-  return new THREE.Mesh(geo, mat);
+  const gem = new THREE.Mesh(geo, shell);
+
+  // hotter inner core visible through the translucent shell
+  const coreGeo = new THREE.OctahedronGeometry(r * 0.52, 0);
+  coreGeo.scale(0.7, 1.3, 0.7);
+  const core = new THREE.Mesh(
+    coreGeo,
+    new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      emissive: base.clone().offsetHSL(0, -0.2, 0.35),
+      emissiveIntensity: air ? 2.4 : 1.9,
+      flatShading: true,
+    })
+  );
+  gem.add(core);
+
+  // thin bright rim along every facet edge
+  const rim = new THREE.LineSegments(
+    new THREE.EdgesGeometry(geo),
+    new THREE.LineBasicMaterial({
+      color: base.clone().offsetHSL(0, -0.35, 0.42),
+      transparent: true,
+      opacity: 0.9,
+    })
+  );
+  gem.add(rim);
+
+  if (air) {
+    const halo = new THREE.Mesh(
+      new THREE.TorusGeometry(r * 1.55, 0.05, 3, 12),
+      new THREE.MeshStandardMaterial({
+        color: base.clone().offsetHSL(0, -0.1, 0.2),
+        emissive: base.clone().offsetHSL(0, 0, 0.15),
+        emissiveIntensity: 1.7,
+        flatShading: true,
+      })
+    );
+    halo.rotation.x = Math.PI / 2.6; // tilt so the spin reads as an orbit
+    gem.add(halo);
+  }
+
+  return gem;
 }
 
 export function makeNitroCan(): THREE.Group {
+  // A sleek energy canister: dark metal sleeves top and bottom leave a glowing
+  // cyan core exposed as an energy window, framed by machined bands and topped
+  // with a nozzle.
   const group = new THREE.Group();
-  const body = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.32, 0.32, 1, 12),
-    new THREE.MeshStandardMaterial({ color: 0x0ea5e9, emissive: 0x0e7490, emissiveIntensity: 0.5 })
-  );
-  body.position.y = 0.5;
-  const cap = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.14, 0.2, 0.25, 12),
-    new THREE.MeshStandardMaterial({ color: 0x67e8f9, emissive: 0x67e8f9, emissiveIntensity: 0.6 })
-  );
-  cap.position.y = 1.1;
-  group.add(body, cap);
+  const cyan = new THREE.Color(0x22d3ee);
+  const shellMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.85, roughness: 0.3, flatShading: true });
+  const bandMat = new THREE.MeshStandardMaterial({ color: 0xd7dee9, metalness: 0.9, roughness: 0.24, flatShading: true });
+  const coreMat = new THREE.MeshStandardMaterial({ color: 0x67e8f9, emissive: cyan, emissiveIntensity: 1.7, flatShading: true });
+
+  const R = 0.32;
+
+  // glowing energy core running the full height (exposed in the gap between sleeves)
+  const core = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.94, R * 0.94, 1.0, 10), coreMat);
+  core.position.y = 0.55;
+  group.add(core);
+
+  // metal sleeves, leaving a bright band exposed in the middle
+  const lower = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 0.44, 8), shellMat);
+  lower.position.y = 0.27;
+  const upper = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 0.34, 8), shellMat);
+  upper.position.y = 0.9;
+  group.add(lower, upper);
+
+  // machined bands framing the energy window
+  for (const y of [0.5, 0.76]) {
+    const band = new THREE.Mesh(new THREE.TorusGeometry(R + 0.015, 0.04, 4, 14), bandMat);
+    band.rotation.x = Math.PI / 2;
+    band.position.y = y;
+    group.add(band);
+  }
+
+  // nozzle + glowing tip
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 0.18, 8), bandMat);
+  neck.position.y = 1.16;
+  const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.12, 0.14, 8), coreMat);
+  tip.position.y = 1.31;
+  group.add(neck, tip);
+
   return group;
 }
 
 export function makeOrb(): THREE.Group {
+  // A contained energy sphere: a hot faceted core inside a translucent shell,
+  // wrapped by two crossed faceted rings that read as an orbiting gyroscope as
+  // the engine spins the whole thing.
   const inner = new THREE.Group();
+  const violet = new THREE.Color(0xd946ef);
+
   const core = new THREE.Mesh(
-    new THREE.SphereGeometry(0.55, 20, 16),
+    new THREE.IcosahedronGeometry(0.5, 1),
     new THREE.MeshStandardMaterial({
-      color: 0xd946ef, emissive: 0xd946ef, emissiveIntensity: 1.0,
-      transparent: true, opacity: 0.9,
+      color: 0xf5d0fe, emissive: violet, emissiveIntensity: 1.7,
+      flatShading: true, transparent: true, opacity: 0.95,
     })
   );
-  const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(0.85, 0.06, 8, 32),
-    new THREE.MeshStandardMaterial({ color: 0x22d3ee, emissive: 0x22d3ee, emissiveIntensity: 0.8 })
+  inner.add(core);
+
+  const shell = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.82, 0),
+    new THREE.MeshStandardMaterial({
+      color: violet.clone().offsetHSL(0.03, -0.1, 0.12),
+      emissive: violet, emissiveIntensity: 0.55,
+      metalness: 0.2, roughness: 0.1, flatShading: true,
+      transparent: true, opacity: 0.26, side: THREE.DoubleSide,
+    })
   );
-  ring.rotation.x = Math.PI / 2.4;
-  inner.add(core, ring);
+  inner.add(shell);
+
+  const ringMat = new THREE.MeshStandardMaterial({
+    color: 0x67e8f9, emissive: 0x22d3ee, emissiveIntensity: 1.3, flatShading: true,
+  });
+  const ringA = new THREE.Mesh(new THREE.TorusGeometry(0.95, 0.05, 3, 20), ringMat);
+  ringA.rotation.x = Math.PI / 2.2;
+  const ringB = new THREE.Mesh(new THREE.TorusGeometry(0.95, 0.05, 3, 20), ringMat);
+  ringB.rotation.set(Math.PI / 2.2, Math.PI / 2, 0);
+  inner.add(ringA, ringB);
+
   inner.position.y = 1.1;
   const wrapper = new THREE.Group();
   wrapper.add(inner);
@@ -532,23 +630,47 @@ export function makeOrb(): THREE.Group {
 }
 
 export function makeItemBox(): THREE.Group {
+  // A floating holographic power-cell: a faceted gold crystal core suspended in
+  // a translucent cyan frame with bright emissive edges and a rotating accent
+  // ring. Reads instantly as a power-up, distinct from the magenta orb.
   const g = new THREE.Group();
-  const shell = new THREE.Mesh(
-    new THREE.BoxGeometry(1.1, 1.1, 1.1),
+  const cyan = new THREE.Color(0x22d3ee);
+  const S = 1.05;
+
+  const frame = new THREE.Mesh(
+    new THREE.BoxGeometry(S, S, S),
     new THREE.MeshStandardMaterial({
-      color: 0xf0abfc, emissive: 0xd946ef, emissiveIntensity: 0.7,
-      transparent: true, opacity: 0.5, metalness: 0.3, roughness: 0.2,
+      color: 0x0e7490, emissive: cyan, emissiveIntensity: 0.4,
+      transparent: true, opacity: 0.16, metalness: 0.3, roughness: 0.15,
+      flatShading: true, side: THREE.DoubleSide,
     })
   );
+  g.add(frame);
+
   const edges = new THREE.LineSegments(
-    new THREE.EdgesGeometry(new THREE.BoxGeometry(1.15, 1.15, 1.15)),
-    new THREE.LineBasicMaterial({ color: 0xfef3c7 })
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(S, S, S)),
+    new THREE.LineBasicMaterial({ color: 0x67e8f9, transparent: true, opacity: 0.95 })
   );
+  g.add(edges);
+
   const core = new THREE.Mesh(
-    new THREE.OctahedronGeometry(0.32),
-    new THREE.MeshStandardMaterial({ color: 0xfde68a, emissive: 0xfbbf24, emissiveIntensity: 1.0 })
+    new THREE.OctahedronGeometry(0.4, 0),
+    new THREE.MeshStandardMaterial({
+      color: 0xfffbeb, emissive: 0xfbbf24, emissiveIntensity: 1.9,
+      metalness: 0.1, roughness: 0.1, flatShading: true,
+    })
   );
-  g.add(shell, edges, core);
+  g.add(core);
+
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(0.62, 0.045, 3, 18),
+    new THREE.MeshStandardMaterial({
+      color: 0xa5f3fc, emissive: cyan, emissiveIntensity: 1.4, flatShading: true,
+    })
+  );
+  ring.rotation.x = Math.PI / 2.4;
+  g.add(ring);
+
   g.position.y = 1.1;
   const wrapper = new THREE.Group();
   wrapper.add(g);
@@ -583,36 +705,100 @@ export function makeBoostPad(): THREE.Group {
 }
 
 export function makeMissile(): THREE.Mesh {
-  const geo = new THREE.ConeGeometry(0.3, 1.2, 8);
-  geo.rotateX(Math.PI / 2); // point along +z (travel direction)
-  const mat = new THREE.MeshStandardMaterial({
-    color: 0xfca5a5, emissive: 0xef4444, emissiveIntensity: 1.8,
-  });
-  const m = new THREE.Mesh(geo, mat);
-  m.position.y = 0.9;
-  return m;
+  // A sleek homing rocket. Root mesh = the metal fuselage (long axis +z, the
+  // travel direction); a pointed nose cone, four swept fins and a bright plasma
+  // exhaust hang off it as children.
+  const bodyGeo = new THREE.CylinderGeometry(0.16, 0.16, 0.9, 10);
+  bodyGeo.rotateX(Math.PI / 2); // long axis -> +z
+  const body = new THREE.Mesh(
+    bodyGeo,
+    new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.7, roughness: 0.3, flatShading: true })
+  );
+  body.position.y = 0.9;
+
+  // pointed nose cone
+  const noseGeo = new THREE.ConeGeometry(0.16, 0.5, 10);
+  noseGeo.rotateX(Math.PI / 2);
+  const nose = new THREE.Mesh(
+    noseGeo,
+    new THREE.MeshStandardMaterial({ color: 0xf87171, emissive: 0xdc2626, emissiveIntensity: 0.9, metalness: 0.5, roughness: 0.3, flatShading: true })
+  );
+  nose.position.z = 0.66;
+  body.add(nose);
+
+  // four swept fins (flat triangles lying along the tail, radiating outward)
+  const finPts = new Float32Array([
+    0, 0.16, 0.06,
+    0, 0.16, -0.4,
+    0, 0.5, -0.4,
+  ]);
+  const finGeo = new THREE.BufferGeometry();
+  finGeo.setAttribute("position", new THREE.BufferAttribute(finPts, 3));
+  finGeo.computeVertexNormals();
+  const finMat = new THREE.MeshStandardMaterial({ color: 0xb91c1c, metalness: 0.6, roughness: 0.35, flatShading: true, side: THREE.DoubleSide });
+  for (let i = 0; i < 4; i++) {
+    const fin = new THREE.Mesh(finGeo, finMat);
+    fin.rotation.z = (i * Math.PI) / 2;
+    body.add(fin);
+  }
+
+  // bright plasma exhaust trailing behind (-z)
+  const exhaust = new THREE.Mesh(
+    new THREE.ConeGeometry(0.14, 0.55, 8),
+    new THREE.MeshStandardMaterial({ color: 0xfff7ed, emissive: 0xf97316, emissiveIntensity: 2.4, flatShading: true, transparent: true, opacity: 0.9 })
+  );
+  exhaust.rotation.x = -Math.PI / 2; // apex points -z
+  exhaust.position.z = -0.62;
+  body.add(exhaust);
+
+  return body;
 }
 
 export function makeMine(): THREE.Group {
+  // A menacing spiked sea-mine: a dark faceted iron shell with a warning band
+  // and spikes radiating in every direction, each tipped with a glowing red
+  // warning node.
   const g = new THREE.Group();
+  const cy = 0.3; // vertical centre of the mine within the group
+  const R = 0.48;
+
   const body = new THREE.Mesh(
-    new THREE.IcosahedronGeometry(0.5, 0),
-    new THREE.MeshStandardMaterial({ color: 0x1e1b2e, metalness: 0.6, roughness: 0.4 })
+    new THREE.IcosahedronGeometry(R, 0),
+    new THREE.MeshStandardMaterial({ color: 0x0b0f1a, metalness: 0.7, roughness: 0.35, flatShading: true })
   );
-  const spikeMat = new THREE.MeshStandardMaterial({
-    color: 0xf87171, emissive: 0xdc2626, emissiveIntensity: 1.4,
-  });
-  for (const dir of [
-    [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 0, -1],
-  ]) {
-    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.5, 5), spikeMat);
-    spike.position.set(dir[0] * 0.55, dir[1] * 0.55 + 0.2, dir[2] * 0.55);
-    if (dir[0]) spike.rotation.z = -Math.sign(dir[0]) * Math.PI / 2;
-    if (dir[2]) spike.rotation.x = Math.sign(dir[2]) * Math.PI / 2;
-    g.add(spike);
-  }
-  body.position.y = 0.2;
+  body.position.y = cy;
   g.add(body);
+
+  // hazard warning band around the equator
+  const band = new THREE.Mesh(
+    new THREE.TorusGeometry(R * 0.99, 0.07, 4, 12),
+    new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0xb45309, emissiveIntensity: 0.9, flatShading: true })
+  );
+  band.rotation.x = Math.PI / 2;
+  band.position.y = cy;
+  g.add(band);
+
+  const spikeMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.6, roughness: 0.4, flatShading: true });
+  const nodeMat = new THREE.MeshStandardMaterial({ color: 0xfecaca, emissive: 0xdc2626, emissiveIntensity: 1.9, flatShading: true });
+
+  const dirs: [number, number, number][] = [
+    [0, 1, 0], [0, -1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1],
+    [0.7, 0.7, 0], [-0.7, 0.7, 0], [0, 0.7, 0.7], [0, 0.7, -0.7],
+    [0.7, -0.5, 0.5], [-0.7, -0.5, -0.5],
+  ];
+  const up = new THREE.Vector3(0, 1, 0);
+  for (const d of dirs) {
+    const v = new THREE.Vector3(d[0], d[1], d[2]).normalize();
+    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.4, 5), spikeMat);
+    spike.quaternion.setFromUnitVectors(up, v);
+    spike.position.copy(v).multiplyScalar(R + 0.2).add(new THREE.Vector3(0, cy, 0));
+    g.add(spike);
+
+    const node = new THREE.Mesh(new THREE.OctahedronGeometry(0.08, 0), nodeMat);
+    node.position.copy(v).multiplyScalar(R + 0.42).add(new THREE.Vector3(0, cy, 0));
+    g.add(node);
+  }
+
   return g;
 }
 
@@ -624,11 +810,12 @@ export type RampKind = "standard" | "mega" | "kicker" | "wide";
 export const RAMP_SPECS: Record<RampKind, {
   w: number; l: number; h: number; body: number; glow: number; chev: number; power: number;
 }> = {
-  // widths span the road so you can't drive past one in a side lane
-  standard: { w: 4.6, l: 3.0, h: 2.0, body: 0x5a2c0e, glow: 0xf59e0b, chev: 0xfbbf24, power: 1.0 },
-  mega:     { w: 4.6, l: 4.2, h: 3.0, body: 0x0e3a4a, glow: 0x22d3ee, chev: 0x67e8f9, power: 1.5 },
-  kicker:   { w: 4.6, l: 1.9, h: 1.15, body: 0x143a20, glow: 0x4ade80, chev: 0xa7f3d0, power: 0.7 },
-  wide:     { w: 4.6, l: 2.5, h: 1.7, body: 0x3b1046, glow: 0xd946ef, chev: 0xf5d0fe, power: 1.05 },
+  // widths span the road so you can't drive past one in a side lane; lengths
+  // and heights are bumped up so every ramp reads as a bold, dramatic take-off
+  standard: { w: 5.0, l: 4.2, h: 2.4, body: 0x5a2c0e, glow: 0xf59e0b, chev: 0xfbbf24, power: 1.0 },
+  mega:     { w: 5.2, l: 5.6, h: 3.6, body: 0x0e3a4a, glow: 0x22d3ee, chev: 0x67e8f9, power: 1.5 },
+  kicker:   { w: 5.0, l: 2.8, h: 1.55, body: 0x143a20, glow: 0x4ade80, chev: 0xa7f3d0, power: 0.7 },
+  wide:     { w: 5.8, l: 3.6, h: 2.1, body: 0x3b1046, glow: 0xd946ef, chev: 0xf5d0fe, power: 1.05 },
 };
 
 // curved slope profiles (t: 0 at entry → 1 at lip). All start flat at 0 and
@@ -668,31 +855,48 @@ export function makeRamp(kind: RampKind = "standard"): THREE.Group {
   geo.computeVertexNormals();
   const body = new THREE.Mesh(
     geo,
-    new THREE.MeshStandardMaterial({ color: spec.body, metalness: 0.45, roughness: 0.55, side: THREE.DoubleSide })
+    new THREE.MeshStandardMaterial({
+      color: spec.body, emissive: spec.glow, emissiveIntensity: 0.08,
+      metalness: 0.45, roughness: 0.55, flatShading: true, side: THREE.DoubleSide,
+    })
   );
   group.add(body);
 
-  const glow = new THREE.MeshStandardMaterial({ color: 0xfde68a, emissive: spec.glow, emissiveIntensity: 0.55 });
-  const chevMat = new THREE.MeshStandardMaterial({ color: 0xfef3c7, emissive: spec.chev, emissiveIntensity: 0.7 });
+  const glow = new THREE.MeshStandardMaterial({ color: 0xfde68a, emissive: spec.glow, emissiveIntensity: 1.0 });
+  const chevMat = new THREE.MeshStandardMaterial({ color: 0xfffbeb, emissive: spec.chev, emissiveIntensity: 1.5, flatShading: true, side: THREE.DoubleSide });
 
-  // glowing rails + centre strip as tubes that follow the curve
+  // glowing edge rails as tubes that follow the curve
   const railPts = (x: number) => {
     const p: THREE.Vector3[] = [];
     for (let i = 0; i <= N; i++) { const t = i / N; p.push(new THREE.Vector3(x, yAt(t) + 0.12, zAt(t))); }
     return new THREE.CatmullRomCurve3(p);
   };
   for (const sx of [-1, 1]) {
-    group.add(new THREE.Mesh(new THREE.TubeGeometry(railPts(sx * w), N * 2, 0.13, 6, false), glow));
+    group.add(new THREE.Mesh(new THREE.TubeGeometry(railPts(sx * w), N * 2, 0.15, 6, false), glow));
   }
-  group.add(new THREE.Mesh(new THREE.TubeGeometry(railPts(0), N * 2, 0.16, 6, false), glow));
 
-  // glowing chevrons lying on the curved surface, pointing up-ramp
-  const chevN = kind === "kicker" ? 2 : 3;
+  // bright take-off lip bar across the top edge
+  const lip = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, w * 2, 8), glow);
+  lip.rotation.z = Math.PI / 2;
+  lip.position.set(0, yAt(1) + 0.16, zAt(1));
+  group.add(lip);
+
+  // bold chevron arrow strip climbing the ramp face, each arrow pointing up-ramp
+  const cw = w * 0.42;
+  const cl = 0.72;
+  const arrowGeo = new THREE.BufferGeometry();
+  arrowGeo.setAttribute("position", new THREE.Float32BufferAttribute([
+    0, 0, cl,      // tip (up-ramp, +z)
+    -cw, 0, -cl,   // back-left
+    cw, 0, -cl,    // back-right
+  ], 3));
+  arrowGeo.computeVertexNormals();
+  const chevN = kind === "kicker" ? 3 : 4;
   for (let i = 0; i < chevN; i++) {
-    const t = 0.32 + i * 0.2;
-    const chev = new THREE.Mesh(new THREE.ConeGeometry(w * 0.4, 0.5, 3), chevMat);
-    chev.position.set(0, yAt(t) + 0.24, zAt(t));
-    chev.rotation.x = -slopeAt(t);
+    const t = 0.22 + i * (0.58 / (chevN - 1));
+    const chev = new THREE.Mesh(arrowGeo, chevMat);
+    chev.position.set(0, yAt(t) + 0.14, zAt(t));
+    chev.rotation.x = -slopeAt(t); // lie flat on the sloped face
     group.add(chev);
   }
 
@@ -938,8 +1142,13 @@ export function makeMech(): MechRig {
 }
 
 export function makeSlash(): THREE.Mesh {
-  const geo = new THREE.TorusGeometry(1.4, 0.14, 6, 20, Math.PI * 1.1);
-  const mat = new THREE.MeshBasicMaterial({ color: 0x67e8f9, transparent: true, opacity: 0.9 });
+  // A bright crescent blade-arc. The engine scales, spins and fades it on each
+  // sword swing; additive blending + near-white cyan make it bloom hard.
+  const geo = new THREE.TorusGeometry(1.5, 0.18, 8, 28, Math.PI * 1.25);
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xd8fbff, transparent: true, opacity: 0.95,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.visible = false;
   return mesh;
@@ -948,33 +1157,53 @@ export function makeSlash(): THREE.Mesh {
 // --- effects ---------------------------------------------------------------
 
 export function makeFlame(): THREE.Mesh {
-  const geo = new THREE.ConeGeometry(0.22, 1.2, 8);
-  const mat = new THREE.MeshBasicMaterial({ color: 0xfb923c, transparent: true, opacity: 0.85 });
+  // A sharp exhaust plume. The engine recolours it (orange / cyan) and flickers
+  // its scale; additive blending makes it read as hot boost thrust.
+  const geo = new THREE.ConeGeometry(0.24, 1.5, 8);
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xfb923c, transparent: true, opacity: 0.92,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  });
   const flame = new THREE.Mesh(geo, mat);
   flame.rotation.x = Math.PI / 2;
   return flame;
 }
 
 export function makeUnderGlow(): THREE.Mesh {
+  // A bright pool of light cast under the car. A hot white centre falling off to
+  // cyan, plus a crisp bright ring, additively blended so it pops on the road.
   const c = document.createElement("canvas");
   c.width = 128;
   c.height = 128;
   const ctx = c.getContext("2d")!;
-  const grad = ctx.createRadialGradient(64, 64, 6, 64, 64, 62);
-  grad.addColorStop(0, "rgba(103,232,249,0.45)");
+  const grad = ctx.createRadialGradient(64, 64, 4, 64, 64, 62);
+  grad.addColorStop(0, "rgba(220,250,255,0.85)");
+  grad.addColorStop(0.35, "rgba(103,232,249,0.55)");
   grad.addColorStop(1, "rgba(103,232,249,0)");
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 128, 128);
+  // crisp bright rim
+  ctx.strokeStyle = "rgba(165,243,252,0.7)";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(64, 64, 40, 0, Math.PI * 2);
+  ctx.stroke();
   const tex = new THREE.CanvasTexture(c);
-  const geo = new THREE.PlaneGeometry(3.4, 3.4);
-  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false });
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const geo = new THREE.PlaneGeometry(3.8, 3.8);
+  const mat = new THREE.MeshBasicMaterial({
+    map: tex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.rotation.x = -Math.PI / 2;
   return mesh;
 }
 
 export function makeShieldBubble(): THREE.Mesh {
-  const geo = new THREE.SphereGeometry(2.7, 20, 16);
+  // A faceted energy dome. Root mesh = the translucent shell whose opacity the
+  // engine pulses; a hex energy lattice and a bright emissive equator rim ride
+  // along as children, so the car stays visible through the low-opacity dome.
+  const geo = new THREE.IcosahedronGeometry(2.7, 1); // faceted -> hex energy read
   const mat = new THREE.MeshBasicMaterial({
     color: 0x67e8f9, transparent: true, opacity: 0.16,
     side: THREE.DoubleSide, depthWrite: false,
@@ -982,6 +1211,28 @@ export function makeShieldBubble(): THREE.Mesh {
   const m = new THREE.Mesh(geo, mat);
   m.position.y = 1.2;
   m.visible = false;
+
+  // hex energy lattice tracing the facets
+  const lattice = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(2.73, 1),
+    new THREE.MeshBasicMaterial({
+      color: 0xa5f3fc, wireframe: true, transparent: true, opacity: 0.35,
+      depthWrite: false, blending: THREE.AdditiveBlending,
+    })
+  );
+  m.add(lattice);
+
+  // bright fresnel-like rim at the equator
+  const rim = new THREE.Mesh(
+    new THREE.TorusGeometry(2.7, 0.07, 6, 40),
+    new THREE.MeshStandardMaterial({
+      color: 0xa5f3fc, emissive: 0x22d3ee, emissiveIntensity: 2.2,
+      transparent: true, opacity: 0.9, depthWrite: false, flatShading: true,
+    })
+  );
+  rim.rotation.x = Math.PI / 2;
+  m.add(rim);
+
   return m;
 }
 
