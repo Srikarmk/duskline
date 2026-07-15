@@ -252,20 +252,119 @@ export function makeGrassField(pal: RealmPalette, pts: Placement[]): THREE.Insta
   return mesh;
 }
 
+// --- shared low-poly helpers (weathered stone, terrain shading) ------------
+
+/** Tiny deterministic seeded rng, matching the file's inline pattern. */
+function seeded(seed: number): () => number {
+  let s = seed % 2147483647;
+  if (s <= 0) s += 2147483646;
+  return () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+}
+
+/** Deterministic 0..1 hash from a direction, so shared vertices of a mesh get
+ *  the same displacement — keeps a perturbed boulder watertight (no split
+ *  facets). */
+function dirHash(x: number, y: number, z: number): number {
+  const s = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453;
+  return s - Math.floor(s);
+}
+
+/** Concatenate non-indexed geometries (position + uv) into one buffer. */
+function mergePosUV(geos: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  let n = 0;
+  for (const g of geos) n += (g.getAttribute("position") as THREE.BufferAttribute).count;
+  const pos = new Float32Array(n * 3);
+  const uv = new Float32Array(n * 2);
+  let op = 0, ou = 0;
+  for (const g of geos) {
+    const pa = g.getAttribute("position") as THREE.BufferAttribute;
+    pos.set(pa.array as Float32Array, op);
+    op += pa.array.length;
+    const ua = g.getAttribute("uv") as THREE.BufferAttribute | undefined;
+    if (ua) uv.set(ua.array as Float32Array, ou);
+    ou += pa.count * 2;
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  out.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+  return out;
+}
+
+/** Paint a smooth base-shaded → top-lit vertex-colour gradient onto a mesh:
+ *  cheap ambient-occlusion + tonal depth baked in (multiplies the material
+ *  colour where vertexColors is enabled). */
+function paintByHeight(
+  geo: THREE.BufferGeometry, offsetY: number,
+  yLow: number, yHigh: number, low: THREE.Color, high: THREE.Color
+) {
+  const pos = geo.getAttribute("position") as THREE.BufferAttribute;
+  const span = yHigh - yLow || 1;
+  const arr = new Float32Array(pos.count * 3);
+  const c = new THREE.Color();
+  for (let i = 0; i < pos.count; i++) {
+    let f = (pos.getY(i) + offsetY - yLow) / span;
+    f = f < 0 ? 0 : f > 1 ? 1 : f;
+    f = f * f * (3 - 2 * f); // smoothstep
+    c.copy(low).lerp(high, f);
+    arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b;
+  }
+  geo.setAttribute("color", new THREE.BufferAttribute(arr, 3));
+}
+
+/** A clustered, weathered boulder: a big irregular mass plus a smaller chunk,
+ *  faceted, with a flattened grounded base and baked AO. Built once and shared
+ *  by the whole instanced field, so hundreds of rocks stay cheap. */
+function boulderGeometry(): THREE.BufferGeometry {
+  const chunks = [
+    { r: 0.44, x: 0, y: 0, z: 0, sy: 0.82, detail: 1, yaw: 0.0 },
+    { r: 0.27, x: 0.34, y: -0.05, z: 0.12, sy: 0.72, detail: 0, yaw: 1.1 },
+  ];
+  const parts: THREE.BufferGeometry[] = [];
+  for (const ch of chunks) {
+    const g = new THREE.IcosahedronGeometry(ch.r, ch.detail);
+    const p = g.getAttribute("position") as THREE.BufferAttribute;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      const len = Math.hypot(x, y, z) || 1;
+      const nx = x / len, ny = y / len, nz = z / len;
+      const rr = len * (0.80 + 0.44 * dirHash(nx, ny, nz)); // weathered lumpiness
+      let yy = ny * rr;
+      if (yy < 0) yy *= 0.4; // flatten the buried underside
+      p.setXYZ(i, nx * rr, yy, nz * rr);
+    }
+    const ng = g.toNonIndexed();
+    ng.applyMatrix4(new THREE.Matrix4().compose(
+      new THREE.Vector3(ch.x, ch.y, ch.z),
+      new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ch.yaw),
+      new THREE.Vector3(1, ch.sy, 1)
+    ));
+    parts.push(ng);
+  }
+  const geo = mergePosUV(parts);
+  geo.computeVertexNormals();
+  geo.computeBoundingBox();
+  const bb = geo.boundingBox!;
+  geo.translate(0, -bb.min.y, 0); // sit the base on the ground
+  paintByHeight(geo, 0, 0, bb.max.y - bb.min.y,
+    new THREE.Color(0.52, 0.53, 0.57), new THREE.Color(1.08, 1.05, 0.99));
+  return geo;
+}
+
 export function makeRockField(pal: RealmPalette, pts: Placement[]): THREE.InstancedMesh {
-  const geo = new THREE.DodecahedronGeometry(0.4, 0);
+  const geo = boulderGeometry();
   const lib = pbr();
   let mat: THREE.MeshStandardMaterial;
   if (lib) {
     const t = tileSet(lib.rock, 1);
     mat = new THREE.MeshStandardMaterial({
-      map: t.diff, normalMap: t.nor, color: 0x8a8a8a, metalness: 0.1, roughness: 0.95,
+      map: t.diff, normalMap: t.nor, color: 0x8a8a8a, metalness: 0.1, roughness: 0.96,
+      flatShading: true, vertexColors: true,
     });
   } else {
     const stone = stoneMaps(pal.mountainDark);
     mat = new THREE.MeshStandardMaterial({
-      color: pal.mountainDark, map: stone.map, bumpMap: stone.bump, bumpScale: 0.15,
-      metalness: 0.1, roughness: 0.95,
+      color: pal.mountainDark, map: stone.map, bumpMap: stone.bump, bumpScale: 0.2,
+      metalness: 0.1, roughness: 0.96, flatShading: true, vertexColors: true,
     });
   }
   const mesh = new THREE.InstancedMesh(geo, mat, pts.length);
@@ -273,14 +372,24 @@ export function makeRockField(pal: RealmPalette, pts: Placement[]): THREE.Instan
   const q = new THREE.Quaternion();
   const s = new THREE.Vector3();
   const p = new THREE.Vector3();
+  const e = new THREE.Euler();
+  const col = new THREE.Color();
   pts.forEach((pt, i) => {
-    p.set(pt.x, pt.y + 0.1, pt.z);
-    q.setFromEuler(new THREE.Euler(pt.r, pt.r * 2, pt.r * 0.5));
-    s.setScalar(pt.s);
+    // grounded: full yaw but only a slight tilt, so the flat base stays down
+    e.set(Math.sin(pt.r * 1.7) * 0.13, pt.r, Math.cos(pt.r * 1.3) * 0.13);
+    q.setFromEuler(e);
+    const raw = Math.sin(i * 12.9898) * 43758.5453;
+    const jit = raw - Math.floor(raw); // 0..1 per-instance
+    s.set(pt.s * (0.92 + jit * 0.2), pt.s * (0.78 + jit * 0.34), pt.s * (0.92 + (1 - jit) * 0.2));
+    p.set(pt.x, pt.y - 0.03 * pt.s, pt.z);
     m.compose(p, q, s);
     mesh.setMatrixAt(i, m);
+    const v = 0.84 + jit * 0.22; // subtle per-boulder tonal variation
+    col.setRGB(v, v * 0.99, v * 0.96);
+    mesh.setColorAt(i, col);
   });
   mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   return mesh;
 }
 
@@ -452,29 +561,85 @@ export function makeStartGantry(pal: RealmPalette): THREE.Group {
   return g;
 }
 
+/** One closed jagged ridge wall around (cx,cz): a noisy top profile (broad
+ *  ranges with sharp uneven peaks overlaid) rising from a base, vertex-shaded
+ *  dark at the foot and hazed toward the sky at the crests for atmospheric
+ *  depth. */
+function ridgeMesh(
+  cx: number, cz: number, R: number, base: THREE.Color, fog: THREE.Color,
+  haze: number, hLo: number, hHi: number, jag: number, rand: () => number
+): THREE.Mesh {
+  const steps = 220;
+  const y0 = -10;
+  // broad harmonics form the mountain "ranges"; two ridged high-freq terms add
+  // the sharp uneven peaks (so no two segments look alike).
+  const harms = [
+    { k: 2, amp: 0.6 + rand() * 0.5, ph: rand() * Math.PI * 2 },
+    { k: 3, amp: 0.4 + rand() * 0.4, ph: rand() * Math.PI * 2 },
+    { k: 5, amp: 0.25 + rand() * 0.3, ph: rand() * Math.PI * 2 },
+  ];
+  let wsum = 0;
+  for (const h of harms) wsum += h.amp;
+  const jk = jag + Math.floor(rand() * 4);
+  const jph = rand() * Math.PI * 2;
+  const jk2 = jk * 1.7 + 2;
+  const jph2 = rand() * Math.PI * 2;
+  const wobK = 2 + Math.floor(rand() * 3);
+  const wobPh = rand() * Math.PI * 2;
+  const heightAt = (a: number) => {
+    let s = 0;
+    for (const h of harms) s += h.amp * (0.5 + 0.5 * Math.sin(h.k * a + h.ph));
+    const env = 0.32 + 0.68 * (s / wsum); // where ranges rise tall vs low saddles
+    const r1 = Math.pow(Math.abs(Math.sin(jk * 0.5 * a + jph)), 0.55);
+    const r2 = Math.pow(Math.abs(Math.sin(jk2 * 0.5 * a + jph2)), 0.7) * 0.6;
+    const v = env * (0.5 + 0.5 * Math.max(r1, r2));
+    return hLo + Math.min(1, v) * (hHi - hLo);
+  };
+  const radAt = (a: number) => R * (1 + 0.045 * Math.sin(wobK * a + wobPh));
+  const cLow = base.clone().multiplyScalar(0.5); // shaded foot
+  const cHi = base.clone().lerp(fog, haze);      // hazed crest
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const add = (x: number, y: number, z: number, c: THREE.Color) => {
+    positions.push(x, y, z);
+    colors.push(c.r, c.g, c.b);
+  };
+  for (let i = 0; i < steps; i++) {
+    const a0 = (i / steps) * Math.PI * 2;
+    const a1 = ((i + 1) / steps) * Math.PI * 2;
+    const r0 = radAt(a0), r1 = radAt(a1);
+    const x0 = cx + Math.cos(a0) * r0, z0 = cz + Math.sin(a0) * r0;
+    const x1 = cx + Math.cos(a1) * r1, z1 = cz + Math.sin(a1) * r1;
+    const t0 = heightAt(a0), t1 = heightAt(a1);
+    // the wall segment as two triangles, base shaded / crest hazed
+    add(x0, y0, z0, cLow); add(x1, y0, z1, cLow); add(x1, t1, z1, cHi);
+    add(x0, y0, z0, cLow); add(x1, t1, z1, cHi); add(x0, t0, z0, cHi);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  geo.computeVertexNormals();
+  const mat = new THREE.MeshStandardMaterial({
+    vertexColors: true, roughness: 1, metalness: 0, flatShading: true, side: THREE.DoubleSide,
+  });
+  return new THREE.Mesh(geo, mat);
+}
+
 export function makeMountainRing(pal: RealmPalette, cx: number, cz: number, radius: number): THREE.Group {
   const group = new THREE.Group();
-  const rand = (() => { let s = 99; return () => { s = (s * 16807) % 2147483647; return s / 2147483647; }; })();
-  const rings = [
-    { r: radius, color: pal.mountainDark, count: 26, h: [40, 90], fog: true },
-    { r: radius * 0.82, color: pal.mountain, count: 20, h: [30, 70], fog: true },
+  const rand = seeded(99);
+  const fog = new THREE.Color(pal.fog);
+  const near = new THREE.Color(pal.mountain);
+  const far = new THREE.Color(pal.mountainDark);
+  // three concentric ridgelines, far → near: increasing radius, height and haze
+  // with distance give layered depth and atmospheric perspective.
+  const layers = [
+    { r: radius * 1.05, base: far, hLo: 55, hHi: 120, haze: 0.6, jag: 7 },
+    { r: radius * 0.9, base: far.clone().lerp(near, 0.5), hLo: 40, hHi: 92, haze: 0.4, jag: 9 },
+    { r: radius * 0.74, base: near, hLo: 24, hHi: 66, haze: 0.22, jag: 12 },
   ];
-  const lib = pbr();
-  const rockTex = lib ? tileSet(lib.rock, 4) : null;
-  for (const ring of rings) {
-    const mat = rockTex
-      ? new THREE.MeshStandardMaterial({ color: ring.color, map: rockTex.diff, normalMap: rockTex.nor, roughness: 1, metalness: 0 })
-      : new THREE.MeshLambertMaterial({ color: ring.color });
-    for (let i = 0; i < ring.count; i++) {
-      const a = (i / ring.count) * Math.PI * 2 + rand() * 0.2;
-      const h = ring.h[0] + rand() * (ring.h[1] - ring.h[0]);
-      const rad = h * (0.7 + rand() * 0.5);
-      const geo = new THREE.ConeGeometry(rad, h, 5);
-      const peak = new THREE.Mesh(geo, mat);
-      peak.position.set(cx + Math.cos(a) * ring.r, h / 2 - 6, cz + Math.sin(a) * ring.r);
-      peak.rotation.y = rand() * Math.PI;
-      group.add(peak);
-    }
+  for (const L of layers) {
+    group.add(ridgeMesh(cx, cz, L.r, L.base, fog, L.haze, L.hLo, L.hHi, L.jag, rand));
   }
   return group;
 }
@@ -912,20 +1077,24 @@ export type TreeKind = "pine" | "round" | "tall";
  *  bark/foliage PBR sets (falls back to flat colours). Reused across every tree
  *  so hundreds of trees don't each allocate materials. */
 export function makeTreeMaterials(pal: RealmPalette): TreeMats {
+  // foliage uses vertexColors so each tree can bake its own tonal shading + AO +
+  // per-instance hue into geometry while the material stays shared. flatShading
+  // gives the faceted low-poly leaf/bark read.
   const lib = pbr();
   if (lib) {
     const bark = tileSet(lib.bark, 1, 2.2);
     const fol = tileSet(lib.foliage, 2.2, 2.2);
     return {
-      trunk: new THREE.MeshStandardMaterial({ map: bark.diff, normalMap: bark.nor, roughness: 1, metalness: 0 }),
+      trunk: new THREE.MeshStandardMaterial({ map: bark.diff, normalMap: bark.nor, roughness: 1, metalness: 0, flatShading: true }),
       foliage: new THREE.MeshStandardMaterial({
         color: pal.clutter, map: fol.diff, normalMap: fol.nor, roughness: 1, metalness: 0,
+        flatShading: true, vertexColors: true,
       }),
     };
   }
   return {
-    trunk: new THREE.MeshStandardMaterial({ color: 0x5a3a22, roughness: 1 }),
-    foliage: new THREE.MeshStandardMaterial({ color: pal.clutter, roughness: 1 }),
+    trunk: new THREE.MeshStandardMaterial({ color: 0x5a3a22, roughness: 1, flatShading: true }),
+    foliage: new THREE.MeshStandardMaterial({ color: pal.clutter, roughness: 1, flatShading: true, vertexColors: true }),
   };
 }
 
@@ -934,39 +1103,83 @@ export function makeTreeMaterials(pal: RealmPalette): TreeMats {
  *  materials come from makeTreeMaterials. */
 export function makeTree(rand: () => number, mats: TreeMats, kind: TreeKind): THREE.Group {
   const g = new THREE.Group();
-  const h = kind === "tall" ? 4 + rand() * 3.5 : 2.6 + rand() * 2.4;
-  const trunkH = h * (kind === "round" ? 0.42 : 0.3);
-  const trunkR = 0.1 + h * 0.035;
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(trunkR * 0.7, trunkR, trunkH, 6), mats.trunk);
+  const h = kind === "tall" ? 4.4 + rand() * 3.4 : 2.6 + rand() * 2.4;
+
+  // --- trunk: tapered with a slight root flare and a gentle lean -----------
+  const trunkH = h * (kind === "round" ? 0.4 : 0.28);
+  const trunkR = 0.1 + h * 0.036;
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(trunkR * 0.55, trunkR * 1.25, trunkH, 6, 1),
+    mats.trunk
+  );
   trunk.position.y = trunkH / 2;
-  trunk.rotation.z = (rand() - 0.5) * 0.05;
+  trunk.rotation.z = (rand() - 0.5) * 0.08;
   g.add(trunk);
 
+  // per-tree foliage tint (baked into vertex colours; the shared material is
+  // reused). Low = shaded, cool under-canopy; High = sunlit, warmer crown.
+  const tj = 0.86 + rand() * 0.26;      // per-tree lightness
+  const warm = (rand() - 0.5) * 0.10;   // per-tree hue skew (warm/cool)
+  const shadeLow = new THREE.Color((0.40 - warm) * tj, 0.50 * tj, (0.46 + warm) * tj);
+  const shadeHigh = new THREE.Color((1.10 + warm) * tj, 1.12 * tj, (0.94 - warm) * tj);
+
+  const foliage: THREE.BufferGeometry[] = [];
+  const addLeaf = (geo: THREE.BufferGeometry, x: number, y: number, z: number, yaw: number, sy = 1) => {
+    geo.scale(1, sy, 1);
+    geo.rotateY(yaw);
+    geo.translate(x, y, z);
+    g.add(new THREE.Mesh(geo, mats.foliage));
+    foliage.push(geo);
+  };
+
   if (kind === "round") {
-    const baseY = trunkH + h * 0.18;
-    const blobs = 2 + Math.floor(rand() * 2);
-    for (let i = 0; i < blobs; i++) {
-      const r = h * 0.34 * (1 - i * 0.16);
-      const blob = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), mats.foliage);
-      blob.position.set((rand() - 0.5) * r * 0.7, baseY + i * r * 0.55, (rand() - 0.5) * r * 0.7);
-      blob.scale.set(1, 0.92, 1);
-      blob.rotation.y = rand() * Math.PI;
-      g.add(blob);
+    // deciduous: a full canopy of clustered lobes over a broad low mass
+    const cBase = trunkH + h * 0.14;
+    const R = h * 0.32;
+    addLeaf(new THREE.IcosahedronGeometry(R * 1.02, 1), 0, cBase + R * 0.55, 0, rand() * Math.PI);
+    const lobes = 4 + Math.floor(rand() * 3);
+    for (let i = 0; i < lobes; i++) {
+      const a = (i / lobes) * Math.PI * 2 + rand() * 0.6;
+      const rr = R * (0.5 + rand() * 0.28);
+      const rad = R * (0.55 + rand() * 0.3);
+      addLeaf(
+        new THREE.IcosahedronGeometry(rr, i % 2 ? 0 : 1),
+        Math.cos(a) * rad, cBase + R * (0.5 + rand() * 0.6), Math.sin(a) * rad,
+        rand() * Math.PI, 0.92
+      );
     }
   } else {
-    const layers = kind === "tall" ? 5 : 4;
-    let y = trunkH * 0.7;
-    for (let i = 0; i < layers; i++) {
-      const t = i / layers;
-      const r = h * (kind === "tall" ? 0.3 : 0.42) * (1 - t * 0.82);
-      const ch = h * 0.42;
-      const cone = new THREE.Mesh(new THREE.ConeGeometry(r, ch, 7), mats.foliage);
-      cone.position.y = y + ch * 0.42;
-      cone.rotation.y = rand() * Math.PI;
-      g.add(cone);
-      y += ch * 0.44;
+    // conifer: tiered cones flaring wide at the base, narrowing to a leader tip.
+    // "tall" is the slim variant (narrower spread, more layers).
+    const tall = kind === "tall";
+    const L = tall ? 6 : 5;
+    const spread = h * (tall ? 0.24 : 0.42);
+    const cBase = trunkH * 0.72;
+    const canopyH = h * (tall ? 0.78 : 0.66);
+    const ch = canopyH * (tall ? 0.3 : 0.34);
+    for (let i = 0; i < L; i++) {
+      const t = i / (L - 1);
+      const r = spread * (1 - t * 0.85) * (0.9 + rand() * 0.2) + 0.05;
+      addLeaf(
+        new THREE.ConeGeometry(r, ch, 7),
+        (rand() - 0.5) * r * 0.14, cBase + t * canopyH + ch * 0.34, (rand() - 0.5) * r * 0.14,
+        rand() * Math.PI
+      );
     }
+    addLeaf(new THREE.ConeGeometry(spread * 0.12 + 0.05, canopyH * 0.3, 6), 0, cBase + canopyH * 1.06, 0, 0);
   }
+
+  // bake the canopy gradient once the masses are placed (shaded base of canopy
+  // → sunlit crown), so the foliage reads with depth instead of flat.
+  let yLo = Infinity, yHi = -Infinity;
+  for (const geo of foliage) {
+    geo.computeBoundingBox();
+    const bb = geo.boundingBox!;
+    if (bb.min.y < yLo) yLo = bb.min.y;
+    if (bb.max.y > yHi) yHi = bb.max.y;
+  }
+  for (const geo of foliage) paintByHeight(geo, 0, yLo, yHi, shadeLow, shadeHigh);
+
   g.rotation.y = rand() * Math.PI * 2;
   return g;
 }

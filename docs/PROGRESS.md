@@ -364,6 +364,26 @@ mode config flag rather than a new system.
 
 ---
 
+## Weather & atmosphere — every world feels different
+
+A camera-following weather system (`weather.ts`) gives each realm its own sky:
+
+- **Crystal Peaks** — dense falling **snow**.
+- **Ember Wastes** — glowing **embers rising** through drifting ash.
+- **Sunspire Sands** — a hot **sandstorm** of blowing dust under a hazed horizon.
+- **Enchanted Forest** — floating glowing **spores**.
+- **Ravenspire Keep** — low drifting **mist**.
+- **Neon Metro** — cool **rain** streaking down a wet city night.
+
+Alongside it: **Neon Metro was de-glowed** (window emissive cut to ~a third,
+mostly-dark facades with sparse clustered lit windows, glass-vs-masonry material
+variety) so it reads as a real skyline instead of a neon blur; and the **trees,
+rocks and distant mountains got a realism pass** — tapered trunks + tiered,
+tonally-shaded canopies, weathered boulders, and layered hazy ridgelines with
+atmospheric perspective.
+
+---
+
 ## Where it stands now
 
 - **8 realms**: Enchanted Forest, Ember Wastes, Crystal Peaks, Void Circuit,

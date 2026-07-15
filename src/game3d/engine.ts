@@ -31,13 +31,14 @@ import {
   makeCrystalCluster, makeMonster,
   makeMech, makeSlash, makeFlame, makeUnderGlow,
   makeItemBox, makeMissile, makeMine, makeShieldBubble, makeBoostPad,
-  makeParticleField, makeStartGantry, varyTint, makeSpaceBackdrop,
+  makeStartGantry, varyTint, makeSpaceBackdrop,
   makeTree, makeTreeMaterials,
-  type MechRig, type Placement, type ParticleField, type TreeMats,
+  type MechRig, type Placement, type TreeMats,
 } from "./objects";
+import { makeWeather, type WeatherSystem } from "./weather";
 import { loadPBR } from "./textures";
 import { makeKart, CAR_SPECS, CAR_IDS, type CarStat } from "./cars";
-import { REALMS, pickScenery, type RealmSpec, type SceneryKind } from "./realms";
+import { REALMS, pickScenery, REALM_WEATHER, type RealmSpec, type SceneryKind } from "./realms";
 import { makePyramid, makeObelisk, makeSphinx, makePalm, makeSandRock } from "./props/egyptian";
 import { makeTower, makeGatehouse, makeCastleWall, makeBanner, makeTorch } from "./props/castle";
 import { makeGrandstand, makeTyreStack, makeFloodlight, makePitBuilding, makeMarshalBoard } from "./props/circuit";
@@ -137,7 +138,7 @@ export class Game {
   private resizeObs: ResizeObserver | null = null;
   private carId: CarId;
   private carStat: CarStat;
-  private particles: ParticleField | null = null;
+  private weather: WeatherSystem | null = null;
   private input = new Input();
   private sound = new Sound();
   private slashCooldown = 0;
@@ -343,6 +344,7 @@ export class Game {
     this.resizeObs = null;
     this.input.detach();
     this.sound.dispose();
+    this.weather?.dispose();
     this.composer.dispose();
     this.renderer.dispose();
     this.container.replaceChildren();
@@ -438,8 +440,8 @@ export class Game {
       gantry.rotation.y = Math.atan2(gtan.x, gtan.z);
       scene.add(gantry);
     }
-    this.particles = makeParticleField(pal, track.bounds, realm.id);
-    scene.add(this.particles.points);
+    this.weather = makeWeather(REALM_WEATHER[realm.id], pal);
+    scene.add(this.weather.object);
 
     this.decorate(library);
   }
@@ -1624,8 +1626,8 @@ export class Game {
         e.obj.rotation.y = this.time * 1.6 + e.phase;
         e.obj.position.y = e.baseY + Math.sin(this.time * 2.5 + e.phase) * 0.18;
       }
-      // ambient particles drift and follow the camera so they always fill view
-      if (this.particles) this.particles.update(this.time, this.playerRoot.position);
+      // weather (snow/ash/sand/rain/…) drifts and follows the camera so it fills view
+      if (this.weather) this.weather.update(this.time, this.camera.position);
       // monsters are positioned in updateMonsters (they move + charge)
 
       // camera — chase with feel: FOV kicks with speed/boost, banks into

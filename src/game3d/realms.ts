@@ -14,6 +14,23 @@ export type SceneryKind =
   // nyc
   | "skyscraper" | "brownstone" | "streetlight" | "billboard" | "waterTower";
 
+/** Per-realm atmosphere. Kept here (three-free) so both the UI and the weather
+ *  module can read it. The renderer maps each kind to a particle behaviour. */
+export type WeatherKind =
+  | "none" | "snow" | "ember" | "sand" | "spores" | "mist" | "rain";
+
+export const REALM_WEATHER: Record<RealmId, WeatherKind> = {
+  forest: "spores",
+  ember: "ember",
+  peaks: "snow",
+  void: "none",
+  sands: "sand",
+  castle: "mist",
+  circuit: "none",
+  metro: "rain",
+  nebula: "none",
+};
+
 export interface RealmPalette {
   // sky gradient stops, top -> bottom (canvas)
   sky: [string, string, string, string];
@@ -232,7 +249,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       sky: ["#2f6bb0", "#5f97cc", "#b8d6e6", "#f2e2b8"],
       stars: false,
       moons: [{ x: 680, y: 120, r: 46, tint: "#fff4d0" }],
-      fog: 0xe8d3a0, fogNear: 90, fogFar: 640,
+      fog: 0xe4cb98, fogNear: 55, fogFar: 460,
       hemiSky: 0xbfd8ff, hemiGround: 0xd9b47a, hemiInt: 1.2,
       sun: 0xfff2d0, sunInt: 1.9,
       groundBase: "#d9b47a", groundSpeck: "#c79a5c", groundDark: "#a9793f",
