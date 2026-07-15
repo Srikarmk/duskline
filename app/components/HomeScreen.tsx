@@ -11,16 +11,18 @@ import {
 
 interface Props {
   lastResult: GameResult | null;
-  onStart: (name: string, mode: GameMode, realm: RealmId, car: CarId) => void;
+  onStart: (name: string, mode: GameMode, realm: RealmId, car: CarId, laps: number) => void;
 }
+
+const LAP_OPTIONS = [1, 2, 3, 5, 7];
 
 function stars(n: number) {
   return "★★★★★".slice(0, n) + "☆☆☆☆☆".slice(0, 5 - n);
 }
 
 const MODES: { id: GameMode; name: string; blurb: string }[] = [
-  { id: "classic", name: "CLASSIC CIRCUIT", blurb: "3 laps vs 3 AI racers. Gems, stunts, nitro." },
-  { id: "timetrial", name: "TIME TRIAL", blurb: "Solo run. Beat the clock over 3 clean laps." },
+  { id: "classic", name: "CLASSIC CIRCUIT", blurb: "Race 8 AI rivals. Gems, stunts, nitro, power-ups." },
+  { id: "timetrial", name: "TIME TRIAL", blurb: "Solo run — beat the clock over clean laps." },
   { id: "nitro", name: "NITRO SPRINT", blurb: "1 lap, full nitro, all-out sprint vs the pack." },
   { id: "transform", name: "TRANSFORMER RUSH", blurb: "Morph into a sword-mech — slash monsters and fly." },
   { id: "grandprix", name: "GRAND PRIX", blurb: "All 3 realms back-to-back for the championship." },
@@ -40,6 +42,7 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
   const [mode, setMode] = useState<GameMode>("classic");
   const [realm, setRealm] = useState<RealmId>("forest");
   const [car, setCar] = useState<CarId>("comet");
+  const [laps, setLaps] = useState(3);
   const [localScores, setLocalScores] = useState<ScoreEntry[]>([]);
   const [globalScores, setGlobalScores] = useState<ScoreEntry[] | null>(null);
   const [isGlobal, setIsGlobal] = useState(false);
@@ -65,8 +68,15 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
 
   return (
     <div className="home">
-      <h1 className="title">FANTASY RACER</h1>
-      <p className="subtitle">a 3D magic kart racer</p>
+      <div className="hero">
+        <div className="hero-glow" />
+        <h1 className="title">FANTASY RACER</h1>
+        <p className="subtitle">drift · boost · jump · transform — a 3D magic kart racer</p>
+        <div className="hero-tags">
+          <span>4 REALMS</span><span>4 KARTS</span><span>9-RACER GRID</span>
+          <span>POWER-UPS</span><span>GRAND PRIX</span>
+        </div>
+      </div>
 
       {lastResult && (
         <div className="result-banner">
@@ -87,7 +97,7 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
           placeholder="enter your name"
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && canStart) onStart(name.trim(), mode, realm, car);
+            if (e.key === "Enter" && canStart) onStart(name.trim(), mode, realm, car, isGP ? 3 : laps);
           }}
         />
       </label>
@@ -157,12 +167,31 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
         ))}
       </div>
 
+      {!isGP && mode !== "nitro" && (
+        <>
+          <div className="section-label">LAPS</div>
+          <div className="laps">
+            {LAP_OPTIONS.map((n) => (
+              <button
+                key={n}
+                className={`lap-pill ${laps === n ? "selected" : ""}`}
+                onClick={() => setLaps(n)}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
       <button
         className="start"
         disabled={!canStart}
-        onClick={() => onStart(name.trim(), mode, realm, car)}
+        onClick={() => onStart(name.trim(), mode, realm, car, isGP ? 3 : laps)}
       >
-        {isGP ? "START GRAND PRIX" : "START RACE"}
+        {canStart
+          ? (isGP ? "▸ START GRAND PRIX" : `▸ START RACE — ${mode === "nitro" ? 1 : laps} LAP${(mode === "nitro" ? 1 : laps) > 1 ? "S" : ""}`)
+          : "ENTER A RACER NAME"}
       </button>
 
       <p className="controls-help">

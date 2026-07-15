@@ -105,92 +105,105 @@ function buildKart(color: number, p: KartParams): THREE.Group {
 
   const { length: L, width: W, ride: H, wheelR: R } = p;
 
-  // lower hull (wide, low) + tapered upper deck
-  const lower = box(W, H, L * 0.92, bodyMat, 0, R + H * 0.2, 0);
-  // bevel the lower hull slightly for a less boxy read
-  lower.scale.z = 1;
-  g.add(lower);
-  const deck = box(W * 0.72, H * 0.7, L * 0.55, bodyMat, 0, R + H * 0.75, -L * 0.02);
-  g.add(deck);
+  // --- smooth extruded car hull (a real car silhouette, not stacked boxes) ---
+  const hl = L / 2;
+  const BH = H * 1.9;      // total body height incl. cabin
+  const floor = R * 0.55;  // hull sits here; lower half of the wheels shows
+  const sil = new THREE.Shape();
+  sil.moveTo(-hl, 0);
+  sil.lineTo(hl * 0.99, 0.02);
+  sil.lineTo(hl, BH * 0.36);                                    // nose tip
+  sil.quadraticCurveTo(hl * 0.78, BH * 0.42, hl * 0.46, BH * 0.46); // hood
+  sil.quadraticCurveTo(hl * 0.16, BH * 0.98, -hl * 0.14, BH * 0.96); // windshield → roof
+  sil.lineTo(-hl * 0.56, BH * 0.88);                            // roofline
+  sil.quadraticCurveTo(-hl * 0.95, BH * 0.6, -hl, BH * 0.38);   // rear glass / tail
+  sil.closePath();
+  const hullGeo = new THREE.ExtrudeGeometry(sil, {
+    depth: W, bevelEnabled: true, bevelThickness: 0.07, bevelSize: 0.09, bevelSegments: 2, steps: 1,
+  });
+  hullGeo.rotateY(-Math.PI / 2);   // length(x) → +z, front points forward
+  hullGeo.center();
+  hullGeo.computeBoundingBox();
+  hullGeo.translate(0, -hullGeo.boundingBox!.min.y, 0); // rest bottom on y=0
+  // taper the width toward the top (and a touch toward the nose) so it reads as
+  // a rounded car body from behind, not a constant-width slab
+  {
+    const pa = hullGeo.getAttribute("position");
+    hullGeo.computeBoundingBox();
+    const maxY = hullGeo.boundingBox!.max.y || 1;
+    const maxZ = hullGeo.boundingBox!.max.z || 1;
+    for (let i = 0; i < pa.count; i++) {
+      const ty = Math.max(0, pa.getY(i) / maxY);
+      const tz = Math.max(0, pa.getZ(i) / maxZ); // 1 at the nose
+      const wScale = (1 - ty * ty * 0.5) * (1 - tz * 0.18);
+      pa.setX(i, pa.getX(i) * wScale);
+    }
+    pa.needsUpdate = true;
+    hullGeo.computeVertexNormals();
+  }
+  const hull = new THREE.Mesh(hullGeo, bodyMat);
+  hull.position.y = floor;
+  g.add(hull);
 
-  // pointed nose cone at the front (+Z)
-  const nose = new THREE.Mesh(
-    new THREE.ConeGeometry(W * 0.5, L * 0.34, 4),
-    bodyMat
-  );
-  nose.rotation.x = Math.PI / 2;      // point +Z
-  nose.rotation.y = Math.PI / 4;      // square the 4-gon to the body
-  nose.scale.set(1, 0.5, 1);
-  nose.position.set(0, R + H * 0.25, L * 0.5);
-  g.add(nose);
+  // glowing chin splitter + rear light bar
+  g.add(box(W * 0.92, 0.14, L * 0.26, trimMat, 0, floor + 0.06, hl * 0.62));
+  g.add(box(W * 0.62, 0.14, 0.4, trimMat, 0, floor + BH * 0.34, -hl * 0.94));
 
-  // glowing chin splitter + belly light bar
-  const chin = box(W * 0.9, 0.12, L * 0.3, trimMat, 0, R - H * 0.05, L * 0.34);
-  g.add(chin);
-  const bar = box(W * 0.5, 0.1, 0.5, trimMat, 0, R + H * 0.02, -L * 0.46);
-  g.add(bar);
-
-  // side accent strakes
+  // side sill accent along the lower body
   for (const sx of [-1, 1]) {
-    const strake = box(0.1, H * 0.5, L * 0.6, trimMat, sx * W * 0.5, R + H * 0.4, 0);
-    g.add(strake);
+    g.add(box(0.08, 0.16, L * 0.7, trimMat, sx * W * 0.5, floor + BH * 0.22, 0));
   }
 
-  // cockpit canopy (glass bubble)
-  const canopy = new THREE.Mesh(new THREE.SphereGeometry(W * 0.34, 16, 12), glass);
-  canopy.scale.set(1, 0.7, 1.35);
-  canopy.position.set(0, R + H * 0.95, L * 0.02);
+  // glass windshield / greenhouse sitting on the cabin
+  const canopy = new THREE.Mesh(new THREE.SphereGeometry(W * 0.36, 18, 12), glass);
+  canopy.scale.set(0.92, 0.6, 1.25);
+  canopy.position.set(0, floor + BH * 0.72, hl * 0.02);
   g.add(canopy);
 
   // headlights
   for (const sx of [-1, 1]) {
     const lamp = new THREE.Mesh(
-      new THREE.SphereGeometry(0.16, 10, 8),
+      new THREE.SphereGeometry(0.15, 10, 8),
       paint(0xfffbe6, { emissive: 0xfff2b0, ei: 1.6 })
     );
-    lamp.position.set(sx * W * 0.28, R + H * 0.3, L * 0.5);
+    lamp.position.set(sx * W * 0.32, floor + BH * 0.28, hl * 0.92);
     g.add(lamp);
   }
 
   // roll cage / side pods on the bulky bruiser
   if (p.bulky) {
     for (const sx of [-1, 1]) {
-      const pod = box(W * 0.34, H * 0.9, L * 0.5, darkMat, sx * W * 0.62, R + H * 0.5, -L * 0.05);
+      const pod = box(W * 0.32, BH * 0.55, L * 0.5, darkMat, sx * W * 0.62, floor + BH * 0.4, -L * 0.05);
       g.add(pod);
       const exhaust = new THREE.Mesh(
         new THREE.CylinderGeometry(0.14, 0.14, 0.5, 8),
         paint(0x2a2a33, { metal: 0.9, rough: 0.3 })
       );
       exhaust.rotation.x = Math.PI / 2;
-      exhaust.position.set(sx * W * 0.62, R + H * 0.9, -L * 0.5);
+      exhaust.position.set(sx * W * 0.62, floor + BH * 0.55, -hl * 0.98);
       g.add(exhaust);
     }
   }
 
   // rear wing
   if (p.wing === "low" || p.wing === "tall") {
-    const wingH = p.wing === "tall" ? H * 1.7 : H * 0.9;
-    const wing = box(W * 1.05, 0.12, L * 0.16, darkMat, 0, R + wingH, -L * 0.48);
-    g.add(wing);
-    const winglet = box(W * 1.05, 0.08, L * 0.1, trimMat, 0, R + wingH + 0.14, -L * 0.5);
-    g.add(winglet);
+    const wingH = p.wing === "tall" ? BH * 1.25 : BH * 0.85;
+    g.add(box(W * 1.05, 0.12, L * 0.16, darkMat, 0, floor + wingH, -hl * 0.9));
+    g.add(box(W * 1.05, 0.08, L * 0.1, trimMat, 0, floor + wingH + 0.14, -hl * 0.94));
     for (const sx of [-1, 1]) {
-      const strut = box(0.12, wingH - H * 0.3, 0.12, darkMat, sx * W * 0.42, R + wingH * 0.6, -L * 0.46);
-      g.add(strut);
+      g.add(box(0.12, wingH * 0.55, 0.12, darkMat, sx * W * 0.42, floor + wingH * 0.62, -hl * 0.86));
     }
   } else if (p.wing === "fin") {
-    const fin = new THREE.Mesh(
-      new THREE.BufferGeometry(),
-      trimMat
-    );
+    const fin = new THREE.Mesh(new THREE.BufferGeometry(), trimMat);
     const w2 = W * 0.06;
+    const fh = BH * 1.15;
     const verts = new Float32Array([
-      -w2, 0, -L * 0.2, w2, 0, -L * 0.2, w2, H * 1.6, -L * 0.42,
-      -w2, 0, -L * 0.2, w2, H * 1.6, -L * 0.42, -w2, H * 1.6, -L * 0.42,
+      -w2, 0, -L * 0.15, w2, 0, -L * 0.15, w2, fh, -L * 0.42,
+      -w2, 0, -L * 0.15, w2, fh, -L * 0.42, -w2, fh, -L * 0.42,
     ]);
     fin.geometry.setAttribute("position", new THREE.BufferAttribute(verts, 3));
     fin.geometry.computeVertexNormals();
-    fin.position.y = R + H * 0.4;
+    fin.position.y = floor + BH * 0.4;
     g.add(fin);
   }
 
@@ -201,7 +214,7 @@ function buildKart(color: number, p: KartParams): THREE.Group {
       paint(0x67e8f9, { emissive: 0x22d3ee, ei: 1.4 })
     );
     thruster.rotation.x = Math.PI / 2;
-    thruster.position.set(sx * W * 0.28, R + H * 0.35, -L * 0.5);
+    thruster.position.set(sx * W * 0.28, floor + BH * 0.28, -hl * 0.98);
     g.add(thruster);
   }
 

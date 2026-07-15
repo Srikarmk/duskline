@@ -38,6 +38,7 @@ export default function GameApp() {
   const [mode, setMode] = useState<GameMode>("classic");
   const [realm, setRealm] = useState<RealmId>("forest");
   const [car, setCar] = useState<CarId>("comet");
+  const [laps, setLaps] = useState(3);
   const [name, setName] = useState("");
   const [lastResult, setLastResult] = useState<GameResult | null>(null);
   const [gp, setGp] = useState<GpState | null>(null);
@@ -106,6 +107,7 @@ export default function GameApp() {
         mode={mode}
         realm={realm}
         car={car}
+        laps={laps}
         onFinish={handleFinish}
         onQuit={() => {
           setGp(null);
@@ -180,11 +182,12 @@ export default function GameApp() {
   return (
     <HomeScreen
       lastResult={lastResult}
-      onStart={(playerName, playerMode, playerRealm, playerCar) => {
+      onStart={(playerName, playerMode, playerRealm, playerCar, playerLaps) => {
         setName(playerName);
         saveLastName(playerName);
         setCar(playerCar);
         saveLastCar(playerCar);
+        setLaps(playerLaps);
         setMode(playerMode);
         setLastResult(null);
         if (playerMode === "grandprix") {

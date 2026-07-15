@@ -7,7 +7,11 @@
 html,
 body {
   height: 100%;
-  background: #0b0b1a;
+  background:
+    radial-gradient(1200px 700px at 50% -10%, rgba(124, 58, 237, 0.35), transparent 60%),
+    radial-gradient(900px 600px at 90% 10%, rgba(34, 211, 238, 0.16), transparent 55%),
+    radial-gradient(900px 600px at 5% 30%, rgba(217, 70, 239, 0.14), transparent 55%),
+    #07061a;
   color: #e8e0ff;
   font-family: "Courier New", monospace;
   overflow: hidden;
@@ -17,6 +21,7 @@ main {
   height: 100%;
   display: grid;
   place-items: center;
+  overflow-y: auto;
 }
 
 .game-stage {
@@ -129,17 +134,97 @@ main {
   padding: 24px 16px;
 }
 
+.hero {
+  position: relative;
+  width: 100%;
+  text-align: center;
+  padding: 10px 0 6px;
+}
+
+.hero-glow {
+  position: absolute;
+  inset: -40px 0 auto 0;
+  height: 160px;
+  margin: auto;
+  width: 60%;
+  background: radial-gradient(60% 100% at 50% 0%, rgba(192, 132, 252, 0.35), transparent 70%);
+  filter: blur(20px);
+  pointer-events: none;
+}
+
 .title {
-  font-size: 44px;
-  letter-spacing: 6px;
-  color: #c084fc;
-  text-shadow: 0 0 18px rgba(192, 132, 252, 0.6), 3px 3px 0 #3b0764;
+  position: relative;
+  font-size: clamp(38px, 7vw, 68px);
+  letter-spacing: 8px;
+  font-weight: 900;
+  background: linear-gradient(180deg, #fdf4ff 0%, #e9a5ff 45%, #a855f7 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 22px rgba(192, 132, 252, 0.55));
+  animation: title-pulse 3.5s ease-in-out infinite;
+}
+
+@keyframes title-pulse {
+  0%, 100% { filter: drop-shadow(0 0 18px rgba(192, 132, 252, 0.45)); }
+  50% { filter: drop-shadow(0 0 30px rgba(217, 70, 239, 0.7)); }
 }
 
 .subtitle {
-  color: #8b85a8;
+  position: relative;
+  color: #b6a9e0;
   letter-spacing: 2px;
-  margin-top: -12px;
+  margin-top: 4px;
+  font-size: 14px;
+}
+
+.hero-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.hero-tags span {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: #d8d0f0;
+  padding: 4px 10px;
+  border: 1px solid rgba(192, 132, 252, 0.4);
+  border-radius: 999px;
+  background: rgba(124, 58, 237, 0.12);
+}
+
+.laps {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+
+.lap-pill {
+  flex: 1;
+  background: #171430;
+  border: 1px solid #3b3355;
+  color: #cfc9e8;
+  font: inherit;
+  font-size: 20px;
+  font-weight: bold;
+  padding: 10px 0;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.lap-pill:hover {
+  border-color: #c084fc;
+}
+
+.lap-pill.selected {
+  border-color: #c084fc;
+  background: linear-gradient(180deg, #7c3aed, #6d28d9);
+  color: #fdf4ff;
+  box-shadow: 0 0 14px rgba(124, 58, 237, 0.5);
 }
 
 .result-banner {
@@ -273,8 +358,9 @@ main {
 }
 
 .mode-card {
-  background: #171430;
+  background: linear-gradient(180deg, #1a1636, #141126);
   border: 1px solid #3b3355;
+  border-radius: 8px;
   color: #e8e0ff;
   font: inherit;
   padding: 14px 12px;
@@ -283,7 +369,17 @@ main {
   flex-direction: column;
   gap: 6px;
   text-align: left;
+  transition: border-color 0.15s, transform 0.12s, box-shadow 0.15s;
 }
+
+.mode-card:hover {
+  border-color: #7c3aed;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+.car-card { border-radius: 8px; }
+.car-card:hover { transform: translateY(-2px); }
 
 .mode-card strong {
   color: #c084fc;
@@ -307,27 +403,36 @@ main {
 
 .start {
   width: 100%;
-  background: #6d28d9;
+  background: linear-gradient(100deg, #7c3aed, #d946ef 60%, #f0abfc);
+  background-size: 200% 100%;
   border: none;
+  border-radius: 10px;
   color: #fdf4ff;
   font: inherit;
-  font-size: 20px;
-  font-weight: bold;
-  letter-spacing: 4px;
-  padding: 14px;
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 3px;
+  padding: 18px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: box-shadow 0.15s, transform 0.1s, background-position 0.4s;
+  box-shadow: 0 6px 24px rgba(124, 58, 237, 0.4);
 }
 
 .start:hover:not(:disabled) {
-  background: #7c3aed;
-  box-shadow: 0 0 18px rgba(124, 58, 237, 0.6);
+  background-position: 100% 0;
+  box-shadow: 0 8px 34px rgba(217, 70, 239, 0.6);
+  transform: translateY(-1px);
+}
+
+.start:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .start:disabled {
   background: #2a2542;
-  color: #55506e;
+  color: #6b6488;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .controls-help {

@@ -45,6 +45,7 @@ export interface GameOptions {
   mode: GameMode;
   realm?: RealmId;
   car?: CarId;
+  laps?: number;
   onFinish: (result: GameResult) => void;
 }
 

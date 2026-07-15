@@ -150,6 +150,7 @@ export class Game {
   private buckets = new Map<number, Entity[]>();
   private spinners: Entity[] = [];
   private monsters: Entity[] = [];
+  private ramps: { dist: number; power: number }[] = [];
   private opponents: Opponent[] = [];
   private playerRoot = new THREE.Group();
   private playerBody = new THREE.Group();
@@ -220,7 +221,9 @@ export class Game {
   constructor(container: HTMLElement, options: GameOptions) {
     this.container = container;
     this.mode = options.mode;
-    this.cfg = MODE_CONFIG[options.mode];
+    this.cfg = { ...MODE_CONFIG[options.mode] };
+    // per-match lap override (time trial keeps its own clean-lap rule)
+    if (options.laps && options.mode !== "grandprix") this.cfg.laps = options.laps;
     this.realm = REALMS[options.realm ?? "forest"];
     this.track = new Track(this.realm.controlPoints);
     this.minimap = new Minimap(this.track);
@@ -354,7 +357,7 @@ export class Game {
     scene.add(new THREE.HemisphereLight(pal.hemiSky, pal.hemiGround, pal.hemiInt * 1.7));
     // ambient lift so shadows aren't pure black — cuts the harsh neon-on-black
     // contrast and lets the ground/scenery + their textures read clearly
-    scene.add(new THREE.AmbientLight(pal.hemiSky, 0.55));
+    scene.add(new THREE.AmbientLight(pal.hemiSky, 0.62));
     // key light rakes across surfaces so the bump/texture detail catches light
     const sun = new THREE.DirectionalLight(pal.sun, pal.sunInt * 1.9);
     sun.position.set(60, 90, 50);
@@ -431,17 +434,32 @@ export class Game {
     const cellLane = (pos: number) => LANE_CENTERS[pos % cols];
     const playerRef = cellDist(playerPos); // shift so the player's cell => 0
 
+    const n = OPPONENTS.length;
     let pos = 0;
-    for (let i = 0; i < OPPONENTS.length; i++) {
+    for (let i = 0; i < n; i++) {
       if (pos === playerPos) pos++; // reserve the player's grid slot
       const spec = OPPONENTS[i];
       const gridDist = cellDist(pos) - playerRef; // ahead > 0, behind < 0
       const car = makeKart(CAR_IDS[i % CAR_IDS.length], spec.color);
+      // rear nitro flames (shown when the opponent boosts)
+      const flames: THREE.Mesh[] = [];
+      for (const fx of [-0.55, 0.55]) {
+        const fl = makeFlame();
+        fl.position.set(fx, 0.5, -2.1);
+        fl.visible = false;
+        (fl.material as THREE.MeshBasicMaterial).color.setHex(0xfb923c);
+        car.add(fl);
+        flames.push(fl);
+      }
       this.scene.add(car);
       const startDist = gridDist >= 0 ? gridDist : this.track.wrap(gridDist);
       const opp = new Opponent(car, spec.color, spec.name, spec.skill, startDist);
       opp.lane = cellLane(pos);
       opp.lap = gridDist >= 0 ? 1 : 0;
+      opp.flames = flames;
+      // spread the field: distinct top-speed pace from fastest (1.02) to
+      // slowest (0.86), so racers string out instead of clustering
+      opp.pace = 1.02 - (i / Math.max(1, n - 1)) * 0.16;
       this.opponents.push(opp);
       pos++;
     }
@@ -570,6 +588,7 @@ export class Game {
       const kind = rampKinds[ri++ % rampKinds.length];
       const spec = RAMP_SPECS[kind];
       this.addEntity("ramp", d, l, makeRamp(kind), 0, spec.power);
+      this.ramps.push({ dist: this.track.wrap(d), power: spec.power });
       for (const off of [15, 21, 27]) {
         const gap = Math.round(off * (0.7 + 0.35 * spec.power));
         this.addEntity("airGem", d + gap, l, makeGem(0xfbbf24, true), AIR_GEM_ALT);
@@ -1001,8 +1020,19 @@ export class Game {
     const len = this.track.length;
     for (const o of this.opponents) {
       const gap = mine - o.progress(len); // + means player ahead
-      const base = MAX_SPEED * (0.9 + clamp(gap / 160, -0.12, 0.12));
+      // each racer holds its own pace so the field strings out; only a gentle
+      // rubber-band keeps it competitive around the player
+      const base = MAX_SPEED * o.pace * (1 + clamp(gap / 500, -0.05, 0.08));
       o.update(dt, this.track, base, this.cfg.laps);
+
+      // hop ramps (full-width, so any lane) when reaching one on the ground
+      if (o.alt < 0.3) {
+        for (const r of this.ramps) {
+          let g = ((r.dist - o.dist) % len + len) % len;
+          if (g > len / 2) g -= len;
+          if (Math.abs(g) < 3) { o.hop(r.power); break; }
+        }
+      }
 
       // side-by-side bumping with the player
       let d = o.dist - this.position;

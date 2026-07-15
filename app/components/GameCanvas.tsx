@@ -9,11 +9,12 @@ interface Props {
   mode: GameMode;
   realm: RealmId;
   car: CarId;
+  laps: number;
   onFinish: (result: GameResult) => void;
   onQuit: () => void;
 }
 
-export default function GameCanvas({ mode, realm, car, onFinish, onQuit }: Props) {
+export default function GameCanvas({ mode, realm, car, laps, onFinish, onQuit }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const gameRef = useRef<Game | null>(null);
   const onFinishRef = useRef(onFinish);
@@ -29,6 +30,7 @@ export default function GameCanvas({ mode, realm, car, onFinish, onQuit }: Props
       mode,
       realm,
       car,
+      laps,
       onFinish: (result) => onFinishRef.current(result),
     });
     gameRef.current = game;
@@ -38,7 +40,7 @@ export default function GameCanvas({ mode, realm, car, onFinish, onQuit }: Props
       game.stop();
       gameRef.current = null;
     };
-  }, [mode, realm, car, runId]);
+  }, [mode, realm, car, laps, runId]);
 
   // Esc / P toggles pause
   useEffect(() => {

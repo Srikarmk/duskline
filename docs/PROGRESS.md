@@ -209,6 +209,27 @@ fails to load.
 
 ![Real CC0 ground / asphalt / rock textures](screenshots/real-assets.jpg)
 
+### 16. Real rivals, editable laps, a proper home screen (this pass)
+The opponents felt fake — they clustered around the player and ignored
+everything. Fixed:
+
+- **They string out** now: each rival holds its own top-speed **pace** (1.02
+  down to 0.86) instead of rubber-banding to the player, so the field spreads
+  across the track (a 15-second sim spread them ~140 m apart).
+- **They hop the ramps** (full ballistic launch, any lane) and **fire nitro
+  bursts** with rear flames — verified opponents reaching ~4.6 m of air.
+- **Editable laps**: pick 1 / 2 / 3 / 5 / 7 before the race (single-race modes),
+  threaded through `GameOptions`.
+- **Cars aren't stacked boxes** anymore — the hull is a single **extruded car
+  silhouette**, tapered narrower toward the cabin so it reads as a rounded car
+  from behind (the main camera), each type its own shape + livery.
+- **Home screen redesign**: animated gradient title, tagline, feature chips,
+  pill lap-selector, a proper gradient CTA that shows the lap count, richer
+  background, and hover-lift cards.
+- A touch more **ambient light** so the textures and scene read better.
+
+![Spread-out rivals, tapered car body, brighter textured world](screenshots/opponents-cars.jpg)
+
 ---
 
 ## Where it stands now
