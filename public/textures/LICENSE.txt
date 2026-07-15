@@ -1,0 +1,11 @@
+Textures in this folder are CC0 (public domain) from Poly Haven (polyhaven.com).
+No attribution required; credited here as good practice.
+
+  ground_forest  -> forrest_ground_01
+  ground_ember   -> red_laterite_soil_stones
+  ground_peaks   -> snow_02
+  road           -> aerial_asphalt_01
+  rock           -> rock_06
+  metal          -> metal_plate
+
+Each set: _diff.jpg (albedo, sRGB) + _nor.jpg (OpenGL normal, linear), 1K JPG.

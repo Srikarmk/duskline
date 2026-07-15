@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { ROAD_HALF_WIDTH } from "./constants";
-import { terrainBump, stoneMaps } from "./textures";
+import { terrainBump, stoneMaps, pbr, tileSet } from "./textures";
 import type { RealmPalette } from "./realms";
 import type { RealmId } from "../game/engine";
 
@@ -138,10 +138,20 @@ export function makeGrassTexture(pal: RealmPalette): THREE.Texture {
 
 export function makeGround(groundTex: THREE.Texture): THREE.Mesh {
   const geo = new THREE.CircleGeometry(1400, 64);
-  const mat = new THREE.MeshStandardMaterial({
-    map: groundTex, bumpMap: terrainBump(120), bumpScale: 0.6,
-    metalness: 0, roughness: 1,
-  });
+  const lib = pbr();
+  let mat: THREE.MeshStandardMaterial;
+  if (lib) {
+    // real CC0 ground albedo + normal, tiled across the terrain
+    const t = tileSet(lib.ground, 220);
+    mat = new THREE.MeshStandardMaterial({
+      map: t.diff, normalMap: t.nor, normalScale: new THREE.Vector2(1, 1),
+      metalness: 0, roughness: 1,
+    });
+  } else {
+    mat = new THREE.MeshStandardMaterial({
+      map: groundTex, bumpMap: terrainBump(120), bumpScale: 0.6, metalness: 0, roughness: 1,
+    });
+  }
   const mesh = new THREE.Mesh(geo, mat);
   mesh.rotation.x = -Math.PI / 2;
   mesh.position.y = -0.05;
@@ -176,11 +186,20 @@ export function makeGrassField(pal: RealmPalette, pts: Placement[]): THREE.Insta
 
 export function makeRockField(pal: RealmPalette, pts: Placement[]): THREE.InstancedMesh {
   const geo = new THREE.DodecahedronGeometry(0.4, 0);
-  const stone = stoneMaps(pal.mountainDark);
-  const mat = new THREE.MeshStandardMaterial({
-    color: pal.mountainDark, map: stone.map, bumpMap: stone.bump, bumpScale: 0.15,
-    metalness: 0.1, roughness: 0.95,
-  });
+  const lib = pbr();
+  let mat: THREE.MeshStandardMaterial;
+  if (lib) {
+    const t = tileSet(lib.rock, 1);
+    mat = new THREE.MeshStandardMaterial({
+      map: t.diff, normalMap: t.nor, color: 0x8a8a8a, metalness: 0.1, roughness: 0.95,
+    });
+  } else {
+    const stone = stoneMaps(pal.mountainDark);
+    mat = new THREE.MeshStandardMaterial({
+      color: pal.mountainDark, map: stone.map, bumpMap: stone.bump, bumpScale: 0.15,
+      metalness: 0.1, roughness: 0.95,
+    });
+  }
   const mesh = new THREE.InstancedMesh(geo, mat, pts.length);
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
@@ -372,13 +391,17 @@ export function makeMountainRing(pal: RealmPalette, cx: number, cz: number, radi
     { r: radius, color: pal.mountainDark, count: 26, h: [40, 90], fog: true },
     { r: radius * 0.82, color: pal.mountain, count: 20, h: [30, 70], fog: true },
   ];
+  const lib = pbr();
+  const rockTex = lib ? tileSet(lib.rock, 4) : null;
   for (const ring of rings) {
+    const mat = rockTex
+      ? new THREE.MeshStandardMaterial({ color: ring.color, map: rockTex.diff, normalMap: rockTex.nor, roughness: 1, metalness: 0 })
+      : new THREE.MeshLambertMaterial({ color: ring.color });
     for (let i = 0; i < ring.count; i++) {
       const a = (i / ring.count) * Math.PI * 2 + rand() * 0.2;
       const h = ring.h[0] + rand() * (ring.h[1] - ring.h[0]);
       const rad = h * (0.7 + rand() * 0.5);
       const geo = new THREE.ConeGeometry(rad, h, 5);
-      const mat = new THREE.MeshLambertMaterial({ color: ring.color });
       const peak = new THREE.Mesh(geo, mat);
       peak.position.set(cx + Math.cos(a) * ring.r, h / 2 - 6, cz + Math.sin(a) * ring.r);
       peak.rotation.y = rand() * Math.PI;

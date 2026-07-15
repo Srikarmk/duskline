@@ -196,6 +196,19 @@ full road** (and the window with them), so you launch from any line. The
 and neon kerbs dimmed) so it's less distracting, and the forest gets
 **per-instance colour variation** so it's not a wall of identical trees.
 
+### 15. Real CC0 PBR textures (this pass)
+Swapped the hand-drawn canvas textures for **real 1K CC0 PBR sets from Poly
+Haven** (`public/textures/`, public domain): a per-realm ground (forest floor /
+red volcanic soil / snow), asphalt, rock, and metal — each with an albedo +
+normal map. They load asynchronously alongside the models, so the **ground now
+has genuine terrain detail**, the **road is real asphalt** (procedural lane
+markings kept, real normal for the surface), **rocks and mountains** use a rock
+set, and the **cars** get metal-plate surface relief from a normal map while
+keeping their bright livery colour. Falls back to the procedural maps if a set
+fails to load.
+
+![Real CC0 ground / asphalt / rock textures](screenshots/real-assets.jpg)
+
 ---
 
 ## Where it stands now

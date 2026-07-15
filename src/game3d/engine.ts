@@ -33,6 +33,7 @@ import {
   makeParticleField, makeStartGantry, varyTint,
   type MechRig, type Placement, type ParticleField,
 } from "./objects";
+import { loadPBR } from "./textures";
 import { makeKart, CAR_SPECS, CAR_IDS, type CarStat } from "./cars";
 import { REALMS, pickScenery, type RealmSpec, type SceneryKind } from "./realms";
 import { Opponent } from "./ai";
@@ -324,7 +325,9 @@ export class Game {
   }
 
   private async init() {
-    const library = await loadModels();
+    // load the CC0 PBR textures for this realm alongside the models
+    const groundName = this.realm.style === "void" ? "ground_peaks" : `ground_${this.realm.id}`;
+    const [library] = await Promise.all([loadModels(), loadPBR(groundName)]);
     if (this.stopped) return;
     this.buildWorld(library);
     this.phase = "countdown";

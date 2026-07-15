@@ -1,5 +1,57 @@
 import * as THREE from "three";
 
+// ---------------------------------------------------------------------------
+// real CC0 PBR textures (Poly Haven) — loaded from /public/textures
+// ---------------------------------------------------------------------------
+
+export interface TexSet { diff: THREE.Texture; nor: THREE.Texture; }
+export interface PBRLib { ground: TexSet; road: TexSet; rock: TexSet; metal: TexSet; }
+
+let PBR: PBRLib | null = null;
+export function pbr(): PBRLib | null { return PBR; }
+
+const setCache = new Map<string, TexSet>();
+
+async function loadSet(name: string): Promise<TexSet> {
+  const cached = setCache.get(name);
+  if (cached) return cached;
+  const loader = new THREE.TextureLoader();
+  const [diff, nor] = await Promise.all([
+    loader.loadAsync(`/textures/${name}_diff.jpg`),
+    loader.loadAsync(`/textures/${name}_nor.jpg`),
+  ]);
+  diff.colorSpace = THREE.SRGBColorSpace;
+  nor.colorSpace = THREE.NoColorSpace;
+  for (const t of [diff, nor]) {
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.anisotropy = 8;
+  }
+  const set: TexSet = { diff, nor };
+  setCache.set(name, set);
+  return set;
+}
+
+/** Load the PBR sets a realm needs (its ground + shared road/rock/metal). */
+export async function loadPBR(groundName: string): Promise<PBRLib> {
+  const [ground, road, rock, metal] = await Promise.all([
+    loadSet(groundName), loadSet("road"), loadSet("rock"), loadSet("metal"),
+  ]);
+  PBR = { ground, road, rock, metal };
+  return PBR;
+}
+
+/** A repeat-adjusted clone of a texture set (so one image can tile at different
+ *  scales on different surfaces without fighting over `.repeat`). */
+export function tileSet(set: TexSet, ru: number, rv = ru): TexSet {
+  const diff = set.diff.clone();
+  const nor = set.nor.clone();
+  diff.repeat.set(ru, rv);
+  nor.repeat.set(ru, rv);
+  diff.needsUpdate = true;
+  nor.needsUpdate = true;
+  return { diff, nor };
+}
+
 // Procedural material maps — colour + bump — so surfaces read as textured
 // (metal panels, asphalt grain, terrain, stone) and catch light with relief,
 // instead of flat solid colours. Bump maps are grayscale height (white = high);

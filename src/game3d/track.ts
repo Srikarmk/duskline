@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { ROAD_HALF_WIDTH } from "./constants";
-import { asphaltBump } from "./textures";
+import { asphaltBump, pbr, tileSet } from "./textures";
 import type { RealmPalette } from "./realms";
 
 const TEX_TILE_METERS = 10;
@@ -115,13 +115,23 @@ export class Track {
     geo.setIndex(indices);
     geo.computeVertexNormals();
 
-    const bump = asphaltBump();
-    bump.repeat.set(4, 4);
-    const mat = new THREE.MeshStandardMaterial({
-      map: texture, bumpMap: bump, bumpScale: 0.04,
-      metalness: 0.0, roughness: 0.92, side: THREE.DoubleSide,
+    // procedural colour (keeps the lane markings + kerbs) + real asphalt normal
+    const lib = pbr();
+    const matOpts: THREE.MeshStandardMaterialParameters = {
+      map: texture, metalness: 0.0, roughness: 0.95, side: THREE.DoubleSide,
       polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
-    });
+    };
+    if (lib) {
+      const nor = tileSet(lib.road, 6, 5).nor;
+      matOpts.normalMap = nor;
+      matOpts.normalScale = new THREE.Vector2(0.7, 0.7);
+    } else {
+      const bump = asphaltBump();
+      bump.repeat.set(4, 4);
+      matOpts.bumpMap = bump;
+      matOpts.bumpScale = 0.04;
+    }
+    const mat = new THREE.MeshStandardMaterial(matOpts);
     const mesh = new THREE.Mesh(geo, mat);
     mesh.renderOrder = 1;
     return mesh;
