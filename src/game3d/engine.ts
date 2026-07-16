@@ -1427,7 +1427,6 @@ export class Game {
       this.freeDrive.vx += rx * away * 9;                    // shove off the ramp
       this.freeDrive.vz += rz * away * 9;
       this.freeDrive.speed *= 0.72;
-      this.spin = 0.28 * away;                               // visible bend/roll
       this.shake = Math.max(this.shake, 0.5);
       this.crashFlash = 0.25;
       this.sound.play("bump");
@@ -1482,6 +1481,15 @@ export class Game {
       this.alt = 0;
       this.vAlt = 0;
       if (this.stuntAir) this.land();
+    }
+
+    // on the ground, any residual barrel-roll / flip eases back to level, so the
+    // car can never get stuck rolled onto its side and clipping through the road
+    if (this.alt < 0.15 && !this.stuntAir) {
+      this.spin -= this.spin * Math.min(1, dt * 14);
+      this.flip -= this.flip * Math.min(1, dt * 14);
+      if (Math.abs(this.spin) < 0.01) this.spin = 0;
+      if (Math.abs(this.flip) < 0.01) this.flip = 0;
     }
 
     // nose pitch (negative = nose up): angle UP a ramp face, arc in the air (up

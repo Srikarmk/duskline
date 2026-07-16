@@ -66,7 +66,7 @@ export class FreeDrive {
     else if (input.brake) vf -= tuning.accel * 1.5 * dt;          // brake / reverse
     else vf -= Math.sign(vf) * Math.min(Math.abs(vf), tuning.accel * 0.35 * dt); // engine drag
     const topFwd = tuning.maxSpeed * grassMul;
-    vf = clampN(vf, -tuning.maxSpeed * 0.28, topFwd);
+    vf = clampN(vf, -tuning.maxSpeed * 0.12, topFwd); // only a slow reverse (for un-sticking, not racing)
 
     // --- steering ---------------------------------------------------------
     // turn rate falls with speed (twitchy when slow, stable when fast) and needs
