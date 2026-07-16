@@ -950,6 +950,17 @@ export class Game {
     return new THREE.Mesh(geo, mat);
   }
 
+  /** Height of the follow-the-road terrain at a track distance + lateral offset
+   *  (metres). Matches buildGroundTerrain's falloff so scenery sits ON the ground
+   *  now that roads have elevation (placing at y=0 buried it all underground). */
+  private terrainYAt(dist: number, off: number): number {
+    const cy = this.track.pointAt(this.track.wrap(dist), 0, undefined, true).y;
+    const a = Math.abs(off);
+    const near = 42, fall = 130;
+    const t = a <= near ? 1 : a >= near + fall ? 0 : 1 - (a - near) / fall;
+    return cy * (t * t * (3 - 2 * t));
+  }
+
   private decorate(library: ModelLibrary) {
     const rand = mulberry32(1337);
     const { track, realm } = this;
@@ -983,16 +994,18 @@ export class Game {
             // keep big monuments off the verge so they don't overhang the track
             const nearOff = LANDMARK_KINDS.has(kind) ? 34 + rand() * 22 : 5 + rand() * 13;
             const off = side * (ROAD_HALF_WIDTH + nearOff);
-            const p = track.pointAt(d + rand() * 4, off);
-            obj.position.set(p.x, 0, p.z);
+            const jd = d + rand() * 4;
+            const p = track.pointAt(jd, off);
+            obj.position.set(p.x, this.terrainYAt(jd, off), p.z); // sit on the terrain (roads have elevation now)
             this.scene.add(obj);
           }
           // mid band
           if (rand() < 0.55) {
             const obj = this.sceneryObject(pickScenery(realm, rand), library, rand);
             const off = side * (ROAD_HALF_WIDTH + 20 + rand() * 36);
-            const p = track.pointAt(d + rand() * 4, off);
-            obj.position.set(p.x, 0, p.z);
+            const jd = d + rand() * 4;
+            const p = track.pointAt(jd, off);
+            obj.position.set(p.x, this.terrainYAt(jd, off), p.z);
             obj.scale.multiplyScalar(1.1 + rand() * 0.5);
             this.scene.add(obj);
           }
@@ -1000,8 +1013,9 @@ export class Game {
           if (rand() < 0.28) {
             const obj = this.sceneryObject(pickScenery(realm, rand), library, rand);
             const off = side * (ROAD_HALF_WIDTH + 58 + rand() * 70);
-            const p = track.pointAt(d + rand() * 5, off);
-            obj.position.set(p.x, 0, p.z);
+            const jd = d + rand() * 5;
+            const p = track.pointAt(jd, off);
+            obj.position.set(p.x, this.terrainYAt(jd, off), p.z);
             obj.scale.multiplyScalar(1.5 + rand() * 1.1);
             this.scene.add(obj);
           }
@@ -1376,9 +1390,8 @@ export class Game {
 
     // visual body yaw: lean into the slip + steer on the ground; barrel-roll in air
     if (this.stuntAir) {
-      this.spin += rawSteer * 1.25 * dt;
-      const pitchIn = this.input.accelerate ? 1 : this.input.brake ? -1 : 0;
-      this.flip += pitchIn * 1.25 * dt;
+      // in the air the car stays level and just arcs (carPitch handles the nose
+      // from vertical velocity) — NO involuntary barrel-rolls that land you flipped
       this.carYaw += (0 - this.carYaw) * Math.min(1, dt * 6);
     } else {
       const yawTarget = clamp(this.freeDrive.slip * 0.05, -0.45, 0.45) + this.steer * 0.08;
