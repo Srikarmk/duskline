@@ -1073,6 +1073,25 @@ export class Game {
       }
     }
 
+    // JUMPS AT CRESTS: a ramp on the up-slope of each real hilltop, so you launch
+    // off the top and sail over the drop (in free-roam the car hugs the road, so
+    // the ramp is what gives the air) — the Asphalt-8 hill-jump.
+    {
+      const yAt = (dd: number) => track.pointAt(track.wrap(dd), 0, undefined, true).y;
+      const mega = RAMP_SPECS.mega;
+      let lastCrest = -1e9;
+      for (let d = 40; d < len - 40; d += 6) {
+        const back = yAt(d - 24), here = yAt(d), fwd = yAt(d + 24);
+        if (here - back > 2.5 && here - fwd > 3.5 && d - lastCrest > 240) {
+          lastCrest = d;
+          const rd = track.wrap(d - 8);
+          this.addEntity("ramp", rd, 0, makeRamp("mega"), 0, mega.power);
+          this.ramps.push({ dist: rd, power: mega.power, lane: 0, len: mega.l, height: mega.h });
+          for (const off of [20, 30, 42]) this.addEntity("airGem", d + off, 0, makeGem(0xfbbf24, true), AIR_GEM_ALT);
+        }
+      }
+    }
+
     // transform orbs + monsters
     if (this.cfg.orbs) {
       for (let d = 120; d < len - 60; d += 460) {
