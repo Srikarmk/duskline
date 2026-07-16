@@ -22,7 +22,9 @@ export type RealmId =
   | "forest" | "ember" | "peaks" | "void"
   | "sands" | "castle" | "circuit" | "metro"
   | "nebula";
-export type CarId = "comet" | "bolt" | "titan" | "wisp" | "apex" | "goliath" | "corsair" | "baron";
+export type CarId =
+  | "comet" | "bolt" | "titan" | "wisp" | "apex" | "goliath"
+  | "wraith" | "nitro" | "dune" | "blaze";
 
 export interface RaceStanding {
   name: string;

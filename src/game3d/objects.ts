@@ -3,6 +3,8 @@ import { ROAD_HALF_WIDTH } from "./constants";
 import { terrainBump, stoneMaps, pbr, tileSet } from "./textures";
 import type { RealmPalette } from "./realms";
 import type { RealmId } from "../game/engine";
+import type { CarId } from "./cars";
+import { CAR_SPECS } from "./carData";
 
 // --- sky ------------------------------------------------------------------
 
@@ -1275,103 +1277,492 @@ export interface MechRig {
   sword: THREE.Group;
 }
 
-export function makeMech(): MechRig {
-  const group = new THREE.Group();
-  const steel = new THREE.MeshStandardMaterial({ color: 0x1f6f8b, metalness: 0.8, roughness: 0.3 });
-  const steelDark = new THREE.MeshStandardMaterial({ color: 0x0d3b4a, metalness: 0.8, roughness: 0.4 });
-  const trim = new THREE.MeshStandardMaterial({ color: 0x67e8f9, emissive: 0x22d3ee, emissiveIntensity: 0.6, metalness: 0.6, roughness: 0.3 });
+// Each car folds up into its OWN battle-mech. Every variant still exposes the
+// same rig (group / wings / core / armR / sword), so the engine animates them
+// identically — armR.rotation.x swings the weapon, wings.visible toggles flight,
+// core.material.emissiveIntensity pulses — but the silhouette, palette and
+// weapon/wings change per car.
+type MechWeapon = "sword" | "rapier" | "hammer" | "daggers" | "saber" | "wrecker" | "scythe" | "drill" | "machete" | "lance";
+type MechWings = "delta" | "streamer" | "stub" | "dragonfly" | "jet" | "industrial" | "ghost" | "header" | "rollbar" | "rocket";
+type MechHead = "visor" | "crest" | "sunk" | "insect" | "canopy" | "dome" | "stack";
 
-  const box = (w: number, h: number, d: number, mat: THREE.Material, x: number, y: number, z: number) => {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-    m.position.set(x, y, z);
-    return m;
+interface MechSpec {
+  scale: number;      // overall size (goliath towers, wisp is small)
+  torsoW: number;     // torso width
+  torsoH: number;     // torso height
+  legStyle: "walker" | "hover" | "tank";
+  legH: number;       // leg length
+  build: number;      // limb / plate chunkiness
+  shoulder: number;   // pauldron scale
+  head: MechHead;
+  weapon: MechWeapon;
+  wings: MechWings;
+  lean?: number;      // forward cant of the torso (jet / speed forms)
+  exhaust?: boolean;  // exhaust stacks instead of tidy thrusters
+}
+
+// One identity per car — proportions + weapon + wings that echo its character
+// (goliath = brute tank, wisp = nimble flyer, apex = jet-mech, baron-heavy, …).
+const MECH_SPECS: Record<CarId, MechSpec> = {
+  comet:   { scale: 1.00, torsoW: 1.50, torsoH: 1.40, legStyle: "walker", legH: 1.20, build: 1.00, shoulder: 1.00, head: "visor",  weapon: "sword",   wings: "delta" },
+  bolt:    { scale: 1.02, torsoW: 1.16, torsoH: 1.55, legStyle: "walker", legH: 1.55, build: 0.82, shoulder: 0.85, head: "crest",  weapon: "rapier",  wings: "streamer", lean: 0.12 },
+  titan:   { scale: 1.12, torsoW: 1.95, torsoH: 1.35, legStyle: "walker", legH: 0.95, build: 1.45, shoulder: 1.60, head: "sunk",   weapon: "hammer",  wings: "stub" },
+  wisp:    { scale: 0.86, torsoW: 1.05, torsoH: 1.10, legStyle: "hover",  legH: 0.95, build: 0.62, shoulder: 0.70, head: "insect", weapon: "daggers", wings: "dragonfly" },
+  apex:    { scale: 0.98, torsoW: 1.28, torsoH: 1.40, legStyle: "walker", legH: 1.28, build: 0.84, shoulder: 0.95, head: "canopy", weapon: "saber",   wings: "jet", lean: 0.18 },
+  goliath: { scale: 1.28, torsoW: 2.10, torsoH: 1.50, legStyle: "tank",   legH: 0.92, build: 1.70, shoulder: 1.85, head: "dome",   weapon: "wrecker", wings: "industrial", exhaust: true },
+  wraith:  { scale: 1.02, torsoW: 1.24, torsoH: 1.45, legStyle: "hover",  legH: 1.15, build: 0.80, shoulder: 0.95, head: "dome",   weapon: "scythe",  wings: "ghost" },
+  nitro:   { scale: 1.05, torsoW: 1.62, torsoH: 1.28, legStyle: "walker", legH: 1.00, build: 1.28, shoulder: 1.22, head: "stack",  weapon: "drill",   wings: "header", exhaust: true },
+  dune:    { scale: 1.00, torsoW: 1.54, torsoH: 1.34, legStyle: "walker", legH: 1.14, build: 1.16, shoulder: 1.12, head: "visor",  weapon: "machete", wings: "rollbar" },
+  blaze:   { scale: 1.03, torsoW: 1.24, torsoH: 1.45, legStyle: "walker", legH: 1.32, build: 0.85, shoulder: 1.00, head: "canopy", weapon: "lance",   wings: "rocket", lean: 0.14, exhaust: true },
+};
+
+interface MechMats {
+  body: THREE.MeshStandardMaterial;
+  steel: THREE.MeshStandardMaterial;
+  trim: THREE.MeshStandardMaterial;
+  blade: THREE.MeshStandardMaterial;
+  accent: THREE.Color;
+}
+
+function mBox(w: number, h: number, d: number, mat: THREE.Material, x: number, y: number, z: number): THREE.Mesh {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  m.position.set(x, y, z);
+  return m;
+}
+
+/** Livery-derived faceted armour palette for a car's mech: a painted body tone,
+ *  dark structural steel, a bright emissive accent (trim) and a glowing energy
+ *  blade — all pulled from the car's livery colour. */
+function mechMaterials(carId: CarId): MechMats {
+  const src = new THREE.Color(CAR_SPECS[carId].color);
+  const hsl = { h: 0, s: 0, l: 0 };
+  src.getHSL(hsl);
+  const bodyCol = src.clone();
+  if (hsl.l > 0.6) bodyCol.offsetHSL(0, 0, -0.14);            // keep pale liveries reading as armour
+  const steelCol = src.clone().offsetHSL(0, -0.16, hsl.l > 0.5 ? -0.34 : -0.22);
+  const accent = src.clone().offsetHSL(0, 0.08, hsl.l > 0.6 ? 0.04 : 0.2);
+  const body = new THREE.MeshStandardMaterial({ color: bodyCol, metalness: 0.8, roughness: 0.34, flatShading: true });
+  const steel = new THREE.MeshStandardMaterial({ color: steelCol, metalness: 0.82, roughness: 0.44, flatShading: true });
+  const trim = new THREE.MeshStandardMaterial({ color: accent, emissive: accent, emissiveIntensity: 0.7, metalness: 0.6, roughness: 0.3, flatShading: true });
+  const blade = new THREE.MeshStandardMaterial({
+    color: accent.clone().offsetHSL(0, -0.3, 0.4), emissive: accent, emissiveIntensity: 1.8,
+    transparent: true, opacity: 0.92, flatShading: true,
+  });
+  return { body, steel, trim, blade, accent };
+}
+
+/** The mech's head — a distinct crown per car (open visor, speed crest, sunk
+ *  brute skull, insect eyes, jet nose-cone, armoured dome, dragster stacks). */
+function mechHead(style: MechHead, m: MechMats, y: number): THREE.Group {
+  const g = new THREE.Group();
+  g.position.y = y;
+  const eye = new THREE.MeshStandardMaterial({ color: m.accent, emissive: m.accent, emissiveIntensity: 2 });
+  switch (style) {
+    case "visor": {
+      g.add(mBox(0.7, 0.6, 0.65, m.steel, 0, 0, 0));
+      g.add(mBox(0.55, 0.16, 0.12, eye, 0, 0.05, 0.34));
+      g.add(mBox(0.08, 0.4, 0.08, m.trim, 0.28, 0.45, 0));
+      g.add(mBox(0.08, 0.3, 0.08, m.trim, -0.28, 0.4, 0));
+      break;
+    }
+    case "crest": {
+      g.add(mBox(0.5, 0.56, 0.6, m.steel, 0, 0, 0));
+      g.add(mBox(0.48, 0.12, 0.1, eye, 0, 0.06, 0.3));
+      const fin = mBox(0.08, 0.55, 0.5, m.trim, 0, 0.42, -0.05);
+      fin.rotation.x = -0.3;
+      g.add(fin);
+      break;
+    }
+    case "sunk": {
+      g.add(mBox(0.56, 0.46, 0.56, m.steel, 0, -0.14, 0));
+      g.add(mBox(0.42, 0.12, 0.1, eye, 0, -0.1, 0.28));
+      break;
+    }
+    case "insect": {
+      g.add(new THREE.Mesh(new THREE.IcosahedronGeometry(0.3, 0), m.steel));
+      for (const sx of [-1, 1]) {
+        const e = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), eye);
+        e.position.set(sx * 0.15, 0.02, 0.2);
+        g.add(e);
+        const ant = mBox(0.04, 0.42, 0.04, m.trim, sx * 0.12, 0.34, -0.04);
+        ant.rotation.z = sx * 0.35;
+        g.add(ant);
+      }
+      break;
+    }
+    case "canopy": {
+      const nose = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.82, 6), m.body);
+      nose.rotation.x = Math.PI / 2;
+      nose.position.z = 0.12;
+      g.add(nose);
+      g.add(mBox(0.42, 0.14, 0.32, eye, 0, 0.02, 0.16));
+      break;
+    }
+    case "dome": {
+      g.add(new THREE.Mesh(new THREE.SphereGeometry(0.38, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), m.steel));
+      g.add(mBox(0.5, 0.16, 0.12, eye, 0, -0.04, 0.3));
+      break;
+    }
+    case "stack": {
+      g.add(mBox(0.62, 0.5, 0.6, m.steel, 0, 0, 0));
+      g.add(mBox(0.5, 0.14, 0.1, eye, 0, 0.05, 0.3));
+      for (const sx of [-1, 1]) {
+        const horn = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.09, 0.36, 6), m.trim);
+        horn.position.set(sx * 0.2, 0.4, -0.04);
+        g.add(horn);
+      }
+      break;
+    }
+  }
+  return g;
+}
+
+/** The weapon on the mech's right (swinging) arm. Every weapon has its grip at
+ *  the origin and reaches up along +y, so the engine's armR.rotation.x arc swings
+ *  it exactly the way the original energy sword swung. */
+function mechWeapon(kind: MechWeapon, m: MechMats): THREE.Group {
+  const g = new THREE.Group();
+  switch (kind) {
+    case "sword": {
+      g.add(mBox(0.16, 0.5, 0.16, m.steel, 0, 0, 0));
+      g.add(mBox(0.5, 0.12, 0.16, m.trim, 0, 0.28, 0));
+      g.add(mBox(0.22, 2.6, 0.08, m.blade, 0, 1.6, 0));
+      break;
+    }
+    case "rapier": {
+      g.add(mBox(0.12, 0.44, 0.12, m.steel, 0, 0, 0));
+      const guard = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.04, 6, 10), m.trim);
+      guard.rotation.x = Math.PI / 2;
+      guard.position.y = 0.24;
+      g.add(guard);
+      g.add(mBox(0.08, 3.2, 0.05, m.blade, 0, 1.85, 0)); // long slender blade
+      break;
+    }
+    case "hammer": {
+      g.add(mBox(0.2, 2.0, 0.2, m.steel, 0, 0.9, 0));    // haft
+      g.add(mBox(0.82, 0.72, 0.98, m.steel, 0, 1.95, 0)); // head
+      g.add(mBox(0.86, 0.22, 1.02, m.blade, 0, 1.95, 0)); // glowing band
+      break;
+    }
+    case "daggers": {
+      for (const sx of [-1, 1]) {
+        const b = mBox(0.1, 1.3, 0.05, m.blade, sx * 0.14, 0.75, 0);
+        b.rotation.z = sx * 0.16;
+        g.add(b);
+      }
+      g.add(mBox(0.34, 0.16, 0.16, m.trim, 0, 0, 0)); // knuckle guard
+      break;
+    }
+    case "saber": {
+      g.add(mBox(0.14, 0.5, 0.14, m.steel, 0, 0, 0)); // emitter
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 2.5, 8), m.blade);
+      beam.position.y = 1.55;
+      g.add(beam);
+      break;
+    }
+    case "wrecker": {
+      g.add(mBox(0.2, 1.4, 0.2, m.steel, 0, 0.65, 0)); // shaft
+      const ball = new THREE.Mesh(new THREE.IcosahedronGeometry(0.5, 0), m.steel);
+      ball.position.y = 1.7;
+      g.add(ball);
+      const up = new THREE.Vector3(0, 1, 0);
+      const dirs: [number, number, number][] = [[0, 1, 0], [1, 0.3, 0], [-1, 0.3, 0], [0, 0.3, 1], [0, 0.3, -1]];
+      for (const d of dirs) {
+        const v = new THREE.Vector3(d[0], d[1], d[2]).normalize();
+        const spike = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.32, 5), m.trim);
+        spike.quaternion.setFromUnitVectors(up, v);
+        spike.position.copy(v).multiplyScalar(0.62).add(new THREE.Vector3(0, 1.7, 0));
+        g.add(spike);
+      }
+      break;
+    }
+    case "scythe": {
+      g.add(mBox(0.14, 2.8, 0.14, m.steel, 0, 1.1, 0)); // long haft
+      const blade = new THREE.Mesh(new THREE.TorusGeometry(0.7, 0.06, 4, 16, Math.PI * 0.85), m.blade);
+      blade.position.set(0.1, 2.5, 0);
+      blade.rotation.z = -Math.PI * 0.18;
+      g.add(blade);
+      break;
+    }
+    case "drill": {
+      g.add(mBox(0.22, 0.6, 0.22, m.steel, 0, 0, 0)); // mount
+      const drill = new THREE.Mesh(new THREE.ConeGeometry(0.34, 1.9, 8), m.steel);
+      drill.position.y = 1.35;
+      g.add(drill);
+      for (const yy of [0.95, 1.4, 1.8]) { // spiralling emissive bands
+        const r = new THREE.Mesh(new THREE.TorusGeometry(0.26 * (1 - (yy - 0.9) / 2.2), 0.04, 4, 10), m.trim);
+        r.rotation.x = Math.PI / 2;
+        r.position.y = yy;
+        g.add(r);
+      }
+      break;
+    }
+    case "machete": {
+      g.add(mBox(0.16, 0.42, 0.14, m.steel, 0, 0, 0));   // grip
+      g.add(mBox(0.14, 0.14, 0.5, m.steel, 0, 0.24, 0.1)); // knuckle
+      g.add(mBox(0.42, 1.5, 0.08, m.blade, 0, 1.05, 0.06)); // broad short blade
+      break;
+    }
+    case "lance": {
+      g.add(mBox(0.14, 0.5, 0.14, m.steel, 0, 0, 0));
+      g.add(mBox(0.1, 2.4, 0.1, m.steel, 0, 1.45, 0)); // shaft
+      const tip = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.85, 6), m.blade);
+      tip.position.y = 3.0;
+      g.add(tip);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.04, 6, 10), m.trim);
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = 2.5;
+      g.add(ring);
+      break;
+    }
+  }
+  return g;
+}
+
+/** A swept faceted wing panel in the XY plane (root at origin, reaching +x/+y),
+ *  reused for most of the flight-wing styles. */
+function mechWingPanel(reach: number, rise: number): THREE.ShapeGeometry {
+  const s = new THREE.Shape();
+  s.moveTo(0, 0);
+  s.lineTo(reach, rise * 0.62);
+  s.lineTo(reach * 0.85, rise);
+  s.lineTo(0, rise * 0.46);
+  s.closePath();
+  return new THREE.ShapeGeometry(s);
+}
+
+/** The flight wings, hidden until the engine toggles them on when airborne. Each
+ *  style reads as a different flyer: delta, speed streamers, brute boosters,
+ *  insect gossamer, jet delta+tails, industrial packs, spectral shards, dragster
+ *  wing, off-road light-bar or rocket nacelles. */
+function mechWings(kind: MechWings, m: MechMats, backY: number): THREE.Group {
+  const g = new THREE.Group();
+  const bz = -0.55;
+  const solid = new THREE.MeshStandardMaterial({ color: m.accent.clone().offsetHSL(0, 0, -0.1), emissive: m.accent, emissiveIntensity: 1.0, side: THREE.DoubleSide, flatShading: true });
+  const filmy = new THREE.MeshStandardMaterial({ color: m.accent, emissive: m.accent, emissiveIntensity: 0.7, side: THREE.DoubleSide, transparent: true, opacity: 0.34, flatShading: true });
+
+  const pair = (geo: THREE.ShapeGeometry, mat: THREE.Material, x: number, y: number, z: number, yaw: number) => {
+    for (const sx of [-1, 1]) {
+      const w = new THREE.Mesh(geo, mat);
+      w.scale.x = sx;
+      w.position.set(sx * x, y, z);
+      w.rotation.y = sx * yaw;
+      g.add(w);
+    }
   };
 
-  // legs
-  group.add(box(0.55, 1.2, 0.6, steelDark, -0.42, 0.6, 0));
-  group.add(box(0.55, 1.2, 0.6, steelDark, 0.42, 0.6, 0));
-  group.add(box(0.65, 0.3, 0.9, steel, -0.42, 0.15, 0.1)); // feet
-  group.add(box(0.65, 0.3, 0.9, steel, 0.42, 0.15, 0.1));
-  group.add(box(1.1, 0.5, 0.7, steelDark, 0, 1.35, 0)); // pelvis
+  switch (kind) {
+    case "delta": {
+      pair(mechWingPanel(2.6, 1.3), solid, 0.4, backY, bz, Math.PI * 0.12);
+      break;
+    }
+    case "streamer": {
+      pair(mechWingPanel(3.3, 0.55), solid, 0.35, backY + 0.1, bz - 0.1, Math.PI * 0.22);
+      for (const sx of [-1, 1]) {
+        const streak = mBox(0.06, 0.06, 2.4, m.trim, sx * 1.5, backY + 0.25, bz - 1.1);
+        streak.rotation.y = sx * Math.PI * 0.1;
+        g.add(streak);
+      }
+      break;
+    }
+    case "stub": {
+      pair(mechWingPanel(1.1, 0.9), solid, 0.5, backY, bz, Math.PI * 0.05);
+      for (const sx of [-1, 1]) {
+        g.add(mBox(0.44, 0.7, 0.5, m.steel, sx * 0.72, backY, bz - 0.2));
+        g.add(mBox(0.32, 0.32, 0.1, m.trim, sx * 0.72, backY - 0.02, bz - 0.46));
+      }
+      break;
+    }
+    case "dragonfly": {
+      pair(mechWingPanel(2.5, 0.5), filmy, 0.3, backY + 0.35, bz, Math.PI * 0.08);
+      pair(mechWingPanel(2.1, 0.44), filmy, 0.3, backY - 0.15, bz - 0.1, Math.PI * 0.16);
+      break;
+    }
+    case "jet": {
+      pair(mechWingPanel(2.3, 1.0), solid, 0.45, backY, bz, Math.PI * 0.2);
+      for (const sx of [-1, 1]) {
+        const fin = mBox(0.05, 0.75, 0.55, solid, sx * 0.5, backY + 0.3, bz - 0.3);
+        fin.rotation.x = 0.2;
+        g.add(fin);
+      }
+      break;
+    }
+    case "industrial": {
+      for (const sx of [-1, 1]) {
+        g.add(mBox(0.55, 1.15, 0.7, m.steel, sx * 0.78, backY, bz - 0.2));
+        for (const vy of [-0.3, 0, 0.3]) g.add(mBox(0.4, 0.12, 0.1, m.trim, sx * 0.78, backY + vy, bz - 0.56));
+        const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, 0.4, 8), m.trim);
+        nozzle.position.set(sx * 0.78, backY - 0.62, bz - 0.2);
+        g.add(nozzle);
+      }
+      pair(mechWingPanel(1.0, 0.8), solid, 1.0, backY + 0.2, bz - 0.1, Math.PI * 0.05);
+      break;
+    }
+    case "ghost": {
+      for (const sx of [-1, 1]) {
+        for (const [i, rr] of [[0, 1.8], [1, 1.5], [2, 1.2]] as const) {
+          const shard = new THREE.Mesh(mechWingPanel(rr, 0.7 + i * 0.2), filmy);
+          shard.scale.x = sx;
+          shard.position.set(sx * 0.25, backY + 0.3 - i * 0.35, bz - i * 0.1);
+          shard.rotation.y = sx * (0.2 + i * 0.14);
+          shard.rotation.z = -i * 0.12;
+          g.add(shard);
+        }
+      }
+      break;
+    }
+    case "header": {
+      for (const sx of [-1, 1]) g.add(mBox(0.08, 0.75, 0.1, m.steel, sx * 0.62, backY + 0.35, bz)); // pylons
+      g.add(mBox(2.4, 0.08, 0.72, solid, 0, backY + 0.75, bz - 0.05));                               // wide rear wing
+      for (const sx of [-1, 1]) g.add(mBox(0.05, 0.42, 0.62, solid, sx * 1.2, backY + 0.58, bz - 0.05)); // endplates
+      break;
+    }
+    case "rollbar": {
+      pair(mechWingPanel(1.8, 1.0), solid, 0.45, backY, bz, Math.PI * 0.1);
+      g.add(mBox(1.7, 0.14, 0.16, m.steel, 0, backY + 0.7, bz));                                     // light bar
+      for (const lx of [-0.55, 0, 0.55]) g.add(mBox(0.22, 0.16, 0.1, m.trim, lx, backY + 0.7, bz + 0.09)); // lamps
+      break;
+    }
+    case "rocket": {
+      pair(mechWingPanel(2.4, 0.9), solid, 0.45, backY, bz, Math.PI * 0.15);
+      for (const sx of [-1, 1]) {
+        const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.24, 0.55, 8), m.trim);
+        nozzle.rotation.x = Math.PI / 2;
+        nozzle.position.set(sx * 2.05, backY + 0.2, bz - 0.25);
+        g.add(nozzle);
+      }
+      break;
+    }
+  }
+  return g;
+}
 
-  // torso
-  const torso = box(1.5, 1.4, 0.85, steel, 0, 2.25, 0);
-  group.add(torso);
-  group.add(box(1.2, 0.5, 0.9, trim, 0, 2.9, 0.05)); // collar
-  group.add(box(0.9, 0.6, 0.1, steelDark, 0, 2.2, 0.45)); // chest plate
+export function makeMech(carId: CarId): MechRig {
+  const spec = MECH_SPECS[carId];
+  const m = mechMaterials(carId);
+  const group = new THREE.Group();
+  const B = spec.build;
+  const legTop = spec.legH;
 
-  // head
-  group.add(box(0.7, 0.6, 0.65, steelDark, 0, 3.5, 0));
-  const visor = box(0.55, 0.16, 0.12, new THREE.MeshStandardMaterial({ color: 0xf0abfc, emissive: 0xf0abfc, emissiveIntensity: 2 }), 0, 3.55, 0.34);
-  group.add(visor);
-  group.add(box(0.08, 0.4, 0.08, trim, 0.28, 3.95, 0)); // antenna
-  group.add(box(0.08, 0.3, 0.08, trim, -0.28, 3.9, 0));
+  // ---- lower body: walking legs, a tank chassis or a hover skirt ----------
+  if (spec.legStyle === "walker") {
+    for (const sx of [-1, 1]) {
+      group.add(mBox(0.5 * B, legTop, 0.55 * B, m.steel, sx * 0.42 * B, legTop * 0.5 + 0.15, 0));
+      group.add(mBox(0.52 * B, 0.13, 0.57 * B, m.trim, sx * 0.42 * B, legTop * 0.62, 0.03)); // knee band
+      group.add(mBox(0.6 * B, 0.3, 0.9 * B, m.body, sx * 0.42 * B, 0.15, 0.1));               // foot
+    }
+    group.add(mBox(1.1 * B, 0.5, 0.7 * B, m.steel, 0, legTop + 0.25, 0));                      // pelvis
+  } else if (spec.legStyle === "tank") {
+    for (const sx of [-1, 1]) {
+      group.add(mBox(0.9 * B, legTop, 1.0 * B, m.steel, sx * 0.58 * B, legTop * 0.5 + 0.2, 0));
+      group.add(mBox(0.5 * B, 0.16, 0.55 * B, m.trim, sx * 0.58 * B, legTop * 0.55, 0.5 * B)); // hip vent
+      group.add(mBox(1.05 * B, 0.38, 1.35 * B, m.steel, sx * 0.58 * B, 0.19, 0.16));           // huge foot
+      const piston = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, legTop * 0.7, 6), m.trim);
+      piston.position.set(sx * 0.58 * B, legTop * 0.55, -0.2);
+      group.add(piston);
+    }
+    group.add(mBox(1.7 * B, 0.6, 1.0 * B, m.steel, 0, legTop + 0.32, 0));                      // massive waist
+    group.add(mBox(1.9 * B, 0.28, 1.1 * B, m.body, 0, legTop + 0.04, 0.1));                    // armour skirt
+  } else {
+    // hover: no ground contact. wraith = a spectral tapered tail; wisp = a small
+    // pod on thin dangling legs. Both ride a glowing under-thruster.
+    if (carId === "wraith") {
+      const skirtH = legTop + 1.3;
+      const skirtMat = m.body.clone();
+      skirtMat.transparent = true;
+      skirtMat.opacity = 0.55;
+      const skirt = new THREE.Mesh(new THREE.ConeGeometry(0.82, skirtH, 6), skirtMat);
+      skirt.rotation.x = Math.PI;               // apex down (a drifting tail)
+      skirt.position.y = skirtH * 0.5 + 0.1;
+      group.add(skirt);
+      for (const sx of [-1, 1]) {
+        const wispBar = mBox(0.1, legTop, 0.1, m.trim, sx * 0.32, legTop * 0.6, -0.08);
+        wispBar.rotation.z = sx * 0.22;
+        group.add(wispBar);
+      }
+    } else {
+      for (const sx of [-1, 1]) {
+        const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.07, legTop, 6), m.steel);
+        thigh.position.set(sx * 0.3, legTop * 0.5 + 0.18, 0);
+        thigh.rotation.z = sx * 0.16;
+        group.add(thigh);
+        group.add(mBox(0.28, 0.14, 0.5, m.body, sx * 0.34, 0.12, 0.06)); // dainty foot
+      }
+      group.add(mBox(0.85, 0.42, 0.62, m.steel, 0, legTop + 0.18, 0));   // hover pod
+    }
+    const thruster = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.12, 0.4, 8), m.trim);
+    thruster.position.y = 0.42;
+    group.add(thruster);
+  }
 
-  // shoulders (pauldrons)
-  group.add(box(0.7, 0.55, 0.9, steelDark, -1.15, 2.75, 0));
-  group.add(box(0.7, 0.55, 0.9, steelDark, 1.15, 2.75, 0));
+  // ---- upper body (torso, head, arms, core), canted forward by `lean` -----
+  const upper = new THREE.Group();
+  const pelvisY = legTop + 0.25;
+  const torsoCY = pelvisY + 0.3 + spec.torsoH * 0.5;
+  const tW = spec.torsoW, tH = spec.torsoH;
 
-  // left arm (static)
-  const armL = new THREE.Group();
-  armL.position.set(-1.15, 2.5, 0);
-  armL.add(box(0.4, 1.3, 0.45, steel, 0, -0.65, 0));
-  armL.add(box(0.45, 0.4, 0.5, trim, 0, -1.35, 0));
-  group.add(armL);
+  upper.add(mBox(tW, tH, 0.85 * B, m.body, 0, torsoCY, 0));                        // torso
+  upper.add(mBox(tW * 0.8, 0.5, 0.9 * B, m.trim, 0, torsoCY + tH * 0.5, 0.05));    // collar
+  upper.add(mBox(tW * 0.6, tH * 0.5, 0.12, m.steel, 0, torsoCY + tH * 0.08, 0.44 * B)); // chest plate
 
-  // right arm (swings) with energy sword
-  const armR = new THREE.Group();
-  armR.position.set(1.15, 2.5, 0);
-  armR.add(box(0.4, 1.3, 0.45, steel, 0, -0.65, 0));
-  armR.add(box(0.45, 0.4, 0.5, trim, 0, -1.35, 0)); // fist
-
-  const sword = new THREE.Group();
-  sword.position.set(0, -1.5, 0.2);
-  const hilt = box(0.16, 0.5, 0.16, steelDark, 0, 0, 0);
-  const guard = box(0.5, 0.12, 0.16, trim, 0, 0.28, 0);
-  const blade = new THREE.Mesh(
-    new THREE.BoxGeometry(0.22, 2.6, 0.08),
-    new THREE.MeshStandardMaterial({ color: 0xe0f7ff, emissive: 0x22d3ee, emissiveIntensity: 1.8, transparent: true, opacity: 0.92 })
-  );
-  blade.position.y = 1.6;
-  sword.add(hilt, guard, blade);
-  armR.add(sword);
-  armR.rotation.x = -0.5; // rest: sword raised
-  group.add(armR);
-
-  // core
+  // faceted emissive core on the chest — the engine pulses its emissiveIntensity
   const core = new THREE.Mesh(
-    new THREE.SphereGeometry(0.28, 16, 12),
-    new THREE.MeshStandardMaterial({ color: 0xf0abfc, emissive: 0xf0abfc, emissiveIntensity: 2.4 })
+    new THREE.IcosahedronGeometry(0.28, 1),
+    new THREE.MeshStandardMaterial({ color: m.accent.clone().offsetHSL(0, -0.2, 0.35), emissive: m.accent, emissiveIntensity: 2.4, flatShading: true })
   );
-  core.position.set(0, 2.3, 0.5);
-  group.add(core);
+  core.position.set(0, torsoCY + tH * 0.04, 0.5 * B);
+  upper.add(core);
 
-  // back thrusters
-  group.add(box(0.3, 0.7, 0.3, steelDark, -0.45, 2.2, -0.5));
-  group.add(box(0.3, 0.7, 0.3, steelDark, 0.45, 2.2, -0.5));
+  upper.add(mechHead(spec.head, m, torsoCY + tH * 0.5 + 0.55));
 
-  // wings (flight)
-  const wings = new THREE.Group();
-  const wingMat = new THREE.MeshStandardMaterial({ color: 0x22d3ee, emissive: 0x0e7490, emissiveIntensity: 1, side: THREE.DoubleSide });
-  const wingShape = new THREE.Shape();
-  wingShape.moveTo(0, 0);
-  wingShape.lineTo(2.6, 0.8);
-  wingShape.lineTo(2.2, 1.3);
-  wingShape.lineTo(0, 0.6);
-  wingShape.closePath();
-  const wingGeo = new THREE.ShapeGeometry(wingShape);
-  const wingL = new THREE.Mesh(wingGeo, wingMat);
-  wingL.position.set(0.4, 2.6, -0.55);
-  wingL.rotation.y = Math.PI * 0.12;
-  const wingR = new THREE.Mesh(wingGeo, wingMat);
-  wingR.scale.x = -1;
-  wingR.position.set(-0.4, 2.6, -0.55);
-  wingR.rotation.y = -Math.PI * 0.12;
-  wings.add(wingL, wingR);
+  // shoulders + arms
+  const shX = tW * 0.5 + 0.25 * spec.shoulder;
+  const shoulderY = torsoCY + tH * 0.3;
+  for (const sx of [-1, 1])
+    upper.add(mBox(0.75 * spec.shoulder, 0.6 * spec.shoulder, 0.95 * B, m.steel, sx * shX, shoulderY, 0));
+
+  const armPivotY = torsoCY + tH * 0.15;
+  const armLen = 1.3 * (0.85 + B * 0.15);
+  const arm = (side: number): THREE.Group => {
+    const a = new THREE.Group();
+    a.position.set(side * shX, armPivotY, 0);
+    a.add(mBox(0.4 * B, armLen, 0.45 * B, m.body, 0, -armLen * 0.5, 0));
+    a.add(mBox(0.45 * B, 0.4, 0.5 * B, m.trim, 0, -armLen - 0.05, 0)); // fist
+    return a;
+  };
+  upper.add(arm(-1));                       // left (static)
+  const armR = arm(1);                      // right (swings)
+  const weapon = mechWeapon(spec.weapon, m);
+  weapon.position.set(0, -armLen - 0.15, 0.2); // hang from the fist, reach up
+  armR.add(weapon);
+  armR.rotation.x = -0.5;                    // rest pose (engine overrides while transformed)
+  upper.add(armR);
+
+  // back thrusters / exhaust stacks
+  if (spec.exhaust) {
+    for (const sx of [-1, 1]) {
+      const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.17, 0.95, 8), m.steel);
+      stack.position.set(sx * tW * 0.32, torsoCY + tH * 0.35, -0.5 * B);
+      upper.add(stack);
+      const mouth = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.14, 8), m.trim);
+      mouth.position.set(sx * tW * 0.32, torsoCY + tH * 0.35 + 0.5, -0.5 * B);
+      upper.add(mouth);
+    }
+  } else {
+    for (const sx of [-1, 1])
+      upper.add(mBox(0.3, 0.7, 0.3, m.steel, sx * 0.45, torsoCY - tH * 0.05, -0.5 * B));
+  }
+
+  upper.rotation.x = spec.lean ?? 0;
+  group.add(upper);
+
+  // ---- flight wings (hidden until airborne) -------------------------------
+  const wings = mechWings(spec.wings, m, torsoCY + tH * 0.3);
   wings.visible = false;
   group.add(wings);
 
-  return { group, wings, core, armR, sword };
+  group.scale.setScalar(spec.scale);
+  return { group, wings, core, armR, sword: weapon };
 }
 
 export function makeSlash(): THREE.Mesh {

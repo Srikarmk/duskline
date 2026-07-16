@@ -111,7 +111,7 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
         <h1 className="title">FANTASY RACER</h1>
         <p className="subtitle">drift · boost · jump · blast</p>
         <div className="hero-tags">
-          <span>8 WORLDS</span><span>8 KARTS</span><span>4 MODES</span>
+          <span>{realmIds.length} WORLDS</span><span>{CAR_IDS.length} KARTS</span><span>4 MODES</span>
         </div>
       </div>
 

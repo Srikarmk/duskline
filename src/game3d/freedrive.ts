@@ -75,8 +75,9 @@ export class FreeDrive {
     const steer = (input.left ? 1 : 0) - (input.right ? 1 : 0);
     const spd = Math.abs(vf);
     const speedFrac = clampN(spd / tuning.maxSpeed, 0, 1);
-    const move = clampN(spd / 6, 0, 1);                            // no turning at a standstill
-    const turn = steer * tuning.turnRate * (0.55 + 0.45 * (1 - speedFrac)) * move * Math.sign(vf || 1);
+    const move = clampN(spd / 3.5, 0, 1);                          // responsive from low speed up
+    // keep plenty of turn authority at speed (0.8..1.0) so it doesn't feel heavy
+    const turn = steer * tuning.turnRate * (0.8 + 0.2 * (1 - speedFrac)) * move * Math.sign(vf || 1);
     this.heading += turn * dt;
 
     // --- grip: bleed side-slip (traction). Handbrake or grass = looser = drift.
@@ -101,9 +102,10 @@ export class FreeDrive {
     this.lateral = pr.lateral;
     this.offRoad = Math.abs(pr.lateral) > ROAD_HALF_WIDTH;
 
-    // --- walls: a firm barrier a bit past the verge keeps you on the ribbon.
-    // Push the car back toward the road edge and kill the outward velocity.
-    const WALL = ROAD_HALF_WIDTH + 3.5;
+    // --- walls: a firm barrier just past the road edge keeps you ON the ribbon
+    // (so the car never wanders far onto the terrain, where its height wouldn't
+    // match and it would sink). Snap the car back to the wall and kill outward speed.
+    const WALL = ROAD_HALF_WIDTH + 1.2;
     this.onWall = Math.abs(pr.lateral) > WALL;
     if (this.onWall) {
       const over = Math.abs(pr.lateral) - WALL;

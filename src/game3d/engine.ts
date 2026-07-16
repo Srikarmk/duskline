@@ -205,6 +205,7 @@ export class Game {
   private lapProgress = 0;   // cumulative signed distance travelled this lap
   private lastFreeDist = 0;  // previous frame's projected distance (for lap wrap)
   private wasOnRamp = false;
+  private edgeHitCd = 0; // cooldown after clipping a ramp's side
   private lastRampPower = 1;
   private lastRampT = 0;
   private treeMats: TreeMats | null = null;
@@ -476,7 +477,7 @@ export class Game {
     setCarEnvTint(pal.hemiSky);
     // player rig — a procedural kart of the chosen type
     this.carModel = makeKart(this.carId, CAR_SPECS[this.carId].color);
-    const mech = makeMech();
+    const mech = makeMech(this.carId);
     mech.group.visible = false;
     this.mech = mech;
     this.slash = makeSlash();
@@ -550,9 +551,9 @@ export class Game {
       opp.lane = slotLane(i);
       opp.lap = 1;
       opp.flames = flames;
-      // spread the field: pole is quickest (1.02) down to the tail (0.86), so
-      // racers string out instead of clustering
-      opp.pace = 1.02 - (i / Math.max(1, gridN - 1)) * 0.16;
+      // spread the field but keep it FAST: pole (1.12) down to tail (0.98), so
+      // rivals are genuinely competitive with the player, not stragglers
+      opp.pace = 1.12 - (i / Math.max(1, gridN - 1)) * 0.14;
       opp.place(this.track); // snap onto the grid now so the field lines up during the countdown
       this.opponents.push(opp);
     }
@@ -1398,19 +1399,40 @@ export class Game {
     // get a partial pop, not a clean launch (hit it sideways at your peril).
     let onRamp: (typeof this.ramps)[number] | null = null;
     let rampT = 0;
+    let edgeHit: (typeof this.ramps)[number] | null = null; // clipped its side
+    this.edgeHitCd = Math.max(0, this.edgeHitCd - dt);
     if (!this.transformed && !this.onBranch) {
       const trackLen = this.track.length;
       for (const r of this.ramps) {
-        if (Math.abs(this.playerX - r.lane) > 0.42) continue; // not in this ramp's lane
         let gap = this.position - r.dist;
         if (gap > trackLen / 2) gap -= trackLen;
         else if (gap < -trackLen / 2) gap += trackLen;
-        if (gap >= -r.len / 2 && gap <= r.len / 2) {
+        if (gap < -r.len / 2 || gap > r.len / 2) continue; // not on this ramp lengthwise
+        const off = Math.abs(this.playerX - r.lane);
+        if (off < 0.28) {                    // centred in the lane → clean ride-up
           onRamp = r;
           rampT = (gap + r.len / 2) / r.len; // 0 at the base → 1 at the lip
           break;
+        } else if (off < 0.5) {              // clipped the ramp's SIDE edge
+          edgeHit = r;
         }
       }
+    }
+    // hitting a ramp side-on: no launch — the car is DEFLECTED off it (a
+    // world-space shove away from the ramp) and bends/rolls, with a speed hit.
+    if (edgeHit && !onRamp && this.alt < 0.4 && this.edgeHitCd <= 0) {
+      this.edgeHitCd = 0.5;
+      const t = this.track.tangentAt(this.position);
+      const rx = t.z, rz = -t.x;                             // road "right" (unit)
+      const away = Math.sign(this.playerX - edgeHit.lane) || 1;
+      this.freeDrive.vx += rx * away * 9;                    // shove off the ramp
+      this.freeDrive.vz += rz * away * 9;
+      this.freeDrive.speed *= 0.72;
+      this.spin = 0.28 * away;                               // visible bend/roll
+      this.shake = Math.max(this.shake, 0.5);
+      this.crashFlash = 0.25;
+      this.sound.play("bump");
+      this.toast("CLIPPED!", "#fca5a5");
     }
 
     // altitude
@@ -1566,7 +1588,9 @@ export class Game {
       const gap = mine - o.progress(len); // + means player ahead
       // each racer holds its own pace so the field strings out; only a gentle
       // rubber-band keeps it competitive around the player
-      const base = MAX_SPEED * o.pace * (1 + clamp(gap / 500, -0.05, 0.08));
+      // rubber-band: rivals dig in HARD when you pull away (up to +26%) and ease
+      // off only slightly when they're ahead — keeps the race close and tense
+      const base = MAX_SPEED * o.pace * (1 + clamp(gap / 240, -0.06, 0.26));
       o.update(dt, this.track, base, this.cfg.laps);
 
       // spin the rival's wheels by its ground speed (keeps the pack alive)

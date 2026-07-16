@@ -104,9 +104,9 @@ export class Opponent {
     this.laneAgility = 1.3 + this.aggression * 2.4;
     this.consistency = clamp(grade * 0.7 + rng() * 0.3, 0, 1);
     this.boostStyle = Math.floor(rng() * 4) as BoostStyle;
-    this.boostBase = 4 + rng() * 10;
-    this.boostDur = 1.0 + rng() * 0.9;
-    this.boostMult = 1.32 + this.aggression * 0.18;
+    this.boostBase = 2.5 + rng() * 6;   // fires nitro more often
+    this.boostDur = 1.2 + rng() * 1.0;
+    this.boostMult = 1.4 + this.aggression * 0.22; // and it bites harder
 
     this.lane = LANE_CENTERS[1];
     this.targetLane = clamp(this.laneBias, -0.9, 0.9);
