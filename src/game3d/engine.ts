@@ -1335,8 +1335,7 @@ export class Game {
       {
         throttle: this.input.accelerate || this.transformed,
         brake: this.input.brake && !this.transformed,
-        left: !this.stuntAir && this.input.left,
-        right: !this.stuntAir && this.input.right,
+        steer: this.stuntAir ? 0 : -this.steerInput, // smoothed analog; -steer so Right turns right
         handbrake,
       },
       dt, this.track,

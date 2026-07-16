@@ -5,8 +5,7 @@ import { ROAD_HALF_WIDTH } from "./constants";
 export interface DriveInput {
   throttle: boolean;
   brake: boolean;
-  left: boolean;
-  right: boolean;
+  steer: number;      // analog -1..1 (already smoothed by the caller): + = left, - = right
   handbrake: boolean; // drift
 }
 
@@ -72,12 +71,12 @@ export class FreeDrive {
     // --- steering ---------------------------------------------------------
     // turn rate falls with speed (twitchy when slow, stable when fast) and needs
     // motion; reverse flips the steering so it behaves like a real car.
-    const steer = (input.left ? 1 : 0) - (input.right ? 1 : 0);
+    const steer = input.steer;                                    // smoothed analog wheel
     const spd = Math.abs(vf);
     const speedFrac = clampN(spd / tuning.maxSpeed, 0, 1);
-    const move = clampN(spd / 3.5, 0, 1);                          // responsive from low speed up
-    // keep plenty of turn authority at speed (0.8..1.0) so it doesn't feel heavy
-    const turn = steer * tuning.turnRate * (0.8 + 0.2 * (1 - speedFrac)) * move * Math.sign(vf || 1);
+    const move = clampN(spd / 4, 0, 1);                           // needs some motion to turn
+    // more stable at speed (0.62..1.0) so fast corners aren't twitchy
+    const turn = steer * tuning.turnRate * (0.62 + 0.38 * (1 - speedFrac)) * move * Math.sign(vf || 1);
     this.heading += turn * dt;
 
     // --- grip: bleed side-slip (traction). Handbrake or grass = looser = drift.
