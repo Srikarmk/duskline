@@ -243,9 +243,9 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       mountain: 0x2b1d4d, mountainDark: 0x1d1436, clutter: 0x2f6b3a, gem: 0x22d3ee,
     },
     scenery: [
-      { kind: "treeA", weight: 3 }, { kind: "treeB", weight: 3 },
-      { kind: "treeDark", weight: 2 }, { kind: "mushroom", weight: 2 },
-      { kind: "mushroomTall", weight: 1 }, { kind: "crystal", weight: 2 },
+      { kind: "treeA", weight: 4 }, { kind: "treeB", weight: 4 },
+      { kind: "treeDark", weight: 3 }, { kind: "mushroom", weight: 3 },
+      { kind: "mushroomTall", weight: 2 }, { kind: "crystal", weight: 2 },
       { kind: "rockA", weight: 1 }, { kind: "rockB", weight: 1 },
       { kind: "waterfall", weight: 1 },
     ],
@@ -283,9 +283,9 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       mountain: 0x4a1c0c, mountainDark: 0x2c110a, clutter: 0x5a2a18, gem: 0xf59e0b,
     },
     scenery: [
-      { kind: "rockA", weight: 4 }, { kind: "rockB", weight: 4 },
-      { kind: "treeDark", weight: 2 }, { kind: "crystal", weight: 3 },
-      { kind: "mushroom", weight: 1 },
+      { kind: "rockA", weight: 5 }, { kind: "rockB", weight: 5 },
+      { kind: "crystal", weight: 4 }, { kind: "treeDark", weight: 3 },
+      { kind: "mushroom", weight: 2 }, { kind: "mushroomTall", weight: 1 },
     ],
   },
 
@@ -325,9 +325,9 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       mountain: 0x9db8d4, mountainDark: 0x6d8bb0, clutter: 0xcfe0f0, gem: 0x38bdf8,
     },
     scenery: [
-      { kind: "crystal", weight: 5 }, { kind: "rockA", weight: 3 },
-      { kind: "rockB", weight: 3 }, { kind: "treeA", weight: 1 },
-      { kind: "treeB", weight: 1 }, { kind: "waterfall", weight: 1 },
+      { kind: "crystal", weight: 6 }, { kind: "rockA", weight: 4 },
+      { kind: "rockB", weight: 4 }, { kind: "treeA", weight: 2 },
+      { kind: "treeB", weight: 2 }, { kind: "waterfall", weight: 1 },
     ],
   },
 
@@ -399,7 +399,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       mountain: 0xc79a5c, mountainDark: 0x9a713c, clutter: 0xc79a5c, gem: 0xf59e0b,
     },
     scenery: [
-      { kind: "palm", weight: 4 }, { kind: "sandRock", weight: 5 },
+      { kind: "sandRock", weight: 6 }, { kind: "palm", weight: 5 },
       { kind: "obelisk", weight: 2 }, { kind: "sphinx", weight: 1 },
       { kind: "pyramid", weight: 1 },
     ],
@@ -440,11 +440,12 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       mountain: 0x2a2c40, mountainDark: 0x1c1e2e, clutter: 0x4c505a, gem: 0xa78bfa,
     },
     scenery: [
-      { kind: "hogwartsCastle", weight: 1 }, { kind: "quidditchHoop", weight: 1 },
-      { kind: "whompingWillow", weight: 1 }, { kind: "hogwartsExpress", weight: 1 },
-      { kind: "floatingCandle", weight: 3 }, { kind: "goldenSnitch", weight: 1 },
-      { kind: "castleWall", weight: 2 }, { kind: "torch", weight: 3 },
-      { kind: "tower", weight: 1 }, { kind: "treeDark", weight: 2 },
+      { kind: "torch", weight: 4 }, { kind: "castleWall", weight: 3 },
+      { kind: "banner", weight: 3 }, { kind: "treeDark", weight: 3 },
+      { kind: "floatingCandle", weight: 3 }, { kind: "tower", weight: 2 },
+      { kind: "gatehouse", weight: 1 }, { kind: "whompingWillow", weight: 1 },
+      { kind: "quidditchHoop", weight: 1 }, { kind: "goldenSnitch", weight: 1 },
+      { kind: "hogwartsExpress", weight: 1 },
     ],
   },
 
@@ -481,8 +482,8 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       mountain: 0x5a6270, mountainDark: 0x3c414c, clutter: 0x9aa1ab, gem: 0x22d3ee,
     },
     scenery: [
-      { kind: "tyreStack", weight: 4 }, { kind: "marshalBoard", weight: 3 },
-      { kind: "grandstand", weight: 2 }, { kind: "floodlight", weight: 2 },
+      { kind: "tyreStack", weight: 5 }, { kind: "marshalBoard", weight: 4 },
+      { kind: "floodlight", weight: 3 }, { kind: "grandstand", weight: 2 },
       { kind: "pitBuilding", weight: 1 },
     ],
   },
@@ -521,8 +522,8 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       mountain: 0x1a1e33, mountainDark: 0x0e1122, clutter: 0x3a3f4a, gem: 0x22d3ee,
     },
     scenery: [
-      { kind: "skyscraper", weight: 3 }, { kind: "brownstone", weight: 3 },
-      { kind: "streetlight", weight: 4 }, { kind: "billboard", weight: 2 },
+      { kind: "streetlight", weight: 5 }, { kind: "brownstone", weight: 4 },
+      { kind: "skyscraper", weight: 3 }, { kind: "billboard", weight: 2 },
       { kind: "waterTower", weight: 1 },
     ],
   },

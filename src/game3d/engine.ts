@@ -985,11 +985,12 @@ export class Game {
     } else {
       // roadside scenery — three bands each side for depth. Spacing is tuned so
       // the (now longer) tracks stay lush without ballooning the draw-call count
-      // (that was the top-speed lag: thousands of separate meshes).
-      for (let d = 0; d < len; d += 5.2) {
+      // (that was the top-speed lag: thousands of separate meshes). Density leans
+      // on the mid/far bands (cheaper, further-out fill) so worlds read as full.
+      for (let d = 0; d < len; d += 5.4) {
         for (const side of [-1, 1]) {
           // near band (dense, right by the road)
-          if (rand() < 0.85) {
+          if (rand() < 0.82) {
             const kind = pickScenery(realm, rand);
             const obj = this.sceneryObject(kind, library, rand);
             // keep big monuments off the verge so they don't overhang the track
@@ -1011,7 +1012,7 @@ export class Game {
             this.scene.add(obj);
           }
           // far band (big, fills the mid-distance out toward the mountains)
-          if (rand() < 0.28) {
+          if (rand() < 0.32) {
             const obj = this.sceneryObject(pickScenery(realm, rand), library, rand);
             const off = side * (ROAD_HALF_WIDTH + 58 + rand() * 70);
             const jd = d + rand() * 5;
@@ -1029,6 +1030,11 @@ export class Game {
       this.scene.add(makeGrassField(pal, grass));
       const pebbles = this.scatter(centerline, rand, 1100, ROAD_HALF_WIDTH * 1.3 + 4, 170);
       this.scene.add(makeRockField(pal, pebbles));
+
+      // hero landmarks: a handful of BIG signature monuments set well back from
+      // the road, so each world has a recognisable skyline instead of only the
+      // roadside band. (Ground realms only — void gets its asteroid field.)
+      this.placeLandmarks(library, rand);
     }
 
     // gem runs — patterned (line / zigzag / lane-sweep) so they're a mini
@@ -1125,6 +1131,175 @@ export class Game {
     for (let d = 110; d < len - 40; d += boxGap) {
       for (const l of LANE_CENTERS) {
         this.addEntity("itembox", d, l, makeItemBox(), 0.2);
+      }
+    }
+  }
+
+  /** Place a handful (~3-6) of BIG signature landmarks per ground realm at
+   *  scenic spots well back from the road (offset ~80-140 m). Reuses the existing
+   *  themed prop builders, scaled up and grouped into recognisable set-pieces
+   *  (a Giza cluster, a downtown block, a grandstand row, the Hogwarts castle…).
+   *  Grounded on the elevated terrain via terrainYAt, like the roadside bands. */
+  private placeLandmarks(library: ModelLibrary, rand: () => number) {
+    const { track, realm } = this;
+    const len = track.length;
+    const cols = realm.palette.crystalColors;
+
+    // scale a built prop and offset it within a cluster's local frame (base stays
+    // on the cluster's y=0 plane since the builders sit their base at the origin)
+    const at = (obj: THREE.Object3D, x: number, z: number, s: number): THREE.Object3D => {
+      obj.position.set(x, obj.position.y, z);
+      obj.scale.multiplyScalar(s);
+      return obj;
+    };
+    // a big instanced rock (asteroid-style), tinted, at a target size
+    const rock = (kind: "rockA" | "rockB", size: number): THREE.Object3D => {
+      const r = instantiate(library, kind, size);
+      varyTint(r, rand);
+      return r;
+    };
+    const crystals = (s: number) => at(makeCrystalCluster(rand, cols), 0, 0, s);
+
+    // drop a hero group at `frac` of the lap, `off` m back from the road on
+    // `side` (±1), grounded on the terrain. `faceRoad` turns local +Z (the
+    // "front" of stands / castles / sphinxes) toward the track; otherwise the
+    // group takes a free random spin.
+    const drop = (group: THREE.Object3D, frac: number, side: 1 | -1, off: number, faceRoad: boolean) => {
+      const d = track.wrap(frac * len);
+      const lat = side * off;
+      const p = track.pointAt(d, lat);
+      group.position.set(p.x, this.terrainYAt(d, lat), p.z);
+      if (faceRoad) {
+        const rp = track.pointAt(d, 0);
+        group.rotation.y = Math.atan2(rp.x - p.x, rp.z - p.z);
+      } else {
+        group.rotation.y = rand() * Math.PI * 2;
+      }
+      this.scene.add(group);
+    };
+    const cluster = (...members: THREE.Object3D[]): THREE.Group => {
+      const g = new THREE.Group();
+      for (const m of members) g.add(m);
+      return g;
+    };
+
+    switch (realm.id) {
+      case "sands": {
+        // a Giza-style row of stepped pyramids with a sphinx out front
+        const sph = makeSphinx(rand); sph.rotation.y = 0; // face +Z → the road
+        drop(cluster(
+          at(makePyramid(rand), 0, 0, 2.6),
+          at(makePyramid(rand), 42, 22, 2.0),
+          at(makePyramid(rand), 72, 46, 1.5),
+          at(sph, -16, 36, 3.2),
+        ), 0.2, 1, 120, true);
+        // a pair of towering obelisks flanking a lone sphinx
+        const sph2 = makeSphinx(rand); sph2.rotation.y = 0;
+        drop(cluster(
+          at(makeObelisk(rand), -7, 0, 2.6),
+          at(makeObelisk(rand), 7, 0, 2.6),
+          at(sph2, 0, 12, 2.4),
+        ), 0.6, -1, 90, true);
+        drop(at(makePyramid(rand), 0, 0, 3.0), 0.85, 1, 130, false);
+        break;
+      }
+      case "castle": {
+        // THE landmark: Hogwarts, facing the road, on the inside of the loop
+        drop(at(makeHogwartsCastle(rand), 0, 0, 1.7), 0.5, 1, 135, true);
+        // the three Quidditch goal hoops standing together
+        drop(cluster(
+          at(makeQuidditchHoop(rand), -8, 0, 1.35),
+          at(makeQuidditchHoop(rand), 0, 2, 1.5),
+          at(makeQuidditchHoop(rand), 8, 0, 1.35),
+        ), 0.26, -1, 85, false);
+        // an outlying keep: big towers + a wall section
+        drop(cluster(
+          at(makeTower(rand), 0, 0, 1.8),
+          at(makeTower(rand), 15, 9, 1.4),
+          at(makeCastleWall(rand), 8, -6, 2.4),
+        ), 0.78, 1, 100, false);
+        break;
+      }
+      case "circuit": {
+        // a long grandstand run with floodlight masts behind, open to the track
+        drop(cluster(
+          at(makeGrandstand(rand), -15, 0, 2.0),
+          at(makeGrandstand(rand), 0, 0, 2.0),
+          at(makeGrandstand(rand), 15, 0, 2.0),
+          at(makeFloodlight(rand), -24, -5, 1.6),
+          at(makeFloodlight(rand), 24, -5, 1.6),
+        ), 0.5, 1, 85, true);
+        // the pit / paddock complex flanked by floodlights
+        drop(cluster(
+          at(makePitBuilding(rand), 0, 0, 2.2),
+          at(makeFloodlight(rand), -20, -6, 1.5),
+          at(makeFloodlight(rand), 20, -6, 1.5),
+        ), 0.16, -1, 80, true);
+        drop(cluster(
+          at(makeGrandstand(rand), -13, 0, 2.2),
+          at(makeGrandstand(rand), 13, 0, 2.2),
+        ), 0.8, -1, 90, true);
+        break;
+      }
+      case "metro": {
+        // two downtown blocks of clustered towers rising over the skyline
+        drop(cluster(
+          at(makeSkyscraper(rand), 0, 0, 1.8),
+          at(makeSkyscraper(rand), 24, 12, 2.2),
+          at(makeSkyscraper(rand), 44, -6, 1.6),
+          at(makeSkyscraper(rand), 16, 30, 2.0),
+          at(makeSkyscraper(rand), 46, 28, 1.5),
+        ), 0.35, 1, 120, false);
+        drop(cluster(
+          at(makeSkyscraper(rand), 0, 0, 2.0),
+          at(makeSkyscraper(rand), 26, 14, 1.7),
+          at(makeSkyscraper(rand), 42, 32, 2.2),
+        ), 0.72, -1, 130, false);
+        break;
+      }
+      case "forest": {
+        // a giant ancient grove with a glowing crystal outcrop
+        const grove = new THREE.Group();
+        if (this.treeMats) {
+          grove.add(at(makeTree(rand, this.treeMats, "tall"), 0, 0, 2.4));
+          grove.add(at(makeTree(rand, this.treeMats, "pine"), 17, 9, 2.0));
+          grove.add(at(makeTree(rand, this.treeMats, "round"), -13, 11, 1.8));
+        }
+        grove.add(crystals(2.6));
+        drop(grove, 0.4, 1, 95, false);
+        // a big scenic waterfall cliff
+        drop(at(makeWaterfall(rand), 0, 0, 2.0), 0.15, -1, 100, false);
+        drop(cluster(crystals(3.0), at(makeCrystalCluster(rand, cols), 11, 6, 2.2)), 0.78, 1, 90, false);
+        break;
+      }
+      case "ember": {
+        // massive volcanic outcrops shot through with glowing crystal
+        drop(cluster(
+          at(rock("rockA", 9), 0, 0, 1),
+          at(rock("rockB", 7), 13, 7, 1),
+          at(makeCrystalCluster(rand, cols), 5, -5, 3.2),
+        ), 0.35, 1, 100, false);
+        drop(cluster(
+          at(rock("rockB", 11), 0, 0, 1),
+          at(makeCrystalCluster(rand, cols), -8, 6, 2.4),
+        ), 0.68, -1, 95, false);
+        drop(at(rock("rockA", 13), 0, 0, 1), 0.12, 1, 120, false);
+        break;
+      }
+      case "peaks": {
+        // towering ice spires with a big rock and a frozen waterfall
+        drop(cluster(
+          crystals(3.6),
+          at(makeCrystalCluster(rand, cols), 12, 8, 2.8),
+          at(makeCrystalCluster(rand, cols), -10, 6, 2.4),
+          at(rock("rockA", 10), 6, -6, 1),
+        ), 0.4, 1, 100, false);
+        drop(at(makeWaterfall(rand), 0, 0, 2.2), 0.62, -1, 95, false);
+        drop(cluster(
+          crystals(4.0),
+          at(makeCrystalCluster(rand, cols), 14, 10, 2.6),
+        ), 0.15, 1, 120, false);
+        break;
       }
     }
   }
