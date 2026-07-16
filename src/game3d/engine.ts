@@ -398,7 +398,15 @@ export class Game {
     scene.add(makeSkyDome(pal));
 
     if (!isVoid) {
-      scene.add(makeGround(pal));
+      // terrain that RISES with the road near the track (roads sit grounded in
+      // hills instead of floating on a flat plane); we only want makeGround's
+      // material, and build our own heightfield geometry in its place
+      const flatGround = makeGround(pal);
+      const groundMat = flatGround.material as THREE.MeshStandardMaterial;
+      groundMat.normalMap = null; // terrain fills the screen — drop the per-pixel normal cost
+      groundMat.needsUpdate = true;
+      flatGround.geometry.dispose();
+      scene.add(this.buildGroundTerrain(groundMat));
       // horizon-filling mountain ring
       const cx = (track.bounds.minX + track.bounds.maxX) / 2;
       const cz = (track.bounds.minZ + track.bounds.maxZ) / 2;
@@ -776,6 +784,42 @@ export class Game {
       blimp.rotation.y = Math.random() * Math.PI * 2;
       this.scene.add(blimp);
     }
+  }
+
+  /** A terrain grid that FOLLOWS the track's height near the road (so the road
+   *  sits grounded in rolling hills instead of floating on a flat plane), easing
+   *  back to the base level away from the track. Reuses the flat ground material. */
+  private buildGroundTerrain(mat: THREE.Material): THREE.Mesh {
+    const T = this.track;
+    const N = 400; // track polyline samples (x,z + centreline height)
+    const sx = new Float64Array(N), sz = new Float64Array(N), sy = new Float64Array(N);
+    const tmp = new THREE.Vector3();
+    for (let i = 0; i < N; i++) { T.pointAt((i / N) * T.length, 0, tmp, true); sx[i] = tmp.x; sz[i] = tmp.z; sy[i] = tmp.y; }
+    const b = T.bounds, margin = 470, cell = 12;
+    const minX = b.minX - margin, minZ = b.minZ - margin;
+    const cols = Math.ceil((b.maxX + margin - minX) / cell) + 1;
+    const rows = Math.ceil((b.maxZ + margin - minZ) / cell) + 1;
+    const near = 42, fall = 130; // full track height within `near` m, easing to base over `fall`
+    const pos: number[] = [], uv: number[] = [], idx: number[] = [];
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const x = minX + c * cell, z = minZ + r * cell;
+      let best = 1e18, by = 0; // nearest track sample's height
+      for (let i = 0; i < N; i++) { const dx = x - sx[i], dz = z - sz[i]; const d = dx * dx + dz * dz; if (d < best) { best = d; by = sy[i]; } }
+      const dist = Math.sqrt(best);
+      const t = dist <= near ? 1 : dist >= near + fall ? 0 : 1 - (dist - near) / fall;
+      pos.push(x, by * (t * t * (3 - 2 * t)), z);
+      uv.push(x / 220, z / 220);
+    }
+    for (let r = 0; r < rows - 1; r++) for (let c = 0; c < cols - 1; c++) {
+      const a = r * cols + c, bb = a + 1, d = a + cols, e = d + 1;
+      idx.push(a, d, bb, bb, d, e);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    return new THREE.Mesh(geo, mat);
   }
 
   private decorate(library: ModelLibrary) {
