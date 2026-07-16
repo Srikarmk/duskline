@@ -8,7 +8,7 @@ import {
   ROAD_HALF_WIDTH, LANE_CENTERS, CAR_LIFT,
   MAX_SPEED, ACCEL, BRAKING, DECEL, OFF_ROAD_DECEL, OFF_ROAD_LIMIT,
   STEER_RESPONSE, STEER_RETURN, TURN_ACCEL, STEER_SPEED_FALLOFF,
-  GRIP_LIMIT, LATERAL_DAMP, CENTRI_K, WEIGHT_BRAKE_GRIP, WEIGHT_THROTTLE_GRIP,
+  GRIP_LIMIT, LATERAL_DAMP, CENTRI_K, FREE_TURN_RATE, FREE_GRIP, WEIGHT_BRAKE_GRIP, WEIGHT_THROTTLE_GRIP,
   DRIFT_GRIP_MULT, DRIFT_STEER_MULT, DRIFT_MIN_CHARGE, DRIFT_BOOST_FACTOR,
   OUT_OF_BOUNDS_X, OUT_OF_BOUNDS_PENALTY,
   NITRO_MAX_CHARGES, NITRO_DURATION, NITRO_SPEED_FACTOR,
@@ -40,8 +40,9 @@ import { makeTunnelArch, makeTunnelPortal } from "./setpieces";
 import { makeBoostGate, makeRingArch } from "./props/gates";
 import { makeForkArrowSign, makeBlimp } from "./props/signage";
 import { BranchPath } from "./branch";
+import { FreeDrive } from "./freedrive";
 import { loadPBR } from "./textures";
-import { makeKart, CAR_SPECS, CAR_IDS, type CarStat } from "./cars";
+import { makeKart, setCarEnvTint, CAR_SPECS, CAR_IDS, type CarStat } from "./cars";
 import { REALMS, pickScenery, REALM_WEATHER, REALM_AMBIENCE, REALM_TUNNELS, REALM_RIVERS, REALM_SPLITS, type RealmSpec, type SceneryKind } from "./realms";
 import { makePyramid, makeObelisk, makeSphinx, makePalm, makeSandRock } from "./props/egyptian";
 import { makeTower, makeGatehouse, makeCastleWall, makeBanner, makeTorch } from "./props/castle";
@@ -130,6 +131,24 @@ function mulberry32(seed: number) {
   };
 }
 
+/** A spinnable/steerable wheel picked out of a built car model. */
+interface WheelRef { obj: THREE.Object3D; front: boolean; r: number; }
+/** One drifting-tyre smoke puff (world-space sprite, recycled from a pool). */
+interface SmokePuff { spr: THREE.Sprite; life: number; max: number; vel: THREE.Vector3; }
+
+/** Collect the wheel sub-groups tagged by cars.ts, flagging the front pair (by
+ *  local +z) so they can steer. Shared by the player rig and the opponents. */
+function collectWheels(root: THREE.Object3D): WheelRef[] {
+  const out: WheelRef[] = [];
+  root.traverse((o) => {
+    if (o.userData && o.userData.wheel) {
+      o.rotation.order = "YXZ";
+      out.push({ obj: o, front: o.position.z > 0.2, r: (o.userData.wheelR as number) || 0.4 });
+    }
+  });
+  return out;
+}
+
 export class Game {
   private container: HTMLElement;
   private renderer: THREE.WebGLRenderer;
@@ -180,6 +199,11 @@ export class Game {
    *  along it (arc-length metres). */
   private onBranch: BranchPath | null = null;
   private branchU = 0;
+  /** free-roam driving body (world-space physics; the rail position/playerX are
+   *  derived from it by projecting onto the track each frame). */
+  private freeDrive = new FreeDrive();
+  private lapProgress = 0;   // cumulative signed distance travelled this lap
+  private lastFreeDist = 0;  // previous frame's projected distance (for lap wrap)
   private wasOnRamp = false;
   private lastRampPower = 1;
   private lastRampT = 0;
@@ -192,6 +216,13 @@ export class Game {
   private slash: THREE.Mesh | null = null;
   private flames: THREE.Mesh[] = [];
   private underGlow: THREE.Mesh | null = null;
+  // car "feel": spinning/steering wheels, weight transfer, drift smoke
+  private playerWheels: WheelRef[] = [];
+  private wheelDist = 0;   // integrated ground distance → wheel spin angle
+  private prevSpeed = 0;
+  private bodyPitch = 0;   // dynamic squat (accel) / dive (brake) nod
+  private smoke: SmokePuff[] = [];
+  private smokeTimer = 0;
   private camPos = new THREE.Vector3();
   private camSnap = true;
   private cameraIndex = 0;
@@ -385,6 +416,10 @@ export class Game {
     const [library] = await Promise.all([loadModels(), loadPBR(groundName)]);
     if (this.stopped) return;
     this.buildWorld(library);
+    // place the free-roam body on the start line, facing down the track
+    this.freeDrive.reset(this.track, 0);
+    this.lastFreeDist = 0;
+    this.lapProgress = 0;
     this.phase = "countdown";
   }
 
@@ -437,6 +472,8 @@ export class Game {
       scene.add(makeSpaceBackdrop()); // ringed planet + atmosphere in the distance
     }
 
+    // tint every car's reflections toward this realm's sky before building them
+    setCarEnvTint(pal.hemiSky);
     // player rig — a procedural kart of the chosen type
     this.carModel = makeKart(this.carId, CAR_SPECS[this.carId].color);
     const mech = makeMech();
@@ -459,6 +496,8 @@ export class Game {
     this.playerBody.add(this.carModel, mech.group, this.underGlow);
     this.playerRoot.add(this.playerBody);
     scene.add(this.playerRoot);
+    this.playerWheels = collectWheels(this.carModel);
+    this.buildSmoke();
 
     if (this.cfg.opponents) this.spawnOpponents();
 
@@ -504,6 +543,8 @@ export class Game {
         car.add(fl);
         flames.push(fl);
       }
+      car.userData.wheels = collectWheels(car);
+      car.userData.wheelDist = 0;
       this.scene.add(car);
       const opp = new Opponent(car, spec.color, spec.name, spec.skill, slotDist(i));
       opp.lane = slotLane(i);
@@ -515,6 +556,92 @@ export class Game {
       opp.place(this.track); // snap onto the grid now so the field lines up during the countdown
       this.opponents.push(opp);
     }
+  }
+
+  /** Build a recycled pool of world-space smoke sprites for drifting tyres. */
+  private buildSmoke() {
+    const c = document.createElement("canvas");
+    c.width = 64;
+    c.height = 64;
+    const ctx = c.getContext("2d")!;
+    const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    g.addColorStop(0, "rgba(255,255,255,0.95)");
+    g.addColorStop(0.5, "rgba(228,230,240,0.5)");
+    g.addColorStop(1, "rgba(228,230,240,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 64, 64);
+    const tex = new THREE.CanvasTexture(c);
+    this.smoke = [];
+    for (let i = 0; i < 30; i++) {
+      const mat = new THREE.SpriteMaterial({ map: tex, color: 0xd7d9e2, transparent: true, opacity: 0, depthWrite: false });
+      const spr = new THREE.Sprite(mat);
+      spr.visible = false;
+      spr.renderOrder = 3;
+      this.scene.add(spr);
+      this.smoke.push({ spr, life: 0, max: 0.55, vel: new THREE.Vector3() });
+    }
+  }
+
+  private spawnSmoke(x: number, y: number, z: number, tanx: number, tanz: number) {
+    const puff = this.smoke.find((s) => s.life <= 0);
+    if (!puff) return;
+    puff.max = 0.5 + Math.random() * 0.22;
+    puff.life = puff.max;
+    puff.spr.position.set(x + (Math.random() - 0.5) * 0.25, y, z + (Math.random() - 0.5) * 0.25);
+    puff.spr.scale.setScalar(0.45 + Math.random() * 0.2);
+    puff.spr.visible = true;
+    (puff.spr.material as THREE.SpriteMaterial).opacity = 0.6;
+    // billow up and kick out behind the car (opposite its heading) with scatter
+    puff.vel.set(-tanx * 1.3 + (Math.random() - 0.5) * 1.3, 0.9 + Math.random() * 0.5, -tanz * 1.3 + (Math.random() - 0.5) * 1.3);
+  }
+
+  private updateSmoke(dt: number) {
+    for (const s of this.smoke) {
+      if (s.life <= 0) continue;
+      s.life -= dt;
+      if (s.life <= 0) { s.spr.visible = false; continue; }
+      s.vel.y -= dt * 0.7;
+      s.spr.position.addScaledVector(s.vel, dt);
+      const t = 1 - s.life / s.max;          // 0 → 1 over its life
+      s.spr.scale.setScalar(0.45 + t * 1.5);  // billow out
+      (s.spr.material as THREE.SpriteMaterial).opacity = 0.6 * (1 - t);
+    }
+  }
+
+  /** Spin + steer the wheels, nod the body under acceleration/braking, and puff
+   *  tyre smoke while drifting/sliding — the moment-to-moment "feel" of the car. */
+  private animateCar(dt: number) {
+    // wheel spin from real ground distance (per-wheel radius), front pair steers
+    this.wheelDist += this.speed * dt;
+    const steerAngle = this.steer * 0.5;
+    for (const w of this.playerWheels) {
+      w.obj.rotation.x = this.wheelDist / w.r;
+      if (w.front) w.obj.rotation.y = steerAngle;
+    }
+
+    // weight transfer: nose lifts under power, dips under braking
+    const accel = (this.speed - this.prevSpeed) / Math.max(dt, 1e-3);
+    this.prevSpeed = this.speed;
+    const pitchTarget = clamp(-accel * 0.012, -0.05, 0.05);
+    this.bodyPitch += (pitchTarget - this.bodyPitch) * Math.min(1, dt * 6);
+    if (this.carModel) this.carModel.rotation.x = this.bodyPitch;
+
+    // drifting / sliding rear tyres throw smoke (grounded and moving only)
+    const smoking = (this.drifting || this.slipping) && this.alt < 0.35 && this.speed > 6 && !this.transformed;
+    if (smoking) {
+      this.smokeTimer -= dt;
+      if (this.smokeTimer <= 0) {
+        this.smokeTimer = 0.025;
+        const tan = this.pathTangent(0);
+        const wp = new THREE.Vector3();
+        for (const w of this.playerWheels) {
+          if (w.front) continue;
+          w.obj.getWorldPosition(wp);
+          this.spawnSmoke(wp.x, wp.y - w.r * 0.4, wp.z, tan.x, tan.z);
+        }
+      }
+    }
+    this.updateSmoke(dt);
   }
 
   private sceneryObject(kind: SceneryKind, library: ModelLibrary, rand: () => number): THREE.Object3D {
@@ -689,7 +816,7 @@ export class Game {
       const side: 1 | -1 = (this.realm.id.charCodeAt(0) + fi) % 2 === 0 ? 1 : -1;
       // a wide lens (so the two roads clearly separate around the island), flat so
       // the island reads cleanly between them
-      const bulge = clamp(20 + s.len * 0.03, 22, 28); // parallel-lane offset (island + a road width)
+      const bulge = clamp(15 + s.len * 0.02, 16, 20); // TIGHT parallel-lane offset — a small island split, like the sketch
       const branch = new BranchPath(sampleP, sampleT, startDist, endDist, { side, bulge, rise: 0, seed: 100 + fi });
       this.scene.add(branch.buildRoad(roadMat, ROAD_HALF_WIDTH));
       this.branches.push({ path: branch, side });
@@ -706,7 +833,7 @@ export class Game {
    *  beacon, so the split reads as "two roads around an island" (see the sketch). */
   private placeSplitIsland(midDist: number, side: number, bulge: number) {
     const pal = this.realm.palette;
-    const r = clamp((bulge - 16) / 2, 5, 10);
+    const r = clamp((bulge - 11) / 2, 3, 5); // small island that fits the tight gap
     const island = new THREE.Group();
     const mound = new THREE.Mesh(
       new THREE.ConeGeometry(r, r * 0.55, 8),
@@ -829,7 +956,8 @@ export class Game {
     const pal = realm.palette;
     this.placeTunnels();
     this.placeRivers();
-    this.placeBranches();
+    // this.placeBranches(); // disabled for free-roam v1 — the walls make branches
+    // unreachable; re-enable once free-roam opens the corridor at forks
     this.placeSkyProps();
     this.treeMats = makeTreeMaterials(pal); // shared bark/foliage tree materials
     const lane = () => LANE_CENTERS[Math.floor(rand() * 3)];
@@ -1193,105 +1321,50 @@ export class Game {
     this.steer = this.steerInput;
 
     this.driftBoostT = Math.max(0, this.driftBoostT - dt);
-    if (!airborne) {
-      // grip-limited lateral model: steering asks for lateral acceleration, but
-      // the tires cap it (grip). A too-fast corner exceeds the cap and washes
-      // you wide — you feel the limit. Braking loads the front for sharper
-      // turn-in; power-on loosens it.
-      const curve = this.track.curvatureAt(this.position);
-      const LAT_M = ROAD_HALF_WIDTH * 0.9; // meters per playerX unit
 
-      const load = this.input.brake ? WEIGHT_BRAKE_GRIP
-        : this.input.accelerate ? WEIGHT_THROTTLE_GRIP : 1;
-      const carGrip = this.carStat.grip * load;
+    // FREE-ROAM: the car is a real world-space body. freedrive owns heading +
+    // velocity + grip + the walls that keep you on the ribbon; we then project
+    // onto the track to derive the (distance, lateral) the rest of the engine
+    // reads (entities, laps, HUD, minimap). In the air, steering barrel-rolls
+    // instead of turning; the transformed mech just adds vertical lift on top.
+    const boosting = this.nitroT > 0 || this.driftBoostT > 0 || this.boostT > 0;
+    const driveAccel = ACCEL * this.carStat.accel * (boosting ? 2 : 1) * (this.transformed ? 1.5 : 1);
+    const handbrake = this.input.brake && this.speed > MAX_SPEED * 0.3 && rawSteer !== 0;
+    this.freeDrive.step(
+      {
+        throttle: this.input.accelerate || this.transformed,
+        brake: this.input.brake && !this.transformed,
+        left: !this.stuntAir && this.input.left,
+        right: !this.stuntAir && this.input.right,
+        handbrake,
+      },
+      dt, this.track,
+      { maxSpeed: this.effectiveMaxSpeed(), accel: driveAccel, turnRate: FREE_TURN_RATE, grip: FREE_GRIP },
+    );
+    // derive the rail-space coordinates every other system still reads
+    this.position = this.freeDrive.dist;
+    this.playerX = clamp(this.freeDrive.lateral / (ROAD_HALF_WIDTH * 0.9), -3, 3);
+    this.speed = Math.abs(this.freeDrive.speed);
+    this.slipping = this.freeDrive.onWall;
 
-      // drift: brake + steer at speed → slide and build a boost charge
-      const wantDrift = this.input.brake && this.steerInput !== 0 && speedPercent > 0.35;
-      if (wantDrift && !this.drifting) {
-        this.drifting = true;
-        this.driftDir = Math.sign(this.steerInput);
-        this.driftCharge = 0;
-      }
-      if (this.drifting && (!this.input.brake || speedPercent < 0.18 || this.steerInput === 0)) {
-        this.endDrift();
-      }
-      const gripMul = this.drifting ? DRIFT_GRIP_MULT : 1;
+    // handbrake slide builds a drift-boost charge, like before
+    if (this.freeDrive.drifting) {
+      if (!this.drifting) { this.drifting = true; this.driftCharge = 0; }
+      this.driftCharge += dt;
+    } else if (this.drifting) {
+      this.endDrift();
+    }
 
-      // steering authority drops with speed; sharper into a drift
-      const authority = (this.drifting ? DRIFT_STEER_MULT : 1) / (1 + this.speed * STEER_SPEED_FALLOFF);
-      const aSteer = this.steerInput * TURN_ACCEL * authority * (0.35 + 0.65 * speedPercent);
-      // centrifugal: v²/r pushes toward the outside of the curve
-      const aCentri = (curve * this.speed * this.speed / LAT_M) * CENTRI_K;
-
-      // grip ceiling on the net lateral acceleration
-      let aLat = aSteer - aCentri;
-      const gripLimit = GRIP_LIMIT * carGrip * gripMul;
-      this.slipping = Math.abs(aLat) > gripLimit + 0.5;
-      aLat = clamp(aLat, -gripLimit, gripLimit);
-
-      this.playerVX += aLat * dt;
-      // tire scrub bleeds off sideways velocity (self-centering), weaker in a drift
-      const scrub = LATERAL_DAMP * carGrip * (this.drifting ? 0.35 : 1);
-      this.playerVX -= this.playerVX * Math.min(1, dt * scrub);
-      this.playerX += this.playerVX * dt;
-      if (this.drifting) this.driftCharge += dt;
-
-      // point the car where it's actually heading (slip), plus a steer lean
-      // modest heading offset — enough to feel alive, not so much the car looks
-      // like it's crab-walking / bending on turns
-      const slipYaw = clamp(this.playerVX * 0.05, -0.26, 0.26);
-      const yawTarget = this.steerInput * 0.09 + slipYaw + (this.drifting ? this.driftDir * 0.32 : 0);
-      this.carYaw += (yawTarget - this.carYaw) * Math.min(1, dt * 8);
-    } else if (this.stuntAir) {
-      // mid-air: left/right = barrel roll, up/down = flips. Only a little lateral
-      // drift so a jump doesn't fling you off the track.
-      this.spin += this.steer * 1.25 * dt;
+    // visual body yaw: lean into the slip + steer on the ground; barrel-roll in air
+    if (this.stuntAir) {
+      this.spin += rawSteer * 1.25 * dt;
       const pitchIn = this.input.accelerate ? 1 : this.input.brake ? -1 : 0;
       this.flip += pitchIn * 1.25 * dt;
-      this.playerX += this.steer * dt * 0.15 * speedPercent;
-      this.playerVX = 0;
       this.carYaw += (0 - this.carYaw) * Math.min(1, dt * 6);
     } else {
-      // flying mech steers freely
-      this.playerX += this.steer * dt * 1.5 * speedPercent;
-      this.carYaw += (this.steer * 0.2 - this.carYaw) * Math.min(1, dt * 6);
+      const yawTarget = clamp(this.freeDrive.slip * 0.05, -0.45, 0.45) + this.steer * 0.08;
+      this.carYaw += (yawTarget - this.carYaw) * Math.min(1, dt * 8);
     }
-
-    // soft edge barrier: a springy push-back once you're out past the verge, so
-    // a fast corner or a nudge doesn't fling you straight off the track. You can
-    // still run wide onto the grass, but the edge resists like a barrier.
-    const EDGE_SOFT = 1.45;
-    if (!this.transformed && Math.abs(this.playerX) > EDGE_SOFT) {
-      const over = Math.abs(this.playerX) - EDGE_SOFT;
-      const sign = Math.sign(this.playerX);
-      this.playerX -= sign * over * Math.min(1, dt * 5);   // ease back toward the edge
-      this.playerVX -= sign * over * 26 * dt;              // spring the velocity in
-      this.playerVX *= 0.9;                                // and damp it
-    }
-
-    // throttle (car type sets acceleration; boost/nitro still override)
-    const boosting = this.nitroT > 0 || this.driftBoostT > 0 || this.boostT > 0;
-    const accel = ACCEL * this.carStat.accel;
-    if (this.transformed) {
-      this.speed += ACCEL * 1.5 * dt;
-    } else if (this.drifting) {
-      // hold speed through the slide instead of braking hard
-      this.speed += (this.input.accelerate ? accel * 0.6 : DECEL * 0.5) * dt;
-    } else if (this.input.accelerate) {
-      this.speed += accel * (boosting ? 2 : 1) * dt;
-    } else if (this.input.brake) {
-      this.speed += BRAKING * dt;
-    } else {
-      this.speed += DECEL * dt;
-    }
-
-    if (!airborne && Math.abs(this.playerX) > 1 && this.speed > OFF_ROAD_LIMIT) {
-      this.speed += OFF_ROAD_DECEL * dt;
-    }
-
-    const maxSpeed = this.effectiveMaxSpeed();
-    this.speed = Math.max(0, this.speed);
-    if (this.speed > maxSpeed) this.speed = Math.max(maxSpeed, this.speed + BRAKING * dt * 0.5);
 
     // nitro
     this.nitroT = Math.max(0, this.nitroT - dt);
@@ -1447,50 +1520,43 @@ export class Game {
     }
     this.sound.setEngine(this.speed / MAX_SPEED, this.nitroT > 0);
 
-    // advance & laps — on a branch we travel the alternate curve, mapping progress
-    // proportionally back onto the main track so laps + ranking stay correct
-    if (this.onBranch) {
-      const b = this.onBranch;
-      this.branchU += this.speed * dt;
-      if (this.branchU >= b.length) {
-        const over = this.branchU - b.length;
-        this.onBranch = null;
-        this.position = b.endDist + over;          // rejoin the main line
-        this.boostT = Math.max(this.boostT, PAD_BOOST_DURATION); // reward the detour
-        this.sound.play("nitro");
-        this.toast("REJOIN +BOOST", "#a7f3d0");
-      } else {
-        this.position = b.startDist + (this.branchU / b.length) * (b.endDist - b.startDist);
-      }
-    } else {
-      this.position += this.speed * dt;
-      this.maybeEnterBranch();
-    }
-    if (this.position >= this.track.length) {
-      this.position -= this.track.length;
-      this.lap++;
-      if (this.lap > this.cfg.laps) {
-        this.phase = "finished";
-        this.finishT = 2.5;
-        // snapshot placement + order at the line so the results screen's
-        // "Nth of M" header and finishing-order list always agree
-        this.finalStandings = this.computeStandings();
-        this.finalPosition = this.finalStandings.find((s) => s.isPlayer)?.position ?? 1;
-        this.score += SCORE_FINISH;
-        this.sound.play("finish");
-        this.toast(`FINISH +${SCORE_FINISH}`, "#fbbf24");
-      } else {
-        this.sound.play("lap");
-        this.toast(`LAP ${this.lap}/${this.cfg.laps}`, "#c084fc");
-        this.clearProjectiles();
-        for (const e of this.entities) {
-          if (e.collectedLap !== 0 && e.collectedLap !== this.lap) {
-            e.collectedLap = 0;
-            e.obj.visible = true;
+    // advance & laps — `position` is the free-roam projection onto the track;
+    // detect a forward crossing of the start/finish seam (guard jitter/reverse)
+    const len = this.track.length;
+    let delta = this.position - this.lastFreeDist;
+    if (delta > len / 2) delta -= len;        // wrapped backward across the seam
+    else if (delta < -len / 2) delta += len;  // wrapped forward across the seam
+    this.lastFreeDist = this.position;
+    if (this.phase === "racing") {
+      this.lapProgress += delta;
+      if (this.lapProgress >= len) {
+        this.lapProgress -= len;
+        this.lap++;
+        if (this.lap > this.cfg.laps) {
+          this.phase = "finished";
+          this.finishT = 2.5;
+          // snapshot placement + order at the line so the results screen agrees
+          this.finalStandings = this.computeStandings();
+          this.finalPosition = this.finalStandings.find((s) => s.isPlayer)?.position ?? 1;
+          this.score += SCORE_FINISH;
+          this.sound.play("finish");
+          this.toast(`FINISH +${SCORE_FINISH}`, "#fbbf24");
+        } else {
+          this.sound.play("lap");
+          this.toast(`LAP ${this.lap}/${this.cfg.laps}`, "#c084fc");
+          this.clearProjectiles();
+          for (const e of this.entities) {
+            if (e.collectedLap !== 0 && e.collectedLap !== this.lap) {
+              e.collectedLap = 0;
+              e.obj.visible = true;
+            }
           }
         }
       }
     }
+
+    // wheels, weight transfer and tyre smoke
+    this.animateCar(dt);
   }
 
   private updateOpponents(dt: number) {
@@ -1502,6 +1568,14 @@ export class Game {
       // rubber-band keeps it competitive around the player
       const base = MAX_SPEED * o.pace * (1 + clamp(gap / 500, -0.05, 0.08));
       o.update(dt, this.track, base, this.cfg.laps);
+
+      // spin the rival's wheels by its ground speed (keeps the pack alive)
+      const ow = o.obj.userData.wheels as WheelRef[] | undefined;
+      if (ow && ow.length) {
+        const wd = ((o.obj.userData.wheelDist as number) || 0) + o.speed * dt;
+        o.obj.userData.wheelDist = wd;
+        for (const ww of ow) ww.obj.rotation.x = wd / ww.r;
+      }
 
       // hop ramps (full-width, so any lane) when reaching one on the ground
       if (o.alt < 0.4 && !o.finished) {
@@ -1930,12 +2004,11 @@ export class Game {
     const { track } = this;
 
     if (this.phase !== "loading") {
-      const lateralM = this.playerX * ROAD_HALF_WIDTH * 0.9;
-      const p = this.pathPoint(0, lateralM);
-      this.playerRoot.position.set(p.x, p.y + this.alt + CAR_LIFT, p.z);
-      const tan = this.pathTangent(0);
+      // FREE-ROAM: the car sits at its real world position, facing its heading
+      const groundY = this.track.pointAt(this.position, 0, undefined, true).y;
+      this.playerRoot.position.set(this.freeDrive.x, groundY + this.alt + CAR_LIFT, this.freeDrive.z);
       this.playerRoot.rotation.order = "YXZ";
-      this.playerRoot.rotation.y = Math.atan2(tan.x, tan.z);
+      this.playerRoot.rotation.y = this.freeDrive.heading;
       // nose pitch: rides up ramps, arcs in the air, follows the road slope on
       // the ground (computed + smoothed in update) — no more flat "sinking"
       this.playerRoot.rotation.x = this.carPitch;
@@ -2004,39 +2077,36 @@ export class Game {
       if (this.weather) this.weather.update(this.time, this.camera.position);
       // monsters are positioned in updateMonsters (they move + charge)
 
-      // camera — chase with feel: FOV kicks with speed/boost, banks into
-      // corners, looks ahead into the turn, and shakes on impacts.
+      // FREE-ROAM chase camera: sit behind + above the car along its heading and
+      // look ahead of it. FOV kicks with speed/boost; banks slightly with steer.
       const preset = CAMERA_PRESETS[this.cameraIndex];
       const spd = this.speed / MAX_SPEED;
-      const curve = this.onBranch ? 0 : track.curvatureAt(this.position);
+      const fx = Math.sin(this.freeDrive.heading), fz = Math.cos(this.freeDrive.heading);
 
-      // gentle speed/boost FOV kick — kept small to avoid motion sickness
       const targetFov = preset.fov + spd * 4 + (boosting ? 4 : 0);
       this.camera.fov += (targetFov - this.camera.fov) * 0.06;
       this.camera.updateProjectionMatrix();
 
-      const camAnchor = this.pathPoint(-preset.back, lateralM * 0.7);
-      camAnchor.y += preset.height + this.alt * 0.55;
-      if (this.camSnap) {
-        this.camPos.copy(camAnchor);
-        this.camSnap = false;
-      } else {
-        this.camPos.lerp(camAnchor, 0.55);
-      }
+      const camAnchor = new THREE.Vector3(
+        this.freeDrive.x - fx * preset.back,
+        groundY + preset.height + this.alt * 0.55,
+        this.freeDrive.z - fz * preset.back,
+      );
+      if (this.camSnap) { this.camPos.copy(camAnchor); this.camSnap = false; }
+      else this.camPos.lerp(camAnchor, 0.5);
       this.camera.position.copy(this.camPos);
-      // subtle impact/landing shake
       if (this.shake > 0.01) {
         const s = this.shake * 0.18;
         this.camera.position.x += (Math.random() - 0.5) * s;
         this.camera.position.y += (Math.random() - 0.5) * s;
       }
-      // look slightly ahead into the corner (small, so the view doesn't swing)
-      const aheadBias = clamp(curve * this.speed * 0.6, -1.0, 1.0);
-      const lookAt = this.pathPoint(preset.ahead, lateralM * 0.5 + aheadBias);
-      lookAt.y += preset.lookHeight + this.alt * 0.8;
+      const lookAt = new THREE.Vector3(
+        this.freeDrive.x + fx * preset.ahead,
+        groundY + preset.lookHeight + this.alt * 0.8,
+        this.freeDrive.z + fz * preset.ahead,
+      );
       this.camera.lookAt(lookAt);
-      // slight bank into the corner
-      const bank = clamp(-curve * this.speed * 0.008 - this.steer * 0.012, -0.055, 0.055);
+      const bank = clamp(-this.freeDrive.slip * 0.006 - this.steer * 0.012, -0.055, 0.055);
       this.camera.rotateZ(bank);
 
       this.composer.render();

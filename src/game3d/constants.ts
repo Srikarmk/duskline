@@ -37,7 +37,11 @@ export const GRIP_LIMIT = 14;
 export const LATERAL_DAMP = 7.5;
 /** strength of the v²/r push toward the outside of a curve — gentle so corners
  *  don't fling you wide (arcade-forgiving) */
-export const CENTRI_K = 0.55;
+export const CENTRI_K = 0.78; // stronger corner load — you must actively steer/brake, not coast turns
+
+// --- free-roam driving (the car is a world-space body, not rail-locked) ---
+export const FREE_TURN_RATE = 2.1; // base yaw rate (rad/s) — how fast you can steer
+export const FREE_GRIP = 6.0;      // lateral traction (side-slip bleed / s); handbrake loosens it
 /** grip while braking (weight forward → sharper turn-in) */
 export const WEIGHT_BRAKE_GRIP = 1.3;
 /** grip while on the throttle (weight back → a touch looser) */

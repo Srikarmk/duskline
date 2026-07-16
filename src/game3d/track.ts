@@ -30,6 +30,10 @@ export class Track {
   private banks: number[] = [];
   private banked: boolean;
   private samples: number;
+  // stored centreline samples (world x,z + arc distance) for project()
+  private cx: number[] = [];
+  private cz: number[] = [];
+  private cd: number[] = [];
 
   constructor(controlPoints: [number, number, number][], banked = true) {
     this.banked = banked;
@@ -55,6 +59,7 @@ export class Track {
       const p = this.curve.getPointAt(this.wrap(d) / this.length);
       minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
       minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
+      this.cx.push(p.x); this.cz.push(p.z); this.cd.push(d);
     }
     this.bounds = { minX, maxX, minZ, maxZ };
 
@@ -83,6 +88,37 @@ export class Track {
 
   wrap(dist: number) {
     return ((dist % this.length) + this.length) % this.length;
+  }
+
+  /** Project a world (x,z) onto the centreline. Returns the arc distance of the
+   *  nearest point and the signed lateral offset in METRES (right of travel = +).
+   *  Used by the free-roam driving model for progress, grounding and walls. */
+  project(x: number, z: number): { dist: number; lateral: number } {
+    const n = this.samples;
+    let bi = 0, bd = Infinity;
+    for (let i = 0; i < n; i++) {
+      const dx = x - this.cx[i], dz = z - this.cz[i];
+      const d2 = dx * dx + dz * dz;
+      if (d2 < bd) { bd = d2; bi = i; }
+    }
+    let best = { dist: this.cd[bi], lateral: 0, d2: Infinity };
+    const segs = [[(bi - 1 + n) % n, bi], [bi, (bi + 1) % n]];
+    for (const [a, b] of segs) {
+      const ax = this.cx[a], az = this.cz[a];
+      const sx = this.cx[b] - ax, sz = this.cz[b] - az;
+      const segLen2 = sx * sx + sz * sz || 1;
+      const t = clampN(((x - ax) * sx + (z - az) * sz) / segLen2, 0, 1);
+      const px = ax + sx * t, pz = az + sz * t;
+      const dx = x - px, dz = z - pz;
+      const d2 = dx * dx + dz * dz;
+      if (d2 < best.d2) {
+        let da = this.cd[a], db = this.cd[b];
+        if (db < da) db += this.length; // seam wrap
+        const invLen = 1 / Math.sqrt(segLen2);
+        best = { dist: this.wrap(da + (db - da) * t), lateral: (sz * dx - sx * dz) * invLen, d2 };
+      }
+    }
+    return { dist: best.dist, lateral: best.lateral };
   }
 
   pointAt(dist: number, lateral = 0, out = new THREE.Vector3(), flat = false) {
