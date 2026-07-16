@@ -968,8 +968,9 @@ export class Game {
     const pal = realm.palette;
     this.placeTunnels();
     this.placeRivers();
-    // this.placeBranches(); // disabled for free-roam v1 — the walls make branches
-    // unreachable; re-enable once free-roam opens the corridor at forks
+    this.placeBranches(); // build the branch roads; free-roam opens the wall at forks
+    // hand the branches to the free-roam body so it drives whichever road is nearest
+    this.freeDrive.branches = this.branches.map((b) => ({ path: b.path, startDist: b.path.startDist, endDist: b.path.endDist }));
     this.placeSkyProps();
     this.treeMats = makeTreeMaterials(pal); // shared bark/foliage tree materials
     const lane = () => LANE_CENTERS[Math.floor(rand() * 3)];

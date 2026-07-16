@@ -56,6 +56,10 @@ export class BranchPath {
   private divisions: number;
   /** scratch tangent reused inside pointAt to avoid per-call allocation. */
   private _tan = new THREE.Vector3();
+  // sampled centreline (x,z + arc-length u) for project()
+  private sx: number[] = [];
+  private sz: number[] = [];
+  private su: number[] = [];
 
   constructor(
     sampleMainPoint: (dist: number, out?: THREE.Vector3) => THREE.Vector3,
@@ -129,6 +133,13 @@ export class BranchPath {
     this.divisions = Math.max(2, Math.ceil(raw / LUT_SPACING));
     this.lengths = this.curve.getLengths(this.divisions);
     this.length = this.lengths[this.lengths.length - 1];
+
+    // sample the centreline every ~2m for project() (nearest-point queries)
+    const p = new THREE.Vector3();
+    for (let u = 0; u <= this.length; u += 2) {
+      this.pointAt(u, 0, p);
+      this.sx.push(p.x); this.sz.push(p.z); this.su.push(u);
+    }
   }
 
   /** Map an arc-length u (metres) to the curve's native parameter t in [0,1]. */
@@ -176,6 +187,34 @@ export class BranchPath {
     const t = this.uToT(u);
     this.curve.getTangent(t, out);
     return out.normalize();
+  }
+
+  /** Project a world (x,z) onto the branch: nearest arc-length `u` + signed
+   *  lateral offset in metres (right of travel = +). Open path (no seam wrap). */
+  project(x: number, z: number): { u: number; lateral: number } {
+    const n = this.sx.length;
+    let bi = 0, bd = Infinity;
+    for (let i = 0; i < n; i++) {
+      const dx = x - this.sx[i], dz = z - this.sz[i];
+      const d2 = dx * dx + dz * dz;
+      if (d2 < bd) { bd = d2; bi = i; }
+    }
+    let best = { u: this.su[bi], lateral: 0, d2: Infinity };
+    for (const [a, b] of [[Math.max(0, bi - 1), bi], [bi, Math.min(n - 1, bi + 1)]]) {
+      if (a === b) continue;
+      const ax = this.sx[a], az = this.sz[a];
+      const sx = this.sx[b] - ax, sz = this.sz[b] - az;
+      const segLen2 = sx * sx + sz * sz || 1;
+      const t = clampN(((x - ax) * sx + (z - az) * sz) / segLen2, 0, 1);
+      const px = ax + sx * t, pz = az + sz * t;
+      const dx = x - px, dz = z - pz;
+      const d2 = dx * dx + dz * dz;
+      if (d2 < best.d2) {
+        const invLen = 1 / Math.sqrt(segLen2);
+        best = { u: this.su[a] + (this.su[b] - this.su[a]) * t, lateral: (sz * dx - sx * dz) * invLen, d2 };
+      }
+    }
+    return { u: best.u, lateral: best.lateral };
   }
 
   /**

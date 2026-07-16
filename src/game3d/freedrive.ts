@@ -1,4 +1,5 @@
 import type { Track } from "./track";
+import type { BranchPath } from "./branch";
 import { ROAD_HALF_WIDTH } from "./constants";
 
 /** Player input for a physics step (already debounced by the engine). */
@@ -39,6 +40,10 @@ export class FreeDrive {
   drifting = false;
   slip = 0;           // side-slip speed (m/s), for a visual yaw kick
   speed = 0;          // signed forward speed (m/s)
+  /** alternate routes: the car drives whichever road (main or a branch) it's
+   *  nearest to. Set by the engine after building branches. */
+  branches: { path: BranchPath; startDist: number; endDist: number }[] = [];
+  onBranchIdx = -1;   // index into branches, or -1 when on the main road
 
   /** Reset onto the start line: sit at arc distance `d0`, facing down the track. */
   reset(track: Track, d0: number) {
@@ -95,36 +100,53 @@ export class FreeDrive {
     this.z += this.vz * dt;
     this.speed = vf;
 
-    // --- project onto the track: progress, ground, off-road --------------
+    // --- project onto the nearest road (main OR a branch), for progress,
+    // ground, off-road and walls. Drive whichever road you're closest to, so at
+    // a fork you can peel onto the branch and be kept on it.
     const pr = track.project(this.x, this.z);
-    this.dist = pr.dist;
-    this.lateral = pr.lateral;
-    this.offRoad = Math.abs(pr.lateral) > ROAD_HALF_WIDTH;
+    let bestLat = pr.lateral, bestDist = pr.dist, kind = -1;
+    // chosen road's centre + right vector (world), for the wall push-back
+    const mc = track.pointAt(track.wrap(pr.dist), 0);
+    const mt = track.tangentAt(track.wrap(pr.dist));
+    let cx = mc.x, cz = mc.z, rx = mt.z, rz = -mt.x;
+    for (let bi = 0; bi < this.branches.length; bi++) {
+      const b = this.branches[bi];
+      if (pr.dist < b.startDist - 25 || pr.dist > b.endDist + 25) continue; // not near this fork
+      const bp = b.path.project(this.x, this.z);
+      if (Math.abs(bp.lateral) < Math.abs(bestLat)) {
+        bestLat = bp.lateral;
+        bestDist = b.startDist + (bp.u / b.path.length) * (b.endDist - b.startDist);
+        kind = bi;
+        const c = b.path.pointAt(bp.u, 0);
+        const t = b.path.tangentAt(bp.u);
+        cx = c.x; cz = c.z; rx = t.z; rz = -t.x;
+      }
+    }
+    this.dist = bestDist;
+    this.lateral = bestLat;
+    this.onBranchIdx = kind;
+    this.offRoad = Math.abs(bestLat) > ROAD_HALF_WIDTH;
 
-    // --- walls: a firm barrier just past the road edge keeps you ON the ribbon
-    // (so the car never wanders far onto the terrain, where its height wouldn't
-    // match and it would sink). Snap the car back to the wall and kill outward speed.
-    const WALL = ROAD_HALF_WIDTH + 1.2;
-    this.onWall = Math.abs(pr.lateral) > WALL;
+    // --- walls: a firm barrier just past the chosen road's edge keeps you ON it.
+    // In a fork zone the corridor opens up so you can cross over to the branch.
+    const inFork = this.branches.some((b) => pr.dist >= b.startDist - 20 && pr.dist <= b.endDist + 20);
+    const WALL = inFork ? 22 : ROAD_HALF_WIDTH + 1.2;
+    this.onWall = Math.abs(bestLat) > WALL;
     if (this.onWall) {
-      const over = Math.abs(pr.lateral) - WALL;
-      const sign = Math.sign(pr.lateral);
-      // road centre + its right vector at this distance, to shove back in world space
-      const c = track.pointAt(track.wrap(pr.dist), 0, undefined, true);
-      const t = track.tangentAt(track.wrap(pr.dist));
-      const rx = t.z, rz = -t.x; // right of travel (unit, tangent is unit)
+      const over = Math.abs(bestLat) - WALL;
+      const sign = Math.sign(bestLat);
+      const rl = Math.hypot(rx, rz) || 1;
+      rx /= rl; rz /= rl;
       this.x -= sign * rx * over;
       this.z -= sign * rz * over;
-      // SCRAPE along the wall: remove only the into-wall velocity component and
-      // keep the speed along it. No bounce — a bounce could reverse the car's
-      // forward velocity and spin it (which also flipped reverse-steering).
+      // SCRAPE along the wall: remove only the into-wall velocity, keep speed along it
       const outward = this.vx * (sign * rx) + this.vz * (sign * rz);
       if (outward > 0) {
         this.vx -= sign * rx * outward;
         this.vz -= sign * rz * outward;
       }
-      void c;
     }
+    void cx; void cz;
   }
 
   /** Ground height at the car (track surface). Engine adds jump altitude on top. */
