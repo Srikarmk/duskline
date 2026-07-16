@@ -210,11 +210,24 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     id: "forest",
     name: "Enchanted Forest",
     blurb: "Moonlit woods, glowing mushrooms, gentle rolling hills.",
-    controlPoints: loopTrack(
-      34, 214,
-      [{ k: 2, amp: 52, phase: 0.3 }, { k: 3, amp: 18, phase: 1.0 }, { k: 5, amp: 9, phase: 2.0 }],
-      2, [{ k: 2, amp: 4, phase: 0 }, { k: 4, amp: 2, phase: 1.5 }, { k: 6, amp: 1.2, phase: 0.5 }]
-    ),
+    // HAND-AUTHORED circuit: a long main straight, a fast right sweeper up the
+    // east side, a chicane over a gentle crest, sweeping top & left, then a
+    // downhill run back. (x, y, z) clockwise; corners are ~55-65 m radius so the
+    // road never pinches. CatmullRom smooths through the points.
+    controlPoints: [
+      // main straight (heading +x)
+      [-215, 1, -178], [-120, 1, -184], [-20, 1, -184], [80, 1, -180], [175, 1, -170],
+      // Turn 1 — fast right sweeper onto the east back-straight
+      [250, 1, -145], [292, 2, -85], [305, 3, -10], [300, 4, 75], [285, 5, 150],
+      // chicane over a gentle crest (right-left flick)
+      [255, 7, 200], [214, 9, 226], [172, 9, 210], [128, 9, 234],
+      // top straight (heading -x)
+      [40, 7, 248], [-55, 4, 246], [-140, 3, 235],
+      // sweeping top-left onto the left straight (heading -z)
+      [-205, 3, 222], [-258, 3, 175], [-282, 2, 110], [-288, 2, 25], [-278, 1, -55],
+      // bottom-left corner back onto the main straight
+      [-258, 1, -100], [-250, 1, -150],
+    ],
     palette: {
       sky: ["#0d0821", "#1a1033", "#4a2d6e", "#6d4a9e"],
       stars: true,
