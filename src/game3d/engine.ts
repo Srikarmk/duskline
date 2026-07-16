@@ -681,7 +681,7 @@ export class Game {
       const side: 1 | -1 = (this.realm.id.charCodeAt(0) + fi) % 2 === 0 ? 1 : -1;
       // a wide lens (so the two roads clearly separate around the island), flat so
       // the island reads cleanly between them
-      const bulge = clamp(28 + s.len * 0.08, 30, 42);
+      const bulge = clamp(20 + s.len * 0.03, 22, 28); // parallel-lane offset (island + a road width)
       const branch = new BranchPath(sampleP, sampleT, startDist, endDist, { side, bulge, rise: 0, seed: 100 + fi });
       this.scene.add(branch.buildRoad(roadMat, ROAD_HALF_WIDTH));
       this.branches.push({ path: branch, side });

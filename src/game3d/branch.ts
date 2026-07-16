@@ -78,44 +78,44 @@ export class BranchPath {
     const tStart = sampleMainTangent(startDist, new THREE.Vector3()).normalize();
     const tEnd = sampleMainTangent(endDist, new THREE.Vector3()).normalize();
 
-    // chord across the gap, flattened, and the perpendicular the branch bows to
-    const chord = pEnd.clone().sub(pStart);
-    const chordLen = chord.length() || 1;
-    const mainDir = chord.clone();
-    mainDir.y = 0;
-    if (mainDir.lengthSq() < 1e-6) mainDir.copy(tStart).setY(0);
-    mainDir.normalize();
-    // right = normalize(mainDir x up); scaled by `side` picks the bow direction
-    const rightChord = new THREE.Vector3(-mainDir.z, 0, mainDir.x).multiplyScalar(side);
-
     // lead length: how far the branch runs along the main tangent before/after
     // bending, so it leaves and rejoins without a kink.
-    const lead = clampN(chordLen * 0.16, 3, 40);
+    const chordLen = pEnd.clone().sub(pStart).length() || 1;
+    const lead = clampN(chordLen * 0.14, 3, 26);
 
-    // a bowed mid control point at fraction s along the chord. Lateral offset
-    // follows sin(pi*s) (0 at the ends, `bulge` at the apex); the height eases
-    // between the two main heights plus a sin hump of `rise` for the overpass.
+    // A PARALLEL exit lane, NOT a side-bulge: each mid point is the MAIN road
+    // point at that fraction, offset sideways by its OWN local perpendicular, so
+    // the branch runs alongside the main road. The offset ramps up (peel off),
+    // holds constant (run parallel around the island), then ramps down (merge) —
+    // reads as a road division / exit, not a random curve out to the side.
+    const span = endDist - startDist;
+    const edge = 0.3; // fraction of the branch spent diverging / converging
+    const plateau = (s: number): number => {
+      if (s < edge) { const t = s / edge; return t * t * (3 - 2 * t); }
+      if (s > 1 - edge) { const t = (1 - s) / edge; return t * t * (3 - 2 * t); }
+      return 1;
+    };
     const mid = (s: number): THREE.Vector3 => {
-      const lat = Math.sin(Math.PI * s) * (0.94 + rng() * 0.12); // subtle jitter
-      const p = pStart.clone().lerp(pEnd, s);
-      p.addScaledVector(rightChord, bulge * lat);
-      p.y = lerpN(pStart.y, pEnd.y, s) + rise * Math.sin(Math.PI * s) + (rng() - 0.5) * 0.3;
-      return p;
+      const d = startDist + s * span;
+      const mp = sampleMainPoint(d, new THREE.Vector3());
+      const mt = sampleMainTangent(d, new THREE.Vector3()).normalize();
+      const localRight = new THREE.Vector3(-mt.z, 0, mt.x).multiplyScalar(side);
+      mp.addScaledVector(localRight, bulge * plateau(s));
+      mp.y += rise * plateau(s) + (rng() - 0.5) * 0.2;
+      return mp;
     };
 
-    // 9 control points: start, tangent lead-in, 5 bowed mids, tangent lead-out,
-    // end. The tangent-aligned neighbours of the endpoints make an open
-    // Catmull-Rom leave/rejoin the main track smoothly (its boundary tangent is
-    // the direction to the adjacent point).
+    // start, tangent lead-in, parallel-lane mids, tangent lead-out, end — an
+    // open centripetal Catmull-Rom that peels off and rejoins the main road.
     const pts: THREE.Vector3[] = [
       pStart.clone(),
-      pStart.clone().addScaledVector(tStart, lead), // lead-in: along main tangent
-      mid(0.24),                                     // bending toward `side`
-      mid(0.4),
-      mid(0.5),                                      // apex (max bulge / rise)
-      mid(0.6),
-      mid(0.76),                                     // bending back
-      pEnd.clone().addScaledVector(tEnd, -lead),     // lead-out: along main tangent
+      pStart.clone().addScaledVector(tStart, lead),
+      mid(0.14),
+      mid(0.3),
+      mid(0.5),
+      mid(0.7),
+      mid(0.86),
+      pEnd.clone().addScaledVector(tEnd, -lead),
       pEnd.clone(),
     ];
 
