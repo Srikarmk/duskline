@@ -72,7 +72,7 @@ export class FreeDrive {
     // --- steering ---------------------------------------------------------
     // turn rate falls with speed (twitchy when slow, stable when fast) and needs
     // motion; reverse flips the steering so it behaves like a real car.
-    const steer = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+    const steer = (input.left ? 1 : 0) - (input.right ? 1 : 0);
     const spd = Math.abs(vf);
     const speedFrac = clampN(spd / tuning.maxSpeed, 0, 1);
     const move = clampN(spd / 6, 0, 1);                            // no turning at a standstill
@@ -114,11 +114,13 @@ export class FreeDrive {
       const rx = t.z, rz = -t.x; // right of travel (unit, tangent is unit)
       this.x -= sign * rx * over;
       this.z -= sign * rz * over;
-      // reflect the outward part of velocity inward (a firm bounce), keep forward
+      // SCRAPE along the wall: remove only the into-wall velocity component and
+      // keep the speed along it. No bounce — a bounce could reverse the car's
+      // forward velocity and spin it (which also flipped reverse-steering).
       const outward = this.vx * (sign * rx) + this.vz * (sign * rz);
       if (outward > 0) {
-        this.vx -= sign * rx * outward * 1.4;
-        this.vz -= sign * rz * outward * 1.4;
+        this.vx -= sign * rx * outward;
+        this.vz -= sign * rz * outward;
       }
       void c;
     }
