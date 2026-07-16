@@ -210,23 +210,21 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     id: "forest",
     name: "Enchanted Forest",
     blurb: "Moonlit woods, glowing mushrooms, gentle rolling hills.",
-    // HAND-AUTHORED circuit: a long main straight, a fast right sweeper up the
-    // east side, a chicane over a gentle crest, sweeping top & left, then a
-    // downhill run back. (x, y, z) clockwise; corners are ~55-65 m radius so the
-    // road never pinches. CatmullRom smooths through the points.
+    // HAND-AUTHORED — Enchanted Forest: long main straight (S), a big fast
+    // right sweeper up the E side, an S-esse over the top, sweeping run down to a
+    // tight left hairpin (W). Organic kidney silhouette. min turn radius ~35 m.
     controlPoints: [
-      // main straight (heading +x)
-      [-215, 1, -178], [-120, 1, -184], [-20, 1, -184], [80, 1, -180], [175, 1, -170],
-      // Turn 1 — fast right sweeper onto the east back-straight
-      [250, 1, -145], [292, 2, -85], [305, 3, -10], [300, 4, 75], [285, 5, 150],
-      // chicane over a gentle crest (right-left flick)
-      [255, 7, 200], [214, 9, 226], [172, 9, 210], [128, 9, 234],
-      // top straight (heading -x)
-      [40, 7, 248], [-55, 4, 246], [-140, 3, 235],
-      // sweeping top-left onto the left straight (heading -z)
-      [-205, 3, 222], [-258, 3, 175], [-282, 2, 110], [-288, 2, 25], [-278, 1, -55],
-      // bottom-left corner back onto the main straight
-      [-258, 1, -100], [-250, 1, -150],
+      [206, 6, -173], [235, 6, -156], [258, 7, -131], [277, 7, -103], [294, 7, -74],
+      [309, 8, -44], [315, 8, -11], [310, 8, 23], [297, 8, 54], [281, 8, 84],
+      [265, 8, 113], [247, 8, 143], [226, 8, 169], [197, 8, 184], [164, 7, 181],
+      [136, 7, 163], [112, 7, 138], [87, 6, 116], [55, 6, 109], [25, 6, 123],
+      [3, 5, 149], [-18, 5, 175], [-46, 4, 194], [-79, 4, 203], [-113, 3, 207],
+      [-146, 3, 211], [-180, 2, 214], [-213, 2, 211], [-243, 2, 195], [-263, 1, 168],
+      [-276, 1, 137], [-287, 1, 104], [-297, 0, 72], [-304, 0, 39], [-305, 0, 5],
+      [-300, 0, -28], [-293, 0, -61], [-286, 0, -94], [-276, 0, -127], [-259, 0, -156],
+      [-232, 1, -176], [-199, 1, -183], [-166, 1, -184], [-132, 1, -184], [-98, 2, -184],
+      [-64, 2, -183], [-30, 3, -183], [4, 3, -182], [38, 4, -182], [72, 4, -182],
+      [105, 5, -181], [139, 5, -181], [173, 5, -179],
     ],
     palette: {
       sky: ["#0d0821", "#1a1033", "#4a2d6e", "#6d4a9e"],
@@ -257,11 +255,20 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     id: "ember",
     name: "Ember Wastes",
     blurb: "Volcanic flats — long straights, sweeping fast bends, ash sky.",
-    controlPoints: loopTrack(
-      32, 258,
-      [{ k: 1, amp: 100, phase: 0.5 }, { k: 2, amp: 24, phase: 0 }, { k: 3, amp: 13, phase: 1.6 }],
-      1, [{ k: 1, amp: 4, phase: 0.5 }, { k: 2, amp: 3, phase: 2.0 }]
-    ),
+    // HAND-AUTHORED — Ember Wastes: elongated volcanic speedway. A very long main
+    // straight into one big flat-out sweeper (E), a long back straight, and a
+    // single hairpin (W). Fast and flowing. min turn radius ~41 m.
+    controlPoints: [
+      [220, 1, -148], [252, 1, -133], [276, 1, -106], [291, 1, -73], [303, 1, -39],
+      [313, 1, -5], [316, 1, 31], [304, 1, 64], [285, 1, 95], [264, 1, 124],
+      [240, 1, 150], [208, 1, 167], [173, 1, 171], [137, 1, 168], [101, 1, 165],
+      [65, 1, 161], [30, 1, 158], [-6, 1, 155], [-42, 1, 151], [-78, 1, 148],
+      [-114, 1, 145], [-149, 1, 141], [-185, 1, 135], [-217, 1, 120], [-241, 1, 93],
+      [-262, 1, 64], [-282, 1, 34], [-296, 1, 1], [-292, 1, -34], [-280, 1, -68],
+      [-265, 1, -101], [-243, 1, -128], [-211, 1, -143], [-175, 1, -146], [-139, 1, -147],
+      [-103, 1, -148], [-67, 1, -148], [-31, 1, -149], [5, 1, -149], [41, 1, -150],
+      [77, 1, -150], [113, 1, -151], [149, 1, -151], [185, 1, -151],
+    ],
     palette: {
       sky: ["#1a0805", "#3b1206", "#7c2d12", "#b45309"],
       stars: false,
@@ -286,11 +293,24 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     id: "peaks",
     name: "Crystal Peaks",
     blurb: "High icy mountains — steep climbs, tight twists, thin air.",
-    controlPoints: loopTrack(
-      36, 204,
-      [{ k: 3, amp: 34, phase: 0.2 }, { k: 4, amp: 12, phase: 0.8 }, { k: 5, amp: 5, phase: 1.4 }],
-      3, [{ k: 2, amp: 6, phase: 0 }, { k: 3, amp: 3, phase: 1.0 }, { k: 5, amp: 1.5, phase: 0.5 }]
-    ),
+    // HAND-AUTHORED — Crystal Peaks: a twisty alpine circuit — several medium
+    // corners, an S-section over the top, and a hairpin (lower-left), with gentle
+    // elevation change. min turn radius ~32 m.
+    controlPoints: [
+      [165, 7, -173], [189, 7, -155], [211, 8, -135], [232, 8, -113], [252, 9, -91],
+      [271, 9, -68], [283, 9, -41], [284, 9, -11], [277, 9, 18], [268, 9, 47],
+      [259, 9, 75], [248, 8, 103], [235, 8, 130], [213, 8, 151], [185, 8, 156],
+      [158, 7, 144], [141, 7, 120], [131, 7, 92], [120, 7, 64], [102, 7, 40],
+      [75, 7, 30], [46, 7, 35], [25, 7, 56], [19, 7, 85], [27, 7, 114],
+      [41, 7, 141], [52, 7, 168], [53, 7, 198], [37, 7, 222], [10, 7, 234],
+      [-20, 7, 234], [-49, 7, 229], [-78, 6, 223], [-108, 6, 216], [-137, 6, 208],
+      [-164, 5, 196], [-187, 5, 178], [-207, 4, 155], [-225, 3, 131], [-242, 3, 107],
+      [-259, 2, 82], [-273, 1, 55], [-279, 1, 26], [-274, 0, -3], [-264, 0, -32],
+      [-253, 0, -60], [-241, 0, -87], [-225, 0, -113], [-203, 0, -133], [-177, 0, -147],
+      [-149, 0, -158], [-121, 0, -170], [-94, 0, -181], [-66, 1, -192], [-38, 1, -202],
+      [-9, 2, -210], [21, 3, -213], [51, 4, -208], [80, 5, -202], [109, 5, -194],
+      [137, 6, -185],
+    ],
     palette: {
       sky: ["#081428", "#0e2540", "#2a5a8a", "#7ec8e8"],
       stars: true,
@@ -316,11 +336,21 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     name: "Void Circuit",
     blurb: "Anti-gravity glass tube through deep space — huge climbs and drops.",
     style: "void",
-    controlPoints: loopTrack(
-      26, 228,
-      [{ k: 1, amp: 50, phase: 0.6 }, { k: 2, amp: 34, phase: 2.0 }, { k: 3, amp: 20, phase: 0.4 }],
-      34, [{ k: 1, amp: 30, phase: 0 }, { k: 2, amp: 20, phase: 1.2 }, { k: 3, amp: 13, phase: 0.5 }, { k: 4, amp: 8, phase: 1.8 }]
-    ),
+    // HAND-AUTHORED — Void Circuit: a smooth flowing anti-grav loop — three long
+    // sweepers and a single chicane, on rolling elevation. min turn radius ~25 m
+    // (chicane).
+    controlPoints: [
+      [171, 37, -209], [204, 41, -191], [230, 45, -163], [248, 48, -130], [262, 50, -95],
+      [276, 52, -60], [290, 53, -25], [303, 53, 11], [312, 52, 48], [309, 50, 85],
+      [295, 48, 120], [270, 45, 148], [237, 41, 167], [201, 37, 177], [164, 34, 186],
+      [127, 30, 194], [90, 27, 202], [53, 24, 209], [15, 22, 209], [-17, 20, 191],
+      [-37, 19, 159], [-54, 18, 125], [-80, 18, 99], [-116, 18, 101], [-144, 19, 125],
+      [-170, 20, 153], [-205, 20, 165], [-240, 21, 152], [-264, 21, 123], [-282, 21, 90],
+      [-300, 21, 57], [-314, 21, 22], [-318, 20, -16], [-309, 19, -52], [-289, 17, -84],
+      [-264, 16, -112], [-237, 15, -139], [-211, 14, -167], [-184, 13, -194], [-157, 13, -220],
+      [-126, 13, -241], [-90, 14, -252], [-52, 16, -251], [-14, 18, -246], [23, 21, -239],
+      [60, 25, -232], [97, 29, -226], [135, 33, -219],
+    ],
     palette: {
       sky: ["#02010a", "#070218", "#0d0a2e", "#1a1040"],
       stars: true,
@@ -341,11 +371,19 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     id: "sands",
     name: "Sunspire Sands",
     blurb: "Blazing desert circuit — vast dunes, ancient monuments, long sun-baked straights.",
-    controlPoints: loopTrack(
-      32, 262,
-      [{ k: 1, amp: 92, phase: 0.2 }, { k: 3, amp: 22, phase: 1.1 }, { k: 4, amp: 10, phase: 2.3 }],
-      1.2, [{ k: 1, amp: 5, phase: 0 }, { k: 3, amp: 3, phase: 1.0 }]
-    ),
+    // HAND-AUTHORED — Sunspire Sands: long sun-baked straights joined by a couple
+    // of fast 90s and one hairpin (W). min turn radius ~41 m.
+    controlPoints: [
+      [220, 1, -192], [249, 1, -167], [262, 2, -132], [270, 2, -95], [278, 2, -57],
+      [285, 2, -20], [292, 3, 17], [296, 3, 55], [286, 3, 91], [258, 3, 117],
+      [224, 3, 135], [190, 3, 152], [156, 3, 169], [122, 3, 186], [87, 3, 200],
+      [50, 3, 207], [12, 3, 206], [-26, 2, 203], [-64, 2, 200], [-102, 2, 197],
+      [-140, 2, 193], [-178, 1, 189], [-215, 1, 181], [-245, 1, 159], [-262, 0, 125],
+      [-275, 0, 89], [-286, 0, 53], [-298, 0, 16], [-303, 0, -21], [-288, 0, -56],
+      [-264, 0, -85], [-238, 0, -113], [-212, 0, -141], [-185, 0, -168], [-156, 0, -193],
+      [-121, 0, -207], [-83, 0, -209], [-45, 0, -208], [-7, 0, -207], [31, 0, -205],
+      [69, 0, -204], [107, 0, -203], [145, 0, -202], [183, 1, -200],
+    ],
     palette: {
       sky: ["#2f6bb0", "#5f97cc", "#b8d6e6", "#f2e2b8"],
       stars: false,
@@ -371,11 +409,23 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     id: "castle",
     name: "Hogwarts",
     blurb: "A twisting lap around the wizarding castle — turrets, the Express, floating candles and a Whomping Willow.",
-    controlPoints: loopTrack(
-      34, 204,
-      [{ k: 3, amp: 30, phase: 0.4 }, { k: 4, amp: 14, phase: 1.2 }, { k: 5, amp: 6, phase: 0.6 }],
-      3, [{ k: 2, amp: 4, phase: 0.5 }, { k: 4, amp: 2, phase: 1.4 }]
-    ),
+    // HAND-AUTHORED — Hogwarts: a tight, twisty castle circuit — two hairpins, an
+    // esse and a chicane linked by short chutes. min turn radius ~26 m.
+    controlPoints: [
+      [186, 4, -161], [210, 4, -143], [228, 5, -119], [244, 5, -94], [259, 5, -68],
+      [274, 5, -42], [286, 6, -15], [292, 6, 15], [281, 6, 41], [256, 6, 56],
+      [226, 6, 57], [197, 6, 52], [168, 6, 47], [138, 6, 47], [111, 6, 58],
+      [95, 6, 83], [87, 6, 112], [81, 6, 141], [68, 5, 167], [41, 5, 179],
+      [13, 5, 171], [-2, 5, 147], [-7, 4, 117], [-11, 4, 88], [-23, 4, 61],
+      [-49, 4, 47], [-78, 3, 50], [-99, 3, 70], [-105, 3, 98], [-100, 2, 128],
+      [-93, 2, 157], [-95, 2, 186], [-114, 2, 207], [-143, 1, 212], [-172, 1, 202],
+      [-198, 1, 187], [-223, 1, 171], [-246, 0, 153], [-266, 0, 130], [-278, 0, 103],
+      [-285, 0, 74], [-291, 0, 45], [-297, 0, 15], [-300, 0, -14], [-295, 0, -44],
+      [-280, 0, -69], [-258, 0, -90], [-236, 0, -109], [-213, 0, -128], [-189, 1, -147],
+      [-166, 1, -165], [-140, 1, -180], [-111, 1, -187], [-81, 2, -187], [-51, 2, -185],
+      [-21, 2, -183], [9, 2, -181], [39, 3, -179], [68, 3, -177], [98, 3, -175],
+      [128, 4, -173], [158, 4, -169],
+    ],
     palette: {
       sky: ["#0b1020", "#161e33", "#2c3350", "#4a4a6e"],
       stars: true,
@@ -402,11 +452,21 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     id: "circuit",
     name: "Apex Speedway",
     blurb: "A real grand-prix stadium — grandstands, floodlights, flat-out sweepers and a stadium roar.",
-    controlPoints: loopTrack(
-      40, 246,
-      [{ k: 1, amp: 82, phase: 0.5 }, { k: 2, amp: 30, phase: 2.4 }, { k: 3, amp: 22, phase: 1.0 }],
-      1, [{ k: 2, amp: 2.5, phase: 0 }]
-    ),
+    // HAND-AUTHORED — Apex Speedway: a grand-prix layout — a long main straight,
+    // two fast sweepers, a stadium chicane and a hairpin (W). min turn radius ~29 m.
+    controlPoints: [
+      [222, 1, -214], [253, 1, -197], [275, 1, -168], [287, 2, -134], [295, 2, -99],
+      [302, 2, -63], [309, 2, -28], [315, 2, 8], [314, 2, 44], [302, 2, 78],
+      [279, 2, 105], [252, 2, 130], [224, 1, 153], [196, 1, 176], [167, 1, 197],
+      [133, 1, 210], [98, 1, 204], [76, 0, 176], [66, 0, 141], [57, 0, 106],
+      [39, 0, 75], [5, 0, 64], [-26, 0, 79], [-41, 0, 112], [-45, 0, 148],
+      [-54, 0, 183], [-78, 1, 209], [-112, 1, 219], [-149, 1, 220], [-185, 1, 220],
+      [-221, 2, 215], [-254, 2, 202], [-278, 2, 176], [-291, 2, 142], [-298, 2, 106],
+      [-304, 2, 71], [-309, 2, 35], [-308, 2, -1], [-298, 2, -36], [-281, 2, -68],
+      [-264, 1, -100], [-246, 1, -132], [-228, 1, -163], [-205, 1, -191], [-175, 0, -211],
+      [-140, 0, -218], [-104, 0, -220], [-68, 0, -220], [-31, 0, -220], [5, 0, -220],
+      [41, 0, -220], [77, 0, -220], [114, 0, -220], [150, 1, -220], [186, 1, -219],
+    ],
     palette: {
       sky: ["#1c3a6e", "#2f5a9e", "#6a9ad0", "#cfe4f5"],
       stars: false,
@@ -431,11 +491,21 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     id: "metro",
     name: "Neon Metro",
     blurb: "A midnight street circuit through the city — glass towers, neon billboards, wet asphalt.",
-    controlPoints: loopTrack(
-      32, 216,
-      [{ k: 2, amp: 46, phase: 1.2 }, { k: 4, amp: 16, phase: 0.3 }, { k: 1, amp: 26, phase: 2.0 }, { k: 5, amp: 6, phase: 0.9 }],
-      1, [{ k: 2, amp: 3.5, phase: 0.5 }]
-    ),
+    // HAND-AUTHORED — Neon Metro: a blocky street circuit — long straights joined
+    // by tight ~90s, a right-hand jog and one chicane (Monaco-ish). min turn ~32 m.
+    controlPoints: [
+      [196, 1, -191], [221, 1, -171], [239, 1, -144], [255, 1, -116], [270, 1, -88],
+      [283, 1, -59], [287, 1, -27], [273, 1, 1], [246, 1, 17], [215, 1, 24],
+      [184, 1, 28], [152, 1, 35], [125, 1, 50], [109, 1, 77], [105, 1, 109],
+      [102, 1, 141], [93, 1, 171], [70, 1, 192], [38, 1, 197], [7, 1, 195],
+      [-25, 1, 190], [-57, 1, 184], [-87, 1, 176], [-118, 1, 165], [-149, 1, 158],
+      [-181, 1, 159], [-212, 1, 163], [-244, 1, 163], [-271, 1, 146], [-286, 1, 119],
+      [-292, 1, 87], [-296, 1, 55], [-300, 1, 24], [-303, 1, -8], [-303, 1, -40],
+      [-294, 1, -71], [-274, 1, -96], [-251, 1, -118], [-227, 1, -139], [-203, 1, -160],
+      [-178, 1, -180], [-152, 1, -198], [-122, 1, -210], [-90, 1, -213], [-58, 1, -212],
+      [-26, 1, -210], [6, 1, -209], [38, 1, -207], [70, 1, -205], [102, 1, -204],
+      [134, 1, -202], [166, 1, -199],
+    ],
     palette: {
       sky: ["#05060f", "#0b1024", "#161a3a", "#2a2450"],
       stars: true,
