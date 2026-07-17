@@ -205,7 +205,6 @@ export class Game {
   private lapProgress = 0;   // cumulative signed distance travelled this lap
   private lastFreeDist = 0;  // previous frame's projected distance (for lap wrap)
   private wasOnRamp = false;
-  private edgeHitCd = 0; // cooldown after clipping a ramp's side
   private lastRampPower = 1;
   private lastRampT = 0;
   private treeMats: TreeMats | null = null;
@@ -225,6 +224,7 @@ export class Game {
   private smoke: SmokePuff[] = [];
   private smokeTimer = 0;
   private camPos = new THREE.Vector3();
+  private camYaw = 0; // smoothed camera heading — eases toward the car so the view swings in behind you instead of snapping with every steer
   private camSnap = true;
   private cameraIndex = 0;
 
@@ -1559,7 +1559,7 @@ export class Game {
       {
         throttle: this.input.accelerate || this.transformed,
         brake: this.input.brake && !this.transformed,
-        steer: this.stuntAir ? 0 : -this.steerInput, // smoothed analog; -steer so Right turns right
+        steer: -this.steerInput * (this.stuntAir ? 0.4 : 1), // -steer so Right turns right; reduced authority in the air so you can aim the landing without barrel-rolling
         handbrake,
       },
       dt, this.track,
@@ -1621,8 +1621,6 @@ export class Game {
     // get a partial pop, not a clean launch (hit it sideways at your peril).
     let onRamp: (typeof this.ramps)[number] | null = null;
     let rampT = 0;
-    let edgeHit: (typeof this.ramps)[number] | null = null; // clipped its side
-    this.edgeHitCd = Math.max(0, this.edgeHitCd - dt);
     if (!this.transformed && !this.onBranch) {
       const trackLen = this.track.length;
       for (const r of this.ramps) {
@@ -1630,30 +1628,15 @@ export class Game {
         if (gap > trackLen / 2) gap -= trackLen;
         else if (gap < -trackLen / 2) gap += trackLen;
         if (gap < -r.len / 2 || gap > r.len / 2) continue; // not on this ramp lengthwise
-        const off = Math.abs(this.playerX - r.lane);
-        if (off < 0.28) {                    // centred in the lane → clean ride-up
+        // Forgiving one-lane band: anywhere over the ramp (plus a little margin)
+        // gives a clean ride-up. Adjacent lanes sit ~0.67 away so they stay clear.
+        // No side-shove, no crash — miss the lane and you simply drive past it.
+        if (Math.abs(this.playerX - r.lane) < 0.46) {
           onRamp = r;
           rampT = (gap + r.len / 2) / r.len; // 0 at the base → 1 at the lip
           break;
-        } else if (off < 0.5) {              // clipped the ramp's SIDE edge
-          edgeHit = r;
         }
       }
-    }
-    // hitting a ramp side-on: no launch — the car is DEFLECTED off it (a
-    // world-space shove away from the ramp) and bends/rolls, with a speed hit.
-    if (edgeHit && !onRamp && this.alt < 0.4 && this.edgeHitCd <= 0) {
-      this.edgeHitCd = 0.5;
-      const t = this.track.tangentAt(this.position);
-      const rx = t.z, rz = -t.x;                             // road "right" (unit)
-      const away = Math.sign(this.playerX - edgeHit.lane) || 1;
-      this.freeDrive.vx += rx * away * 9;                    // shove off the ramp
-      this.freeDrive.vz += rz * away * 9;
-      this.freeDrive.speed *= 0.72;
-      this.shake = Math.max(this.shake, 0.5);
-      this.crashFlash = 0.25;
-      this.sound.play("bump");
-      this.toast("CLIPPED!", "#fca5a5");
     }
 
     // altitude
@@ -1672,22 +1655,14 @@ export class Game {
     } else {
       if (this.wasOnRamp) {
         this.wasOnRamp = false;
-        if (this.lastRampT > 0.6) {
-          // launched cleanly off the lip → arc through the air
+        if (this.lastRampT > 0.5) {
+          // rolled off the lip → arc through the air (gentle, capped by MAX_ALT)
           this.vAlt = RAMP_LAUNCH * this.lastRampPower * clamp(speedPercent, 0.4, 1);
           this.spin = 0;
           this.playerVX = 0;
           this.toast(this.lastRampPower > 1.3 ? "MEGA JUMP!" : "JUMP!", "#c084fc");
-        } else if (this.lastRampT > 0.2 && this.alt > 0.4) {
-          // slid off the SIDE of the ramp mid-climb → a clumsy tumble, not a jump
-          this.speed *= 0.6;
-          this.playerVX += (Math.random() - 0.5) * 0.8;
-          this.spin = 0.3;
-          this.crashFlash = 0.35;
-          this.shake = Math.max(this.shake, 0.6);
-          this.sound.play("crash");
-          this.toast("SIDESWIPE!", "#f87171");
         }
+        // dropped off before the lip → just settle back down, no crash or tumble
       }
       if (this.transformed && this.input.fly) {
         this.vAlt = Math.min(this.vAlt + FLY_LIFT * dt, 9);
@@ -2339,7 +2314,14 @@ export class Game {
       // look ahead of it. FOV kicks with speed/boost; banks slightly with steer.
       const preset = CAMERA_PRESETS[this.cameraIndex];
       const spd = this.speed / MAX_SPEED;
-      const fx = Math.sin(this.freeDrive.heading), fz = Math.cos(this.freeDrive.heading);
+      // auto-follow: the camera yaw eases toward the car's heading instead of
+      // snapping to it, so flicking the wheel swings the view in smoothly behind
+      // you (much easier to place the car). Snap it on a hard cut (start/camera cycle).
+      let dyaw = this.freeDrive.heading - this.camYaw;
+      dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw));
+      if (this.camSnap) this.camYaw = this.freeDrive.heading;
+      else this.camYaw += dyaw * 0.12;
+      const fx = Math.sin(this.camYaw), fz = Math.cos(this.camYaw);
 
       const targetFov = preset.fov + spd * 4 + (boosting ? 4 : 0);
       this.camera.fov += (targetFov - this.camera.fov) * 0.06;

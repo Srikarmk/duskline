@@ -1002,7 +1002,7 @@ export const RAMP_SPECS: Record<RampKind, {
   standard: { w: 3.2, l: 4.6, h: 2.4, body: 0x5a2c0e, glow: 0xf59e0b, chev: 0xfbbf24, power: 1.0 },
   mega:     { w: 3.4, l: 6.0, h: 3.6, body: 0x0e3a4a, glow: 0x22d3ee, chev: 0x67e8f9, power: 1.5 },
   kicker:   { w: 3.0, l: 3.0, h: 1.55, body: 0x143a20, glow: 0x4ade80, chev: 0xa7f3d0, power: 0.7 },
-  wide:     { w: 4.2, l: 4.0, h: 2.1, body: 0x3b1046, glow: 0xd946ef, chev: 0xf5d0fe, power: 1.05 },
+  wide:     { w: 3.4, l: 4.0, h: 2.1, body: 0x3b1046, glow: 0xd946ef, chev: 0xf5d0fe, power: 1.05 },
 };
 
 // curved slope profiles (t: 0 at entry → 1 at lip). All start flat at 0 and
