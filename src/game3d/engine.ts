@@ -298,7 +298,9 @@ export class Game {
     } else {
       this.realm = REALMS[options.realm ?? "forest"];
     }
-    this.track = new Track(this.realm.controlPoints, this.realm.style !== "void");
+    // banking OFF: the car sits at the flat centreline height, so a banked (tilted)
+    // road surface would poke up through it on corners and look like the car sinks
+    this.track = new Track(this.realm.controlPoints, false);
     this.minimap = new Minimap(this.track);
     this.onFinish = options.onFinish;
     this.lap = 1;
@@ -968,9 +970,9 @@ export class Game {
     const pal = realm.palette;
     this.placeTunnels();
     this.placeRivers();
-    this.placeBranches(); // build the branch roads; free-roam opens the wall at forks
-    // hand the branches to the free-roam body so it drives whichever road is nearest
-    this.freeDrive.branches = this.branches.map((b) => ({ path: b.path, startDist: b.path.startDist, endDist: b.path.endDist }));
+    // branches REMOVED — the open fork corridor let the car wander off-road (OOB
+    // + sink) and the separate curve felt bad. One clean road, firm walls everywhere.
+    this.freeDrive.branches = [];
     this.placeSkyProps();
     this.treeMats = makeTreeMaterials(pal); // shared bark/foliage tree materials
     const lane = () => LANE_CENTERS[Math.floor(rand() * 3)];
