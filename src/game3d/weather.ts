@@ -255,14 +255,16 @@ export function makeWeather(kind: WeatherKind, pal: RealmPalette): WeatherSystem
     case "snow": {
       const white = mix(col(pal.laneLine), col(0xffffff), 0.5);
       add({
-        count: 250, color: white, size: 1.3, opacity: 0.7,
+        count: 250, color: white, size: 0.9, opacity: 0.55,
         blending: THREE.NormalBlending, texture: dot, yMin: 0, yMax: Y_TOP - 5,
         vx: 0, vy: -8, vz: 0, vjitter: 0.5,
         swayX: 7, swayY: 2, swayZ: 7, swayFreq: 0.5,
         twinkle: 0, twinkleFreq: 0, seed: 1001,
       });
       add({
-        count: 170, color: white, size: 2.5, opacity: 0.7,
+        // smaller + fewer big flakes: sizeAttenuation was ballooning near-camera
+        // flakes into big white blobs that blotted out the road
+        count: 110, color: white, size: 1.4, opacity: 0.5,
         blending: THREE.NormalBlending, texture: dot, yMin: 0, yMax: Y_TOP - 5,
         vx: 0, vy: -6.5, vz: 0, vjitter: 0.5,
         swayX: 9, swayY: 2, swayZ: 9, swayFreq: 0.45,

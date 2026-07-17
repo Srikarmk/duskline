@@ -1083,20 +1083,29 @@ export class Game {
       this.addEntity("nitro", d, lane(), makeNitroCan());
     }
 
-    // ramps + air gem arcs — cycle the ramp kinds for variety (each launches
-    // with its own power, and the air-gem arc stretches to match)
+    // ramps + air-gem arcs. Every ramp sits in the CENTRE lane — that's where you
+    // naturally drive, so you hit them head-on without hunting for a side lane —
+    // and each is nudged onto the straightest spot nearby so it's never stuck on
+    // an apex you can't line up. Spaced so you clear several a lap.
     const rampKinds: RampKind[] = ["standard", "mega", "kicker", "wide"];
     let ri = 0;
-    for (let d = 200; d < len - 60; d += 520) {
+    for (let d0 = 180; d0 < len - 60; d0 += 340) {
+      // search ±44m for the flattest (lowest-curvature) spot so the ramp lands on
+      // a straight, not mid-corner
+      let best = d0, bestCurve = Infinity;
+      for (let dd = d0 - 44; dd <= d0 + 44; dd += 8) {
+        const c = Math.abs(this.track.curvatureAt(this.track.wrap(dd)));
+        if (c < bestCurve) { bestCurve = c; best = dd; }
+      }
+      const d = this.track.wrap(best);
       const kind = rampKinds[ri % rampKinds.length];
-      const l = LANE_CENTERS[ri % LANE_CENTERS.length]; // each ramp sits in ONE lane
       ri++;
       const spec = RAMP_SPECS[kind];
-      this.addEntity("ramp", d, l, makeRamp(kind), 0, spec.power);
-      this.ramps.push({ dist: this.track.wrap(d), power: spec.power, lane: l, len: spec.l, height: spec.h });
+      this.addEntity("ramp", d, 0, makeRamp(kind), 0, spec.power); // lane 0 = centre
+      this.ramps.push({ dist: d, power: spec.power, lane: 0, len: spec.l, height: spec.h });
       for (const off of [15, 21, 27]) {
         const gap = Math.round(off * (0.7 + 0.35 * spec.power));
-        this.addEntity("airGem", d + gap, l, makeGem(0xfbbf24, true), AIR_GEM_ALT);
+        this.addEntity("airGem", d + gap, 0, makeGem(0xfbbf24, true), AIR_GEM_ALT);
       }
     }
 
@@ -1655,11 +1664,18 @@ export class Game {
     } else {
       if (this.wasOnRamp) {
         this.wasOnRamp = false;
-        if (this.lastRampT > 0.5) {
+        if (this.lastRampT > 0.4) {
           // rolled off the lip → arc through the air (gentle, capped by MAX_ALT)
           this.vAlt = RAMP_LAUNCH * this.lastRampPower * clamp(speedPercent, 0.4, 1);
           this.spin = 0;
           this.playerVX = 0;
+          // kill side-slip on take-off so the jump flies STRAIGHT down the car's
+          // heading and lands predictably ahead — never carries a sideways drift
+          // into the wall (you can still aim mildly with the air steering)
+          const F = { x: Math.sin(this.freeDrive.heading), z: Math.cos(this.freeDrive.heading) };
+          const vf = this.freeDrive.vx * F.x + this.freeDrive.vz * F.z;
+          this.freeDrive.vx = F.x * vf;
+          this.freeDrive.vz = F.z * vf;
           this.toast(this.lastRampPower > 1.3 ? "MEGA JUMP!" : "JUMP!", "#c084fc");
         }
         // dropped off before the lip → just settle back down, no crash or tumble
