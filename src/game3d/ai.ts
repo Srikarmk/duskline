@@ -48,6 +48,7 @@ export class Opponent {
   targetLane: number;
   speed = 0;
   finished = false;
+  finishOrder = 0;   // set by the engine (1,2,3…) the moment this racer crosses the final line; 0 = still racing
   stunnedT = 0;
   pace = 1;          // personal top-speed factor (set by the engine)
   alt = 0;           // ramp-hop height

@@ -237,6 +237,8 @@ export class Game {
   private finished = false;
   private finalPosition = 1;
   private finalStandings: RaceStanding[] = [];
+  private finishSeq = 0;          // increments as each racer crosses the final line
+  private playerFinishOrder = 0;  // the player's slot in that sequence (0 = not yet)
 
   // player state
   private position = 0;
@@ -304,6 +306,8 @@ export class Game {
     this.minimap = new Minimap(this.track);
     this.onFinish = options.onFinish;
     this.lap = 1;
+    this.finishSeq = 0;
+    this.playerFinishOrder = 0;
     this.nitroCharges = this.cfg.startNitro;
     if (this.cfg.combat) this.heldItems = ["missile", "missile"]; // start armed
     this.carId = options.car ?? "comet";
@@ -1453,10 +1457,19 @@ export class Game {
   private computeStandings(): RaceStanding[] {
     const len = this.track.length;
     const racers = [
-      { name: "YOU", isPlayer: true, progress: this.playerProgress() },
-      ...this.opponents.map((o) => ({ name: o.name, isPlayer: false, progress: o.progress(len) })),
+      { name: "YOU", isPlayer: true, finishOrder: this.playerFinishOrder, progress: this.playerProgress() },
+      ...this.opponents.map((o) => ({ name: o.name, isPlayer: false, finishOrder: o.finishOrder, progress: o.progress(len) })),
     ];
-    racers.sort((a, b) => b.progress - a.progress);
+    // Racers who actually crossed the line rank by the order they crossed (a
+    // finished car freezes its distance at the seam, so progress alone ties them
+    // all — the finish sequence is the real result). Anyone still on track ranks
+    // after every finisher, by how far they've travelled.
+    racers.sort((a, b) => {
+      const aF = a.finishOrder > 0, bF = b.finishOrder > 0;
+      if (aF && bF) return a.finishOrder - b.finishOrder;
+      if (aF !== bF) return aF ? -1 : 1;
+      return b.progress - a.progress;
+    });
     return racers.map((r, i) => ({ name: r.name, isPlayer: r.isPlayer, position: i + 1 }));
   }
 
@@ -1774,7 +1787,9 @@ export class Game {
         if (this.lap > this.cfg.laps) {
           this.phase = "finished";
           this.finishT = 2.5;
-          // snapshot placement + order at the line so the results screen agrees
+          // stamp the player into the finish sequence, then snapshot the order at
+          // the line so the results screen reflects who actually crossed first
+          this.playerFinishOrder = ++this.finishSeq;
           this.finalStandings = this.computeStandings();
           this.finalPosition = this.finalStandings.find((s) => s.isPlayer)?.position ?? 1;
           this.score += SCORE_FINISH;
@@ -1809,6 +1824,8 @@ export class Game {
       // off only slightly when they're ahead — keeps the race close and tense
       const base = MAX_SPEED * o.pace * (1 + clamp(gap / 240, -0.06, 0.26));
       o.update(dt, this.track, base, this.cfg.laps);
+      // stamp the true finishing order the instant a rival crosses the final line
+      if (o.finished && o.finishOrder === 0) o.finishOrder = ++this.finishSeq;
 
       // spin the rival's wheels by its ground speed (keeps the pack alive)
       const ow = o.obj.userData.wheels as WheelRef[] | undefined;
