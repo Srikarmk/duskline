@@ -41,7 +41,7 @@ export const CENTRI_K = 0.78; // stronger corner load — you must actively stee
 
 // --- free-roam driving (the car is a world-space body, not rail-locked) ---
 export const FREE_TURN_RATE = 2.7; // base yaw rate (rad/s) — how fast you can steer
-export const FREE_GRIP = 6.0;      // lateral traction (side-slip bleed / s); handbrake loosens it
+export const FREE_GRIP = 8.5;      // lateral traction (side-slip bleed / s) — planted, not slidey; handbrake loosens it for drift
 /** grip while braking (weight forward → sharper turn-in) */
 export const WEIGHT_BRAKE_GRIP = 1.3;
 /** grip while on the throttle (weight back → a touch looser) */
