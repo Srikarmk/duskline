@@ -225,6 +225,8 @@ export class Game {
   private smokeTimer = 0;
   private camPos = new THREE.Vector3();
   private camYaw = 0; // smoothed camera heading — eases toward the car so the view swings in behind you instead of snapping with every steer
+  private reliefAmp = 0; // per-realm amplitude of the rolling hills the ground rises into away from the road
+  private terrSamp?: { sx: Float64Array; sz: Float64Array; sy: Float64Array }; // cached track polyline for ground-height queries
   private camSnap = true;
   private cameraIndex = 0;
 
@@ -303,6 +305,12 @@ export class Game {
     // banking OFF: the car sits at the flat centreline height, so a banked (tilted)
     // road surface would poke up through it on corners and look like the car sinks
     this.track = new Track(this.realm.controlPoints, false);
+    // how dramatically the land rolls away from the road, per realm — peaks/dunes
+    // heave, the speedway + city stay near-flat, the space tubes get none
+    this.reliefAmp = ({
+      forest: 11, ember: 16, peaks: 24, void: 0, sands: 20,
+      castle: 13, circuit: 3, metro: 5, nebula: 0,
+    } as Record<string, number>)[this.realm.id] ?? 11;
     this.minimap = new Minimap(this.track);
     this.onFinish = options.onFinish;
     this.lap = 1;
@@ -787,13 +795,6 @@ export class Game {
       const bridge = makeRiverBridge(pal);
       this.placeOnTrack(bridge, d);
       this.scene.add(bridge);
-      // launch ramp a bit before the bridge, so you jump the river
-      const rampD = this.track.wrap(d - 18);
-      this.addEntity("ramp", rampD, 0, makeRamp("mega"), 0, RAMP_SPECS.mega.power);
-      this.ramps.push({ dist: rampD, power: RAMP_SPECS.mega.power, lane: 0, len: RAMP_SPECS.mega.l, height: RAMP_SPECS.mega.h });
-      for (const off of [16, 22, 28]) {
-        this.addEntity("airGem", rampD + off, 0, makeGem(0xfbbf24, true), AIR_GEM_ALT);
-      }
     }
   }
 
@@ -923,25 +924,48 @@ export class Game {
   /** A terrain grid that FOLLOWS the track's height near the road (so the road
    *  sits grounded in rolling hills instead of floating on a flat plane), easing
    *  back to the base level away from the track. Reuses the flat ground material. */
-  private buildGroundTerrain(mat: THREE.Material): THREE.Mesh {
-    const T = this.track;
-    const N = 400; // track polyline samples (x,z + centreline height)
+  /** Cache the track polyline (x,z + centreline height) for ground-height queries. */
+  private ensureTerrSamples() {
+    if (this.terrSamp) return this.terrSamp;
+    const T = this.track, N = 400;
     const sx = new Float64Array(N), sz = new Float64Array(N), sy = new Float64Array(N);
     const tmp = new THREE.Vector3();
     for (let i = 0; i < N; i++) { T.pointAt((i / N) * T.length, 0, tmp, true); sx[i] = tmp.x; sz[i] = tmp.z; sy[i] = tmp.y; }
-    const b = T.bounds, margin = 470, cell = 12;
+    return (this.terrSamp = { sx, sz, sy });
+  }
+
+  /** Rolling-hill field (a few octaves of sines, range ~[-1.8, 1.8]). Deterministic
+   *  in world space so the terrain mesh, scenery and grass all agree. */
+  private terrainRelief(x: number, z: number): number {
+    return (
+      Math.sin(x * 0.0062 + 1.3) * Math.cos(z * 0.0055 - 0.7) +
+      Math.sin(x * 0.0125 - 0.4) * Math.cos(z * 0.0102 + 2.1) * 0.5 +
+      Math.sin((x + z) * 0.019 + 0.9) * 0.28
+    );
+  }
+
+  /** THE ground height at any world (x,z): the road's own elevation right by the
+   *  ribbon, easing over `fall` metres into per-realm rolling hills further out. */
+  private groundHeightAtXZ(x: number, z: number): number {
+    const { sx, sz, sy } = this.ensureTerrSamples();
+    let best = 1e18, by = 0;
+    for (let i = 0; i < sx.length; i++) { const dx = x - sx[i], dz = z - sz[i]; const d = dx * dx + dz * dz; if (d < best) { best = d; by = sy[i]; } }
+    const dist = Math.sqrt(best);
+    const near = 42, fall = 130;
+    const t = dist <= near ? 1 : dist >= near + fall ? 0 : 1 - (dist - near) / fall;
+    const ts = t * t * (3 - 2 * t);
+    return by * ts + this.reliefAmp * (1 - ts) * this.terrainRelief(x, z);
+  }
+
+  private buildGroundTerrain(mat: THREE.Material): THREE.Mesh {
+    const b = this.track.bounds, margin = 470, cell = 12;
     const minX = b.minX - margin, minZ = b.minZ - margin;
     const cols = Math.ceil((b.maxX + margin - minX) / cell) + 1;
     const rows = Math.ceil((b.maxZ + margin - minZ) / cell) + 1;
-    const near = 42, fall = 130; // full track height within `near` m, easing to base over `fall`
     const pos: number[] = [], uv: number[] = [], idx: number[] = [];
     for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
       const x = minX + c * cell, z = minZ + r * cell;
-      let best = 1e18, by = 0; // nearest track sample's height
-      for (let i = 0; i < N; i++) { const dx = x - sx[i], dz = z - sz[i]; const d = dx * dx + dz * dz; if (d < best) { best = d; by = sy[i]; } }
-      const dist = Math.sqrt(best);
-      const t = dist <= near ? 1 : dist >= near + fall ? 0 : 1 - (dist - near) / fall;
-      pos.push(x, by * (t * t * (3 - 2 * t)), z);
+      pos.push(x, this.groundHeightAtXZ(x, z), z);
       uv.push(x / 220, z / 220);
     }
     for (let r = 0; r < rows - 1; r++) for (let c = 0; c < cols - 1; c++) {
@@ -956,15 +980,10 @@ export class Game {
     return new THREE.Mesh(geo, mat);
   }
 
-  /** Height of the follow-the-road terrain at a track distance + lateral offset
-   *  (metres). Matches buildGroundTerrain's falloff so scenery sits ON the ground
-   *  now that roads have elevation (placing at y=0 buried it all underground). */
+  /** Ground height under a piece of scenery at track distance + lateral offset. */
   private terrainYAt(dist: number, off: number): number {
-    const cy = this.track.pointAt(this.track.wrap(dist), 0, undefined, true).y;
-    const a = Math.abs(off);
-    const near = 42, fall = 130;
-    const t = a <= near ? 1 : a >= near + fall ? 0 : 1 - (a - near) / fall;
-    return cy * (t * t * (3 - 2 * t));
+    const p = this.track.pointAt(this.track.wrap(dist), off);
+    return this.groundHeightAtXZ(p.x, p.z);
   }
 
   private decorate(library: ModelLibrary) {
@@ -1083,50 +1102,7 @@ export class Game {
       this.addEntity("nitro", d, lane(), makeNitroCan());
     }
 
-    // ramps + air-gem arcs. Every ramp sits in the CENTRE lane — that's where you
-    // naturally drive, so you hit them head-on without hunting for a side lane —
-    // and each is nudged onto the straightest spot nearby so it's never stuck on
-    // an apex you can't line up. Spaced so you clear several a lap.
-    const rampKinds: RampKind[] = ["standard", "mega", "kicker", "wide"];
-    let ri = 0;
-    for (let d0 = 180; d0 < len - 60; d0 += 340) {
-      // search ±44m for the flattest (lowest-curvature) spot so the ramp lands on
-      // a straight, not mid-corner
-      let best = d0, bestCurve = Infinity;
-      for (let dd = d0 - 44; dd <= d0 + 44; dd += 8) {
-        const c = Math.abs(this.track.curvatureAt(this.track.wrap(dd)));
-        if (c < bestCurve) { bestCurve = c; best = dd; }
-      }
-      const d = this.track.wrap(best);
-      const kind = rampKinds[ri % rampKinds.length];
-      ri++;
-      const spec = RAMP_SPECS[kind];
-      this.addEntity("ramp", d, 0, makeRamp(kind), 0, spec.power); // lane 0 = centre
-      this.ramps.push({ dist: d, power: spec.power, lane: 0, len: spec.l, height: spec.h });
-      for (const off of [15, 21, 27]) {
-        const gap = Math.round(off * (0.7 + 0.35 * spec.power));
-        this.addEntity("airGem", d + gap, 0, makeGem(0xfbbf24, true), AIR_GEM_ALT);
-      }
-    }
-
-    // JUMPS AT CRESTS: a ramp on the up-slope of each real hilltop, so you launch
-    // off the top and sail over the drop (in free-roam the car hugs the road, so
-    // the ramp is what gives the air) — the Asphalt-8 hill-jump.
-    {
-      const yAt = (dd: number) => track.pointAt(track.wrap(dd), 0, undefined, true).y;
-      const mega = RAMP_SPECS.mega;
-      let lastCrest = -1e9;
-      for (let d = 40; d < len - 40; d += 6) {
-        const back = yAt(d - 24), here = yAt(d), fwd = yAt(d + 24);
-        if (here - back > 2.5 && here - fwd > 3.5 && d - lastCrest > 240) {
-          lastCrest = d;
-          const rd = track.wrap(d - 8);
-          this.addEntity("ramp", rd, 0, makeRamp("mega"), 0, mega.power);
-          this.ramps.push({ dist: rd, power: mega.power, lane: 0, len: mega.l, height: mega.h });
-          for (const off of [20, 30, 42]) this.addEntity("airGem", d + off, 0, makeGem(0xfbbf24, true), AIR_GEM_ALT);
-        }
-      }
-    }
+    // (ramps + crest-jumps removed — focus is on clean driving + environments)
 
     // transform orbs + monsters
     if (this.cfg.orbs) {
@@ -1140,12 +1116,13 @@ export class Game {
       }
     }
 
-    // item boxes — power-ups, a row across the lanes so you can always grab one.
-    // Space Wars packs them far tighter so the tube is a running firefight.
-    const boxGap = this.cfg.combat ? 85 : 210;
-    for (let d = 110; d < len - 40; d += boxGap) {
-      for (const l of LANE_CENTERS) {
-        this.addEntity("itembox", d, l, makeItemBox(), 0.2);
+    // item-box power-ups (missile/shield/mine/boost): only in the combat mode
+    // (Space Wars) now — removed from normal races to keep the track clean.
+    if (this.cfg.combat) {
+      for (let d = 110; d < len - 40; d += 85) {
+        for (const l of LANE_CENTERS) {
+          this.addEntity("itembox", d, l, makeItemBox(), 0.2);
+        }
       }
     }
   }
@@ -1341,7 +1318,7 @@ export class Game {
         if (dd < near) near = dd;
       }
       if (near < minDist * minDist) continue;
-      pts.push({ x, z, y: 0, s: 0.6 + rand() * 1.1, r: rand() * Math.PI * 2 });
+      pts.push({ x, z, y: this.groundHeightAtXZ(x, z), s: 0.6 + rand() * 1.1, r: rand() * Math.PI * 2 });
     }
     return pts;
   }

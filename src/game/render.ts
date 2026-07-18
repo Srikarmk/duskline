@@ -650,33 +650,37 @@ export function drawHud(
     ctx.fillText("TRANSFORMED — SHIFT TO FLY", vw / 2, 30);
   }
 
-  // --- power-up bar (BOTTOM center) — up to 3 stacked, fire oldest with E ---
+  // --- power-up bar (BOTTOM center) — up to 3 stacked, fire oldest with E.
+  // Only shown when you actually hold items (combat mode); normal races have
+  // no power-ups, so the bar is hidden entirely to keep the screen clean. ---
   const items = hud.heldItems ?? [];
-  const slots = 3;
-  const slotW = 118, slotH = 30, slotGap = 8;
-  const barW = slots * slotW + (slots - 1) * slotGap;
-  const bx0 = vw / 2 - barW / 2;
-  const by = vh - 54;
-  ctx.textBaseline = "middle";
-  ctx.textAlign = "center";
-  for (let i = 0; i < slots; i++) {
-    const x = bx0 + i * (slotW + slotGap);
-    const has = i < items.length;
-    const next = has && i === 0; // the oldest item fires next
-    panel(ctx, x, by, slotW, slotH, has ? (next ? "#f0abfc" : "#8b5cf6") : "#2c264a");
-    if (has) {
-      ctx.fillStyle = next ? "#f7d0ff" : "#c9a5f7";
-      ctx.font = "bold 14px monospace";
-      ctx.fillText(`◆ ${items[i]}`, x + slotW / 2, by + slotH / 2 + 1);
-    } else {
-      ctx.fillStyle = "#55506e";
-      ctx.font = "11px monospace";
-      ctx.fillText("—", x + slotW / 2, by + slotH / 2 + 1);
+  if (items.length > 0) {
+    const slots = 3;
+    const slotW = 118, slotH = 30, slotGap = 8;
+    const barW = slots * slotW + (slots - 1) * slotGap;
+    const bx0 = vw / 2 - barW / 2;
+    const by = vh - 54;
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "center";
+    for (let i = 0; i < slots; i++) {
+      const x = bx0 + i * (slotW + slotGap);
+      const has = i < items.length;
+      const next = has && i === 0; // the oldest item fires next
+      panel(ctx, x, by, slotW, slotH, has ? (next ? "#f0abfc" : "#8b5cf6") : "#2c264a");
+      if (has) {
+        ctx.fillStyle = next ? "#f7d0ff" : "#c9a5f7";
+        ctx.font = "bold 14px monospace";
+        ctx.fillText(`◆ ${items[i]}`, x + slotW / 2, by + slotH / 2 + 1);
+      } else {
+        ctx.fillStyle = "#55506e";
+        ctx.font = "11px monospace";
+        ctx.fillText("—", x + slotW / 2, by + slotH / 2 + 1);
+      }
     }
+    ctx.fillStyle = "#8b85a8";
+    ctx.font = "10px monospace";
+    ctx.fillText("POWER-UPS · [E] FIRE", vw / 2, by - 9);
   }
-  ctx.fillStyle = items.length ? "#8b85a8" : "#55506e";
-  ctx.font = "10px monospace";
-  ctx.fillText(items.length ? "POWER-UPS · [E] FIRE" : "POWER-UPS", vw / 2, by - 9);
 
   // shield = cyan border glow
   if (hud.shieldActive) {
