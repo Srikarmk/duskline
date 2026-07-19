@@ -10,7 +10,7 @@ import {
   STEER_RESPONSE, STEER_RETURN, TURN_ACCEL, STEER_SPEED_FALLOFF,
   GRIP_LIMIT, LATERAL_DAMP, CENTRI_K, FREE_TURN_RATE, FREE_GRIP, WEIGHT_BRAKE_GRIP, WEIGHT_THROTTLE_GRIP,
   DRIFT_GRIP_MULT, DRIFT_STEER_MULT, DRIFT_MIN_CHARGE, DRIFT_BOOST_FACTOR,
-  OUT_OF_BOUNDS_X, OUT_OF_BOUNDS_PENALTY,
+  OUT_OF_BOUNDS_X, OFFTRACK_GRACE,
   NITRO_MAX_CHARGES, NITRO_DURATION, NITRO_SPEED_FACTOR,
   GRAVITY, RAMP_LAUNCH, FLY_LIFT, MAX_ALT, AIR_GEM_ALT, AIR_GEM_TOLERANCE,
   TRANSFORM_DURATION, TRANSFORM_SPEED_FACTOR,
@@ -30,14 +30,14 @@ import {
   makeGem, makeNitroCan, makeOrb, makeRamp, RAMP_SPECS, type RampKind,
   makeCrystalCluster, makeMonster,
   makeMech, makeSlash, makeFlame, makeUnderGlow,
-  makeItemBox, makeMissile, makeMine, makeShieldBubble, makeBoostPad,
+  makeItemBox, makeMissile, makeMine, makeShieldBubble,
   makeStartGantry, varyTint, makeSpaceBackdrop,
   makeTree, makeTreeMaterials,
+  makeSnowman, makeVolcano, makeLavaPool, makeCaveMouth,
   type MechRig, type Placement, type TreeMats,
 } from "./objects";
 import { makeWeather, type WeatherSystem } from "./weather";
 import { makeTunnelArch, makeTunnelPortal } from "./setpieces";
-import { makeBoostGate, makeRingArch } from "./props/gates";
 import { makeForkArrowSign, makeBlimp } from "./props/signage";
 import { BranchPath } from "./branch";
 import { FreeDrive } from "./freedrive";
@@ -226,6 +226,7 @@ export class Game {
   private camPos = new THREE.Vector3();
   private camYaw = 0; // smoothed camera heading — eases toward the car so the view swings in behind you instead of snapping with every steer
   private reliefAmp = 0; // per-realm amplitude of the rolling hills the ground rises into away from the road
+  private offTrackT = 0; // seconds left before an off-track respawn (0 = on track / no warning)
   private terrSamp?: { sx: Float64Array; sz: Float64Array; sy: Float64Array }; // cached track polyline for ground-height queries
   private camSnap = true;
   private cameraIndex = 0;
@@ -1063,6 +1064,7 @@ export class Game {
       // the road, so each world has a recognisable skyline instead of only the
       // roadside band. (Ground realms only — void gets its asteroid field.)
       this.placeLandmarks(library, rand);
+      this.placeRealmFeatures(rand);
     }
 
     // gem runs — patterned (line / zigzag / lane-sweep) so they're a mini
@@ -1079,26 +1081,8 @@ export class Game {
       }
     }
 
-    // boost pads (flat escalator strip) — sparse now, and never inside a fork
-    // (forks and gates carry the surges, so the pads don't pile on redundantly)
-    for (let d = 200; d < len - 50; d += 540) {
-      if (this.inSplitZone(d)) continue;
-      this.addEntity("boostpad", d, 0, makeBoostPad(), 0.02);
-    }
-
-    // a few free-standing boost gates on the straights (the forks carry their own)
-    for (let d = 400; d < len - 60; d += 840) {
-      if (this.inSplitZone(d)) continue;
-      const l = LANE_CENTERS[Math.floor(rand() * 3)];
-      this.addEntity("boostgate", d, l, makeBoostGate(rand), 0.1);
-    }
-
-    // decorative checkpoint hoops you pass under (pure cosmetic set-dressing)
-    for (let d = 240; d < len - 60; d += 690) {
-      this.placeOnTrack(makeRingArch(rand), d);
-    }
-
-    // (road-blocking rocks removed — they were pure race-stoppers, not fun)
+    // (boost pads, boost gates/rings and decorative ring hoops all removed —
+    //  the track stays clean; only gems + nitro cans remain as pickups)
 
     // nitro canisters
     for (let d = 150; d < len - 40; d += 280) {
@@ -1299,6 +1283,62 @@ export class Game {
     }
   }
 
+  /** Per-realm signature set-pieces the generic scenery bands don't cover:
+   *  volcanoes + lava for Ember, snowmen for Peaks, cave mouths for the Forest. */
+  private placeRealmFeatures(rand: () => number) {
+    const { track, realm } = this;
+    const len = track.length;
+    const pal = realm.palette;
+    const place = (obj: THREE.Object3D, d: number, off: number, yaw = rand() * Math.PI * 2) => {
+      const w = track.wrap(d);
+      const p = track.pointAt(w, off);
+      obj.position.set(p.x, this.terrainYAt(w, off), p.z);
+      obj.rotation.y = yaw;
+      this.scene.add(obj);
+    };
+    // orient a prop's +Z toward the road from an offset `side`
+    const faceRoad = (d: number, side: number) => {
+      const t = track.tangentAt(track.wrap(d));
+      const rx = t.z, rz = -t.x; // road "right"
+      return Math.atan2(-side * rx, -side * rz);
+    };
+
+    if (realm.id === "ember") {
+      // volcanoes brooding over the wastes — a couple loom close, the rest ring
+      // the horizon so there's always one in view
+      for (let i = 0; i < 5; i++) {
+        const d = (i / 5) * len + rand() * 60;
+        const side = i % 2 === 0 ? 1 : -1;
+        const near = i < 2 ? 95 + rand() * 40 : 180 + rand() * 140;
+        const v = makeVolcano(pal);
+        if (i < 2) v.scale.multiplyScalar(1.25);
+        place(v, d, side * near);
+      }
+      // …and molten pools glowing just off the ribbon
+      for (let d = 90; d < len - 40; d += 180) {
+        const side = rand() < 0.5 ? 1 : -1;
+        place(makeLavaPool(), d + rand() * 40, side * (ROAD_HALF_WIDTH + 8 + rand() * 22));
+      }
+    } else if (realm.id === "peaks") {
+      // big friendly snowmen dotted close along the verges (scaled up so they
+      // read clearly against the vast snowfield)
+      for (let d = 70; d < len - 40; d += 105) {
+        const side = rand() < 0.5 ? 1 : -1;
+        const s = makeSnowman();
+        s.scale.multiplyScalar(1.8 + rand() * 1.6);
+        place(s, d + rand() * 22, side * (ROAD_HALF_WIDTH + 4 + rand() * 14));
+      }
+    } else if (realm.id === "forest") {
+      // cave mouths set back in the hillsides (they replace the tunnel), facing the road
+      for (let d = 60; d < len - 40; d += 220) {
+        const side = rand() < 0.5 ? 1 : -1;
+        const c = makeCaveMouth(pal);
+        c.scale.multiplyScalar(1 + rand() * 0.6);
+        place(c, d + rand() * 40, side * (ROAD_HALF_WIDTH + 26 + rand() * 44), faceRoad(d, side));
+      }
+    }
+  }
+
   /** Scatter points across the arena, skipping the road corridor. */
   private scatter(
     centerline: { x: number; z: number }[],
@@ -1427,6 +1467,19 @@ export class Game {
     }
     this.drifting = false;
     this.driftCharge = 0;
+  }
+
+  /** Snap the car back onto the centre of the track at its current progress,
+   *  facing down-course, after it's roamed off the terrain too long. No penalty. */
+  private respawnOnTrack() {
+    this.freeDrive.reset(this.track, this.freeDrive.dist);
+    this.alt = 0; this.vAlt = 0; this.spin = 0; this.flip = 0;
+    this.carPitch = 0; this.stuntAir = false;
+    this.offTrackT = 0;
+    this.camSnap = true;             // re-anchor the camera at the new spot
+    this.crashFlash = 0.3;
+    this.sound.play("oob");
+    this.toast("BACK ON TRACK", "#67e8f9");
   }
 
   private playerProgress() {
@@ -1702,17 +1755,17 @@ export class Game {
     }
     this.carPitch += (pitchTarget - this.carPitch) * Math.min(1, dt * 10);
 
-    // out of bounds
-    if (Math.abs(this.playerX) > OUT_OF_BOUNDS_X) {
-      this.playerX = Math.sign(this.playerX) * 1.3; // nudge back to the verge, not the centre
-      this.playerVX = 0;
-      this.speed *= 0.55; // less of a dead stop
-      this.score -= OUT_OF_BOUNDS_PENALTY;
-      this.penalties += OUT_OF_BOUNDS_PENALTY;
-      this.crashFlash = 0.4;
-      this.shake = Math.max(this.shake, 0.8);
-      this.sound.play("oob");
-      this.toast(`OUT OF BOUNDS -${OUT_OF_BOUNDS_PENALTY}`, "#f87171");
+    // OFF-TRACK GRACE (no walls, no penalty): you can cut across the terrain for
+    // a few seconds. Stray off the ribbon and a countdown starts; get back on
+    // before it expires and nothing happens — ignore it and you respawn on the
+    // track. Never any score penalty.
+    const offTrack = !this.transformed && Math.abs(this.freeDrive.lateral) > ROAD_HALF_WIDTH + 1.5;
+    if (offTrack && this.phase === "racing") {
+      if (this.offTrackT <= 0) this.offTrackT = OFFTRACK_GRACE; // just left the ribbon
+      this.offTrackT -= dt;
+      if (this.offTrackT <= 0) this.respawnOnTrack();
+    } else if (this.offTrackT !== 0) {
+      this.offTrackT = 0; // back on the road (or race over) — clear the warning
     }
 
     // lane discipline bonus
@@ -2234,7 +2287,11 @@ export class Game {
 
     if (this.phase !== "loading") {
       // FREE-ROAM: the car sits at its real world position, facing its heading
-      const groundY = this.track.pointAt(this.position, 0, undefined, true).y;
+      // on the road the car rides the exact track height; off it, ride the
+      // rolling terrain (they match at the verge, so the handoff is seamless)
+      const groundY = this.freeDrive.offRoad
+        ? this.groundHeightAtXZ(this.freeDrive.x, this.freeDrive.z)
+        : this.track.pointAt(this.position, 0, undefined, true).y;
       this.playerRoot.position.set(this.freeDrive.x, groundY + this.alt + CAR_LIFT, this.freeDrive.z);
       this.playerRoot.rotation.order = "YXZ";
       this.playerRoot.rotation.y = this.freeDrive.heading;
@@ -2393,6 +2450,7 @@ export class Game {
       heldItems: this.heldItems.map((i) => ITEM_LABEL[i]),
       shieldActive: this.shieldT > 0,
       carName: CAR_SPECS[this.carId].name,
+      offTrackWarn: this.offTrackT > 0 ? this.offTrackT : 0,
     }, vw, vh);
 
     // minimap bottom-right (out of the driving sightline)

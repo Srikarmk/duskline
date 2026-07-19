@@ -53,7 +53,7 @@ export const REALM_AMBIENCE: Record<RealmId, AmbienceKind> = {
  *  tunnel starts, `len` its length in metres. Ground realms only (space tubes
  *  and the open stadium get none). */
 export const REALM_TUNNELS: Record<RealmId, { at: number; len: number }[]> = {
-  forest: [{ at: 0.34, len: 78 }],
+  forest: [], // caves replace the tunnel here (see placeRealmFeatures)
   ember: [{ at: 0.52, len: 68 }],
   peaks: [{ at: 0.26, len: 96 }, { at: 0.72, len: 58 }],
   void: [],
@@ -244,11 +244,10 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       mountain: 0x0d3327, mountainDark: 0x081f18, clutter: 0x1a4d38, gem: 0x34d399,
     },
     scenery: [
-      { kind: "treeA", weight: 5 }, { kind: "treeB", weight: 5 },
-      { kind: "treeDark", weight: 4 }, { kind: "mushroom", weight: 4 },
-      { kind: "mushroomTall", weight: 3 }, { kind: "crystal", weight: 3 },
-      { kind: "rockA", weight: 1 }, { kind: "rockB", weight: 1 },
-      { kind: "waterfall", weight: 1 },
+      { kind: "treeA", weight: 8 }, { kind: "treeB", weight: 8 },
+      { kind: "treeDark", weight: 6 }, { kind: "mushroom", weight: 4 },
+      { kind: "mushroomTall", weight: 3 }, { kind: "crystal", weight: 2 },
+      { kind: "waterfall", weight: 3 },
     ],
   },
 

@@ -535,6 +535,8 @@ export interface HudState {
   heldItems?: string[];
   shieldActive?: boolean;
   carName?: string;
+  /** seconds left to get back on the track before a respawn (0 = on track) */
+  offTrackWarn?: number;
 }
 
 function panel(
@@ -680,6 +682,24 @@ export function drawHud(
     ctx.fillStyle = "#8b85a8";
     ctx.font = "10px monospace";
     ctx.fillText("POWER-UPS · [E] FIRE", vw / 2, by - 9);
+  }
+
+  // off-track warning: an amber pulsing edge + a big countdown telling you to
+  // steer back before you get respawned (no penalty — just a nudge)
+  if (hud.offTrackWarn && hud.offTrackWarn > 0) {
+    const secs = Math.max(1, Math.ceil(hud.offTrackWarn));
+    const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 130);
+    ctx.strokeStyle = `rgba(251, 191, 36, ${0.3 + 0.4 * pulse})`;
+    ctx.lineWidth = 10;
+    ctx.strokeRect(6, 6, vw - 12, vh - 12);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#fbbf24";
+    ctx.font = "bold 26px monospace";
+    ctx.fillText("⚠ RETURN TO TRACK", vw / 2, vh * 0.22);
+    ctx.fillStyle = "#fde68a";
+    ctx.font = "bold 42px monospace";
+    ctx.fillText(String(secs), vw / 2, vh * 0.22 + 42);
   }
 
   // shield = cyan border glow

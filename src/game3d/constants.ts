@@ -61,6 +61,9 @@ export const TOTAL_LAPS = 3;
 // punished, but you still can't drive off into the scenery.
 export const OUT_OF_BOUNDS_X = 2.0;
 export const OUT_OF_BOUNDS_PENALTY = 100;
+/** seconds you may roam off the track before you're respawned back on it (no
+ *  penalty) — you can cut across the terrain for a bit, but not forever */
+export const OFFTRACK_GRACE = 5;
 
 export const NITRO_DURATION = 2.2;
 export const NITRO_SPEED_FACTOR = 1.35;

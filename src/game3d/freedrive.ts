@@ -127,26 +127,12 @@ export class FreeDrive {
     this.onBranchIdx = kind;
     this.offRoad = Math.abs(bestLat) > ROAD_HALF_WIDTH;
 
-    // --- walls: a firm barrier just past the chosen road's edge keeps you ON it.
-    // In a fork zone the corridor opens up so you can cross over to the branch.
-    const inFork = this.branches.some((b) => pr.dist >= b.startDist - 20 && pr.dist <= b.endDist + 20);
-    const WALL = inFork ? 22 : ROAD_HALF_WIDTH + 1.2;
-    this.onWall = Math.abs(bestLat) > WALL;
-    if (this.onWall) {
-      const over = Math.abs(bestLat) - WALL;
-      const sign = Math.sign(bestLat);
-      const rl = Math.hypot(rx, rz) || 1;
-      rx /= rl; rz /= rl;
-      this.x -= sign * rx * over;
-      this.z -= sign * rz * over;
-      // SCRAPE along the wall: remove only the into-wall velocity, keep speed along it
-      const outward = this.vx * (sign * rx) + this.vz * (sign * rz);
-      if (outward > 0) {
-        this.vx -= sign * rx * outward;
-        this.vz -= sign * rz * outward;
-      }
-    }
-    void cx; void cz;
+    // NO walls — you're free to leave the ribbon and cut across the terrain.
+    // The engine runs a short off-track timer and respawns you if you stray too
+    // long; here we just report offRoad (which loosens grip) and never contain
+    // the car. Grass already bleeds speed via grassMul above.
+    this.onWall = false;
+    void cx; void cz; void rx; void rz;
   }
 
   /** Ground height at the car (track surface). Engine adds jump altitude on top. */

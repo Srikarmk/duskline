@@ -270,6 +270,17 @@ export function makeWeather(kind: WeatherKind, pal: RealmPalette): WeatherSystem
         swayX: 9, swayY: 2, swayZ: 9, swayFreq: 0.45,
         twinkle: 0, twinkleFreq: 0, seed: 1002,
       });
+      // blowing-snow / avalanche-dust: a broad low drift driven hard sideways by
+      // wind, filling the mid-distance for a blizzardy mountain feel. Sizes and
+      // opacity kept small — sizeAttenuation is what ballooned near-camera
+      // flakes into blobs before, so this layer stays fine and faint.
+      add({
+        count: 300, color: white, size: 1.3, opacity: 0.4,
+        blending: THREE.NormalBlending, texture: dot, yMin: 0, yMax: 32,
+        vx: 24, vy: -3, vz: 6, vjitter: 0.7,
+        swayX: 14, swayY: 3, swayZ: 10, swayFreq: 0.7,
+        twinkle: 0.2, twinkleFreq: 1.2, seed: 1003,
+      });
       break;
     }
 
@@ -291,6 +302,28 @@ export function makeWeather(kind: WeatherKind, pal: RealmPalette): WeatherSystem
         swayX: 6, swayY: 1.5, swayZ: 6, swayFreq: 0.5,
         twinkle: 0, twinkleFreq: 0, seed: 2002,
       });
+      // firebugs — tiny bright ember-orange fireflies that rise slowly near the
+      // ground and pulse hard, distinct from the big lazy embers above.
+      add({
+        count: 50, color: mix(col(0xff5b1f), col(0xffe08a), 0.35), size: 1.1, opacity: 0.9,
+        blending: THREE.AdditiveBlending, texture: dot, yMin: 0, yMax: 30,
+        vx: 0, vy: 3, vz: 0, vjitter: 0.7,
+        swayX: 3, swayY: 1.5, swayZ: 3, swayFreq: 1.1,
+        twinkle: 0.85, twinkleFreq: 9, pulse: true, seed: 2003,
+      });
+      // meteors — rare bright orange->white streaks falling steeply out of a
+      // high sky, with a diagonal wind slant.
+      {
+        const streak = streakSprite();
+        textures.push(streak);
+        add({
+          count: 10, color: mix(col(0xff8a00), col(0xffffff), 0.45), size: 7, opacity: 0.85,
+          blending: THREE.AdditiveBlending, texture: streak, yMin: 0, yMax: Y_TOP,
+          vx: -14, vy: -78, vz: -6, vjitter: 0.4,
+          swayX: 0, swayY: 0, swayZ: 0, swayFreq: 0,
+          twinkle: 0, twinkleFreq: 0, seed: 2004,
+        });
+      }
       break;
     }
 
@@ -321,11 +354,35 @@ export function makeWeather(kind: WeatherKind, pal: RealmPalette): WeatherSystem
     case "spores": {
       const sporeCol = col(0xffd98a);
       add({
-        count: 150, color: sporeCol, size: 2.0, opacity: 0.8,
+        count: 160, color: sporeCol, size: 1.1, opacity: 0.6,
         blending: THREE.AdditiveBlending, texture: dot, yMin: 2, yMax: 55,
         vx: 0, vy: 3, vz: 0, vjitter: 0.6,
         swayX: 6, swayY: 4, swayZ: 6, swayFreq: 0.4,
         twinkle: 0.7, twinkleFreq: 2.2, seed: 4001,
+      });
+      // butterflies — small colourful motes fluttering low through the
+      // foliage; fixed hues per layer fake the colour variety across the
+      // flock (soft pink / amber / teal).
+      add({
+        count: 10, color: col(0xff9ecf), size: 1.4, opacity: 0.85,
+        blending: THREE.NormalBlending, texture: dot, yMin: 1, yMax: 9,
+        vx: 1.5, vy: 0.4, vz: 1, vjitter: 0.8,
+        swayX: 5, swayY: 2.5, swayZ: 5, swayFreq: 1.6,
+        twinkle: 0.5, twinkleFreq: 3.2, seed: 4002,
+      });
+      add({
+        count: 9, color: col(0xffcf8a), size: 1.4, opacity: 0.85,
+        blending: THREE.NormalBlending, texture: dot, yMin: 1, yMax: 9,
+        vx: -1.2, vy: 0.5, vz: 1.4, vjitter: 0.8,
+        swayX: 5, swayY: 2.5, swayZ: 5, swayFreq: 1.7,
+        twinkle: 0.5, twinkleFreq: 3.0, seed: 4003,
+      });
+      add({
+        count: 7, color: col(0x5eead4), size: 1.4, opacity: 0.85,
+        blending: THREE.NormalBlending, texture: dot, yMin: 1, yMax: 9,
+        vx: 1, vy: 0.4, vz: -1.3, vjitter: 0.8,
+        swayX: 5, swayY: 2.5, swayZ: 5, swayFreq: 1.5,
+        twinkle: 0.5, twinkleFreq: 3.4, seed: 4004,
       });
       break;
     }

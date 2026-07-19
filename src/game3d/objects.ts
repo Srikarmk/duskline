@@ -1887,3 +1887,378 @@ export function tintModel(obj: THREE.Object3D, hex: number) {
     }
   });
 }
+
+// --- winter / volcanic / cave landmark props --------------------------------
+
+/** A low-poly irregular disc lying flat (XZ plane, thin Y jitter) — a fan of
+ *  triangles from the centre with per-edge radius + height noise, so it reads
+ *  as a blobby puddle rather than a perfect circle. Shared by the lava pool
+ *  and the volcano's crater floor. */
+function irregularBlobGeometry(rBase: number, jag: number, segs: number, seed: number, riseJitter: number): THREE.BufferGeometry {
+  const rand = seeded(seed);
+  const radii: number[] = [];
+  const heights: number[] = [];
+  for (let i = 0; i < segs; i++) {
+    radii.push(rBase * (1 - jag * 0.5 + rand() * jag));
+    heights.push((rand() - 0.5) * riseJitter);
+  }
+  const pos: number[] = [];
+  for (let i = 0; i < segs; i++) {
+    const j = (i + 1) % segs;
+    const a0 = (i / segs) * Math.PI * 2;
+    const a1 = (j / segs) * Math.PI * 2;
+    const x0 = Math.cos(a0) * radii[i], z0 = Math.sin(a0) * radii[i];
+    const x1 = Math.cos(a1) * radii[j], z1 = Math.sin(a1) * radii[j];
+    pos.push(0, (heights[i] + heights[j]) * 0.25, 0, x0, heights[i], z0, x1, heights[j], z1);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/** A flat irregular ring (annulus) between a noisy inner and outer radius —
+ *  the cooled-basalt crust rim around a lava pool. */
+function irregularRingGeometry(rInner: number, rOuter: number, jag: number, segs: number, seed: number, riseJitter: number): THREE.BufferGeometry {
+  const rand = seeded(seed);
+  const inner: number[] = [];
+  const outer: number[] = [];
+  const heights: number[] = [];
+  for (let i = 0; i < segs; i++) {
+    inner.push(rInner * (1 - jag * 0.3 + rand() * jag * 0.6));
+    outer.push(rOuter * (1 - jag * 0.5 + rand() * jag));
+    heights.push((rand() - 0.5) * riseJitter);
+  }
+  const pos: number[] = [];
+  for (let i = 0; i < segs; i++) {
+    const j = (i + 1) % segs;
+    const a0 = (i / segs) * Math.PI * 2, a1 = (j / segs) * Math.PI * 2;
+    const xi0 = Math.cos(a0) * inner[i], zi0 = Math.sin(a0) * inner[i];
+    const xo0 = Math.cos(a0) * outer[i], zo0 = Math.sin(a0) * outer[i];
+    const xi1 = Math.cos(a1) * inner[j], zi1 = Math.sin(a1) * inner[j];
+    const xo1 = Math.cos(a1) * outer[j], zo1 = Math.sin(a1) * outer[j];
+    const hi0 = heights[i] * 0.4, ho0 = heights[i];
+    const hi1 = heights[j] * 0.4, ho1 = heights[j];
+    pos.push(xi0, hi0, zi0, xo0, ho0, zo0, xo1, ho1, zo1);
+    pos.push(xi0, hi0, zi0, xo1, ho1, zo1, xi1, hi1, zi1);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/** A faceted, weathered truncated cone: topR at local y=+height/2, bottomR at
+ *  y=-height/2, open-ended (no caps), with per-vertex craggy radius jitter.
+ *  The shared shape behind the volcano's outer flanks and its crater bowl. */
+function faceCone(topR: number, bottomR: number, height: number, seed: number, jag: number): THREE.BufferGeometry {
+  const geo = new THREE.CylinderGeometry(topR, bottomR, height, 12, 5, true);
+  const pos = geo.getAttribute("position") as THREE.BufferAttribute;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const ang = Math.atan2(z, x);
+    const yf = (y + height / 2) / height;
+    const h = dirHash(Math.cos(ang) * 3, yf * 6 + seed * 0.001, Math.sin(ang) * 3);
+    const bulge = 1 + (h - 0.5) * jag * (1 - yf * 0.35);
+    pos.setXYZ(i, x * bulge, y, z * bulge);
+  }
+  const ng = geo.toNonIndexed();
+  ng.computeVertexNormals();
+  return ng;
+}
+
+// --- snowman -----------------------------------------------------------
+
+/** A classic low-poly snowman: two stacked faceted icosahedron snowballs,
+ *  coal eyes + buttons, a carrot cone nose, thin twig arms and a tiny scarf.
+ *  ~2.2m tall. */
+export function makeSnowman(): THREE.Group {
+  const g = new THREE.Group();
+  const snow = new THREE.MeshStandardMaterial({ color: 0xf3f7fb, roughness: 0.85, metalness: 0, flatShading: true });
+  const coal = new THREE.MeshStandardMaterial({ color: 0x1c1a17, roughness: 0.6, flatShading: true });
+  const carrot = new THREE.MeshStandardMaterial({ color: 0xf3720d, roughness: 0.6, flatShading: true });
+  const twig = new THREE.MeshStandardMaterial({ color: 0x4a3420, roughness: 0.9, flatShading: true });
+  const scarfMat = new THREE.MeshStandardMaterial({ color: 0xb4231f, roughness: 0.8, flatShading: true });
+
+  // base + head, faceted icosahedra, nestled together
+  const baseR = 0.75, headR = 0.5, overlap = 0.25;
+  const baseY = baseR;
+  const headY = baseY + baseR - overlap + headR;
+  const base = new THREE.Mesh(new THREE.IcosahedronGeometry(baseR, 1), snow);
+  base.position.y = baseY;
+  g.add(base);
+  const head = new THREE.Mesh(new THREE.IcosahedronGeometry(headR, 1), snow);
+  head.position.y = headY;
+  g.add(head);
+
+  // coal eyes
+  for (const sx of [-1, 1]) {
+    const eye = new THREE.Mesh(new THREE.IcosahedronGeometry(0.06, 0), coal);
+    eye.position.set(sx * 0.16, headY + 0.1, headR * 0.88);
+    g.add(eye);
+  }
+  // carrot nose, tip pointing forward (+z)
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.42, 6), carrot);
+  nose.rotation.x = Math.PI / 2;
+  nose.position.set(0, headY, headR * 0.9 + 0.05);
+  g.add(nose);
+  // three coal buttons down the base
+  for (let i = 0; i < 3; i++) {
+    const button = new THREE.Mesh(new THREE.IcosahedronGeometry(0.07, 0), coal);
+    button.position.set(0, baseY + 0.38 - i * 0.3, baseR * 0.9 - i * 0.06);
+    g.add(button);
+  }
+  // twig arms, thin and angled up-and-out, with a little forked tip
+  for (const sx of [-1, 1]) {
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.045, 0.95, 5), twig);
+    arm.position.set(sx * (baseR * 0.85), headY - 0.35, 0);
+    arm.rotation.z = sx * -1.0;
+    arm.rotation.x = 0.2;
+    g.add(arm);
+    const fork = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.03, 0.3, 4), twig);
+    fork.position.set(sx * (baseR * 0.85 + 0.72), headY - 0.05, 0.08);
+    fork.rotation.z = sx * -0.4;
+    g.add(fork);
+  }
+  // tiny scarf at the neck: a squat torus + a hanging tail
+  const scarf = new THREE.Mesh(new THREE.TorusGeometry(headR * 0.72, 0.14, 5, 10), scarfMat);
+  scarf.rotation.x = Math.PI / 2;
+  scarf.position.y = headY - headR * 0.62;
+  g.add(scarf);
+  const tail = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.5, 0.05), scarfMat);
+  tail.position.set(headR * 0.5, headY - headR * 0.62 - 0.32, headR * 0.4);
+  tail.rotation.z = 0.2;
+  g.add(tail);
+
+  return g;
+}
+
+// --- volcano & lava ----------------------------------------------------
+
+/** A big landmark volcano: a craggy dark-basalt cone, faceted and flat-
+ *  shaded, truncated into a crater whose heat-darkened bowl walls fall to a
+ *  bright emissive lava pool at the floor, rimmed with a glowing lip and
+ *  capped with a few faint drifting smoke puffs. ~56m tall. */
+export function makeVolcano(pal: RealmPalette): THREE.Group {
+  const g = new THREE.Group();
+  const height = 56;
+  const baseR = 30;
+  const rimR = 8.5;
+  const craterDepth = 11;
+  const lavaR = 4.6;
+
+  // outer flanks: dark craggy basalt, hazier grey toward the summit
+  const coneGeo = faceCone(rimR, baseR, height, 900, 0.32);
+  coneGeo.translate(0, height / 2, 0);
+  paintByHeight(coneGeo, 0, 0, height,
+    new THREE.Color(0x120f0d),
+    new THREE.Color(0x4a4038).lerp(new THREE.Color(pal.mountain), 0.25));
+  const cone = new THREE.Mesh(coneGeo, new THREE.MeshStandardMaterial({
+    color: 0x33291f, roughness: 1, metalness: 0.05, flatShading: true, vertexColors: true, side: THREE.DoubleSide,
+  }));
+  g.add(cone);
+
+  // crater bowl: same craggy shape, tapering down to the lava floor, heat-darkened
+  const bowlGeo = faceCone(rimR, lavaR, craterDepth, 901, 0.18);
+  bowlGeo.translate(0, craterDepth / 2, 0);
+  paintByHeight(bowlGeo, 0, 0, craterDepth,
+    new THREE.Color(0x2a0a04),
+    new THREE.Color(0x2c2620));
+  const bowl = new THREE.Mesh(bowlGeo, new THREE.MeshStandardMaterial({
+    color: 0x2c2216, roughness: 1, metalness: 0.05, flatShading: true, vertexColors: true, side: THREE.DoubleSide,
+  }));
+  bowl.position.y = height - craterDepth;
+  g.add(bowl);
+
+  // glowing lava pool + cooled crust ring at the crater floor
+  const lava = new THREE.Mesh(
+    irregularBlobGeometry(lavaR * 0.92, 0.3, 11, 902, 0.3),
+    new THREE.MeshStandardMaterial({
+      color: 0xff5a1f, emissive: 0xff3300, emissiveIntensity: 4.2, roughness: 0.6, flatShading: true,
+    })
+  );
+  lava.position.y = height - craterDepth + 0.2;
+  g.add(lava);
+  const crust = new THREE.Mesh(
+    irregularRingGeometry(lavaR * 0.85, lavaR * 1.05, 0.28, 12, 903, 0.25),
+    new THREE.MeshStandardMaterial({ color: 0x1c1613, roughness: 1, flatShading: true })
+  );
+  crust.position.y = height - craterDepth + 0.05;
+  g.add(crust);
+
+  // glowing rim lip tracing the crater edge
+  const rimGlow = new THREE.Mesh(
+    new THREE.TorusGeometry(rimR, 0.4, 4, 16),
+    new THREE.MeshStandardMaterial({ color: 0xffb37a, emissive: 0xff5a1f, emissiveIntensity: 1.6, flatShading: true })
+  );
+  rimGlow.rotation.x = Math.PI / 2;
+  rimGlow.position.y = height;
+  g.add(rimGlow);
+
+  // faint smoke puffs drifting above the summit
+  const smokeMat = new THREE.MeshStandardMaterial({
+    color: 0x2e2b28, roughness: 1, transparent: true, opacity: 0.28, flatShading: true,
+  });
+  let py = height + 5;
+  for (let i = 0; i < 4; i++) {
+    const s = 3 + i * 2.1;
+    const puff = new THREE.Mesh(new THREE.IcosahedronGeometry(s, 0), smokeMat);
+    puff.scale.y = 0.65;
+    puff.position.set((i % 2 ? 1 : -1) * i * 1.4, py, (i % 2 ? -1 : 1) * i * 1.0);
+    g.add(puff);
+    py += s * 1.2;
+  }
+
+  return g;
+}
+
+/** A flat, irregular molten lava pool (~13m across): a bright emissive blob
+ *  with a couple of hotter facets breaking through, ringed by a darker
+ *  cooled-basalt crust. Sits flush with the ground (y≈0). */
+export function makeLavaPool(): THREE.Group {
+  const g = new THREE.Group();
+  const R = 6.2;
+
+  const lava = new THREE.Mesh(
+    irregularBlobGeometry(R, 0.32, 12, 4110, 0.35),
+    new THREE.MeshStandardMaterial({
+      color: 0xff5a1f, emissive: 0xff3300, emissiveIntensity: 3.6, roughness: 0.6, flatShading: true,
+    })
+  );
+  lava.position.y = 0.08;
+  g.add(lava);
+
+  const hotMat = new THREE.MeshStandardMaterial({
+    color: 0xffcf8a, emissive: 0xffb020, emissiveIntensity: 5.5, flatShading: true,
+  });
+  for (const [x, z, s] of [[-1.6, 0.8, 1.1], [2.0, -1.4, 0.85]] as const) {
+    const hot = new THREE.Mesh(new THREE.OctahedronGeometry(s, 0), hotMat);
+    hot.scale.y = 0.12;
+    hot.position.set(x, 0.12, z);
+    g.add(hot);
+  }
+
+  const crust = new THREE.Mesh(
+    irregularRingGeometry(R * 0.9, R * 1.35, 0.3, 13, 4111, 0.28),
+    new THREE.MeshStandardMaterial({ color: 0x1c1613, roughness: 1, flatShading: true })
+  );
+  crust.position.y = 0.03;
+  g.add(crust);
+
+  return g;
+}
+
+// --- cave mouth ----------------------------------------------------------
+
+/** A chunky, mossy forest rock outcrop with a dark arched cave opening at its
+ *  base (~16m across). Faceted rock chunks (styled like makeRockField's
+ *  boulders) cluster around a central gap; a near-black recessed arch + short
+ *  tunnel reads as the cave interior. The opening faces local +z. */
+export function makeCaveMouth(pal: RealmPalette): THREE.Group {
+  const g = new THREE.Group();
+
+  // the rock mound: clustered faceted chunks around a central gap
+  const chunkSpecs: { x: number; y: number; z: number; r: number; detail: 0 | 1 }[] = [
+    { x: -5.4, y: 0, z: 0.4, r: 3.0, detail: 1 },
+    { x: 5.4, y: 0, z: 0.3, r: 3.0, detail: 1 },
+    { x: -2.6, y: 3.1, z: -1.7, r: 2.6, detail: 1 },
+    { x: 2.7, y: 3.3, z: -1.8, r: 2.7, detail: 0 },
+    { x: -4.2, y: 4.4, z: -0.9, r: 1.9, detail: 0 },
+    { x: 4.4, y: 4.7, z: -1.1, r: 1.8, detail: 0 },
+    { x: 0.1, y: 5.6, z: -2.5, r: 2.7, detail: 0 },
+  ];
+  const parts: THREE.BufferGeometry[] = [];
+  for (const c of chunkSpecs) {
+    const cg = new THREE.IcosahedronGeometry(c.r, c.detail);
+    const p = cg.getAttribute("position") as THREE.BufferAttribute;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      const len = Math.hypot(x, y, z) || 1;
+      const nx = x / len, ny = y / len, nz = z / len;
+      const rr = len * (0.78 + 0.42 * dirHash(nx + c.x * 0.07, ny + c.y * 0.07, nz + c.z * 0.07));
+      let yy = ny * rr;
+      if (yy < 0) yy *= 0.35; // bury the underside
+      p.setXYZ(i, nx * rr, yy, nz * rr);
+    }
+    const ng = cg.toNonIndexed();
+    ng.translate(c.x, c.y, c.z);
+    parts.push(ng);
+  }
+  const moundGeo = mergePosUV(parts);
+  moundGeo.computeVertexNormals();
+  moundGeo.computeBoundingBox();
+  const bb = moundGeo.boundingBox!;
+  moundGeo.translate(0, -bb.min.y, 0);
+  const mossLow = new THREE.Color(pal.clutter).offsetHSL(0, 0, -0.3);
+  paintByHeight(moundGeo, 0, 0, bb.max.y - bb.min.y, mossLow, new THREE.Color(1.05, 1.02, 0.95));
+
+  const lib = pbr();
+  let rockMat: THREE.MeshStandardMaterial;
+  if (lib) {
+    const t = tileSet(lib.rock, 1);
+    rockMat = new THREE.MeshStandardMaterial({
+      map: t.diff, normalMap: t.nor, color: 0x8a8a8a, metalness: 0.1, roughness: 0.96, flatShading: true, vertexColors: true,
+    });
+  } else {
+    const stone = stoneMaps(pal.mountainDark);
+    rockMat = new THREE.MeshStandardMaterial({
+      color: pal.mountainDark, map: stone.map, bumpMap: stone.bump, bumpScale: 0.2,
+      metalness: 0.1, roughness: 0.96, flatShading: true, vertexColors: true,
+    });
+  }
+  g.add(new THREE.Mesh(moundGeo, rockMat));
+
+  // the dark cave interior: a near-black arch filling the gap, plus a
+  // recessed tunnel + back cap so it still reads dark from an angle
+  const archMat = new THREE.MeshStandardMaterial({ color: 0x050403, roughness: 1, metalness: 0 });
+  const archW = 4.2, archH = 5.2;
+  const shape = new THREE.Shape();
+  shape.moveTo(-archW / 2, 0);
+  shape.lineTo(-archW / 2, archH * 0.5);
+  shape.quadraticCurveTo(-archW / 2, archH, 0, archH);
+  shape.quadraticCurveTo(archW / 2, archH, archW / 2, archH * 0.5);
+  shape.lineTo(archW / 2, 0);
+  shape.closePath();
+  const archFace = new THREE.Mesh(new THREE.ShapeGeometry(shape, 8), archMat);
+  archFace.position.set(0, 0, -0.3);
+  g.add(archFace);
+
+  const throatDepth = 4.5;
+  const throatR = archW * 0.42;
+  const throat = new THREE.Mesh(
+    new THREE.CylinderGeometry(throatR, throatR * 0.75, throatDepth, 8, 1, true),
+    archMat
+  );
+  throat.rotation.x = Math.PI / 2;
+  throat.position.set(0, archH * 0.4, -0.3 - throatDepth / 2);
+  g.add(throat);
+  const cap = new THREE.Mesh(new THREE.CircleGeometry(throatR * 0.76, 8), archMat);
+  cap.position.set(0, archH * 0.4, -0.3 - throatDepth);
+  g.add(cap);
+
+  // moss tufts and loose rubble at the base for an earthy forest read
+  const mossPatchMat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(pal.clutter).offsetHSL(0, 0.05, -0.02), roughness: 1, flatShading: true,
+  });
+  const rand = seeded(2026);
+  for (let i = 0; i < 8; i++) {
+    const a = rand() * Math.PI * 2;
+    const rr = 3 + rand() * 6.5;
+    const patch = new THREE.Mesh(new THREE.IcosahedronGeometry(0.4 + rand() * 0.35, 0), mossPatchMat);
+    patch.scale.y = 0.35;
+    patch.position.set(Math.cos(a) * rr, 0.1 + rand() * 3.5, Math.sin(a) * rr * 0.6 - 0.5);
+    g.add(patch);
+  }
+  const rubbleGeo = boulderGeometry();
+  for (let i = 0; i < 4; i++) {
+    const a = rand() * Math.PI * 2;
+    const rr = 6 + rand() * 3;
+    const rock = new THREE.Mesh(rubbleGeo, rockMat);
+    rock.scale.setScalar(0.7 + rand() * 0.9);
+    rock.position.set(Math.cos(a) * rr, 0, Math.sin(a) * rr * 0.7 + 1.5);
+    rock.rotation.y = rand() * Math.PI * 2;
+    g.add(rock);
+  }
+
+  return g;
+}
