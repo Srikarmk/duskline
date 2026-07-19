@@ -351,7 +351,7 @@ export function makeWeather(kind: WeatherKind, pal: RealmPalette): WeatherSystem
       textures.push(streak);
       const rainCol = mix(col(pal.edgeLine), col(0xbcd4ff), 0.7);
       add({
-        count: 500, color: rainCol, size: 5.5, opacity: 0.42,
+        count: 520, color: rainCol, size: 4.0, opacity: 0.4,
         blending: THREE.NormalBlending, texture: streak, yMin: 0, yMax: Y_TOP,
         vx: -12, vy: -90, vz: 0, vjitter: 0.3,
         swayX: 0, swayY: 0, swayZ: 0, swayFreq: 0,

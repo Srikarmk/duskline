@@ -308,9 +308,9 @@ export class Game {
     // how dramatically the land rolls away from the road, per realm — peaks/dunes
     // heave, the speedway + city stay near-flat, the space tubes get none
     this.reliefAmp = ({
-      forest: 11, ember: 16, peaks: 24, void: 0, sands: 20,
-      castle: 13, circuit: 3, metro: 5, nebula: 0,
-    } as Record<string, number>)[this.realm.id] ?? 11;
+      forest: 18, ember: 26, peaks: 32, void: 0, sands: 28,
+      castle: 22, circuit: 7, metro: 10, nebula: 0,
+    } as Record<string, number>)[this.realm.id] ?? 18;
     this.minimap = new Minimap(this.track);
     this.onFinish = options.onFinish;
     this.lap = 1;
@@ -934,14 +934,17 @@ export class Game {
     return (this.terrSamp = { sx, sz, sy });
   }
 
-  /** Rolling-hill field (a few octaves of sines, range ~[-1.8, 1.8]). Deterministic
-   *  in world space so the terrain mesh, scenery and grass all agree. */
+  /** Landscape height field (range ~[-1.5, 1.6]). Broad rolling hills PLUS a
+   *  ridged octave that gives sharp crests and broad valleys — reads as ridges
+   *  and cliffs rather than gentle swells. Deterministic in world space so the
+   *  terrain mesh, scenery and grass all agree. */
   private terrainRelief(x: number, z: number): number {
-    return (
-      Math.sin(x * 0.0062 + 1.3) * Math.cos(z * 0.0055 - 0.7) +
-      Math.sin(x * 0.0125 - 0.4) * Math.cos(z * 0.0102 + 2.1) * 0.5 +
-      Math.sin((x + z) * 0.019 + 0.9) * 0.28
-    );
+    const rolling =
+      Math.sin(x * 0.0060 + 1.3) * Math.cos(z * 0.0052 - 0.7) * 0.7 +
+      Math.sin(x * 0.0121 - 0.4) * Math.cos(z * 0.0099 + 2.1) * 0.35;
+    // ridged: |sum of sines| inverted → crests pinch to sharp ridgelines
+    const ridge = 1 - Math.abs(Math.sin(x * 0.0072 + 0.4) + Math.sin(z * 0.0068 - 1.2)) * 0.5;
+    return rolling + (ridge - 0.45) * 0.95 + Math.sin((x - z) * 0.02 + 0.5) * 0.12;
   }
 
   /** THE ground height at any world (x,z): the road's own elevation right by the
@@ -951,7 +954,7 @@ export class Game {
     let best = 1e18, by = 0;
     for (let i = 0; i < sx.length; i++) { const dx = x - sx[i], dz = z - sz[i]; const d = dx * dx + dz * dz; if (d < best) { best = d; by = sy[i]; } }
     const dist = Math.sqrt(best);
-    const near = 42, fall = 130;
+    const near = 34, fall = 108; // narrower flat shelf + steeper onset = more dramatic land
     const t = dist <= near ? 1 : dist >= near + fall ? 0 : 1 - (dist - near) / fall;
     const ts = t * t * (3 - 2 * t);
     return by * ts + this.reliefAmp * (1 - ts) * this.terrainRelief(x, z);
@@ -1012,10 +1015,10 @@ export class Game {
       // the (now longer) tracks stay lush without ballooning the draw-call count
       // (that was the top-speed lag: thousands of separate meshes). Density leans
       // on the mid/far bands (cheaper, further-out fill) so worlds read as full.
-      for (let d = 0; d < len; d += 5.4) {
+      for (let d = 0; d < len; d += 5.3) {
         for (const side of [-1, 1]) {
           // near band (dense, right by the road)
-          if (rand() < 0.82) {
+          if (rand() < 0.85) {
             const kind = pickScenery(realm, rand);
             const obj = this.sceneryObject(kind, library, rand);
             // keep big monuments off the verge so they don't overhang the track
@@ -1027,7 +1030,7 @@ export class Game {
             this.scene.add(obj);
           }
           // mid band
-          if (rand() < 0.55) {
+          if (rand() < 0.56) {
             const obj = this.sceneryObject(pickScenery(realm, rand), library, rand);
             const off = side * (ROAD_HALF_WIDTH + 20 + rand() * 36);
             const jd = d + rand() * 4;
@@ -1037,7 +1040,7 @@ export class Game {
             this.scene.add(obj);
           }
           // far band (big, fills the mid-distance out toward the mountains)
-          if (rand() < 0.32) {
+          if (rand() < 0.34) {
             const obj = this.sceneryObject(pickScenery(realm, rand), library, rand);
             const off = side * (ROAD_HALF_WIDTH + 58 + rand() * 70);
             const jd = d + rand() * 5;
