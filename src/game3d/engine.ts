@@ -265,6 +265,8 @@ export class Game {
   private alt = 0;
   private vAlt = 0;
   private carPitch = 0; // smoothed nose pitch: ramp face / air arc / road slope
+  private weightRoll = 0;  // body lean into corners (weight transfer)
+  private weightPitch = 0; // body dive under braking / squat under throttle
   private stuntAir = false;
   private spin = 0; // barrel-roll revolutions
   private flip = 0; // pitch-flip revolutions
@@ -1870,6 +1872,16 @@ export class Game {
     }
     this.carPitch += (pitchTarget - this.carPitch) * Math.min(1, dt * 10);
 
+    // WEIGHT TRANSFER — the body leans into corners and dives/squats under the
+    // brake/throttle, so the car reads as a heavy machine instead of a floaty box
+    const spdF = Math.min(this.speed / MAX_SPEED, 1);
+    const rollTarget = -this.steer * (0.11 + spdF * 0.22);                 // lean into the turn, more at speed
+    const braking = this.input.brake && !this.transformed && this.speed > 2;
+    const throttling = this.input.accelerate && !braking;
+    const pitchW = ((braking ? 1 : 0) - (throttling ? 0.45 : 0)) * 0.07 * (0.35 + spdF); // + = nose dives
+    this.weightRoll += (rollTarget - this.weightRoll) * Math.min(1, dt * 9);
+    this.weightPitch += (pitchW - this.weightPitch) * Math.min(1, dt * 8);
+
     // ENV HIT: clip the edge post row (~7m off-centre) and you just throw a
     // shower of orange sparks — cosmetic only, no deflection, no jolt (the car
     // keeps driving; you're free to cut across the terrain).
@@ -2494,15 +2506,15 @@ export class Game {
       this.playerRoot.rotation.y = this.freeDrive.heading;
       // nose pitch: rides up ramps, arcs in the air, follows the road slope on
       // the ground (computed + smoothed in update) — no more flat "sinking"
-      this.playerRoot.rotation.x = this.carPitch;
+      this.playerRoot.rotation.x = this.carPitch + this.weightPitch; // slope + brake-dive/throttle-squat
 
       // pitch = flips + air tilt, yaw = steer/drift heading, roll = barrel roll +
-      // lean + the road's bank (so the car sits flat on banked corners)
+      // corner lean (weight transfer) + the road's bank (so the car sits flat on banked corners)
       const bankRoll = (!this.onBranch && this.alt < 0.4) ? track.bankAt(this.position) : 0;
       this.playerBody.rotation.x = this.flip * Math.PI * 2; // barrel-roll/flip stunts only
       this.playerBody.rotation.y = this.carYaw;
       this.playerBody.rotation.z =
-        this.spin * Math.PI * 2 - this.steer * 0.09 - (this.drifting ? this.driftDir * 0.1 : 0) + bankRoll;
+        this.spin * Math.PI * 2 + this.weightRoll - (this.drifting ? this.driftDir * 0.1 : 0) + bankRoll;
 
       // form swap + effects
       if (this.carModel) this.carModel.visible = !this.transformed;
@@ -2573,8 +2585,8 @@ export class Game {
       else this.camYaw += dyaw * 0.12;
       const fx = Math.sin(this.camYaw), fz = Math.cos(this.camYaw);
 
-      const targetFov = preset.fov + spd * 4 + (boosting ? 4 : 0);
-      this.camera.fov += (targetFov - this.camera.fov) * 0.06;
+      const targetFov = preset.fov + spd * 9 + (boosting ? 7 : 0); // stronger speed-rush FOV kick
+      this.camera.fov += (targetFov - this.camera.fov) * 0.08;
       this.camera.updateProjectionMatrix();
 
       const camAnchor = new THREE.Vector3(

@@ -10,8 +10,8 @@ export const LANES = 3;
 export const CAR_LIFT = 0.2;
 export const LANE_CENTERS = [-2 / 3, 0, 2 / 3]; // in playerX units (1 = road edge)
 
-export const MAX_SPEED = 55;
-export const ACCEL = MAX_SPEED / 5;
+export const MAX_SPEED = 58;
+export const ACCEL = MAX_SPEED / 3.6; // punchier off-the-line + out of corners
 export const BRAKING = -MAX_SPEED;
 export const DECEL = -MAX_SPEED / 5;
 export const OFF_ROAD_DECEL = -MAX_SPEED / 2;
@@ -40,8 +40,8 @@ export const LATERAL_DAMP = 7.5;
 export const CENTRI_K = 0.78; // stronger corner load — you must actively steer/brake, not coast turns
 
 // --- free-roam driving (the car is a world-space body, not rail-locked) ---
-export const FREE_TURN_RATE = 2.7; // base yaw rate (rad/s) — how fast you can steer
-export const FREE_GRIP = 8.5;      // lateral traction (side-slip bleed / s) — planted, not slidey; handbrake loosens it for drift
+export const FREE_TURN_RATE = 3.0; // base yaw rate (rad/s) — sharper turn-in, more responsive
+export const FREE_GRIP = 9.6;      // lateral traction (side-slip bleed / s) — planted, not floaty; handbrake loosens it for drift
 /** grip while braking (weight forward → sharper turn-in) */
 export const WEIGHT_BRAKE_GRIP = 1.3;
 /** grip while on the throttle (weight back → a touch looser) */
