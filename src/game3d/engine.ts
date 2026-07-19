@@ -1060,6 +1060,33 @@ export class Game {
       const pebbles = this.scatter(centerline, rand, 1100, ROAD_HALF_WIDTH * 1.3 + 4, 170);
       this.scene.add(makeRockField(pal, pebbles));
 
+      // LUSH forest: a thick understory crowding the verge + a dense wall of
+      // trees close to the road, so the woods read as overgrown, not a lawn.
+      if (realm.id === "forest") {
+        // dense ferny understory right up to the tarmac (one instanced draw call)
+        const under = this.scatter(centerline, rand, 15000, ROAD_HALF_WIDTH + 1.5, 70);
+        for (const u of under) u.s = 1.4 + rand() * 2.6; // taller, bushier than lawn grass
+        this.scene.add(makeGrassField(pal, under));
+        // a packed wall of trees hugging the road (both sides), plus a second row
+        const kinds: ("pine" | "round" | "tall")[] = ["round", "round", "pine", "tall"];
+        for (let d = 0; d < len; d += 7.5) {
+          for (const side of [-1, 1]) {
+            for (const row of [0, 1]) {
+              if (rand() < (row === 0 ? 0.8 : 0.32)) {
+                const t = makeTree(rand, this.treeMats!, kinds[Math.floor(rand() * kinds.length)]);
+                const off = side * (ROAD_HALF_WIDTH + 4 + row * 18 + rand() * 12);
+                const jd = d + rand() * 5;
+                const p = track.pointAt(this.track.wrap(jd), off);
+                t.position.set(p.x, this.terrainYAt(jd, off), p.z);
+                t.rotation.y = rand() * Math.PI * 2;
+                t.scale.multiplyScalar(0.95 + rand() * 1.0);
+                this.scene.add(t);
+              }
+            }
+          }
+        }
+      }
+
       // hero landmarks: a handful of BIG signature monuments set well back from
       // the road, so each world has a recognisable skyline instead of only the
       // roadside band. (Ground realms only — void gets its asteroid field.)

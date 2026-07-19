@@ -354,7 +354,7 @@ export function makeWeather(kind: WeatherKind, pal: RealmPalette): WeatherSystem
     case "spores": {
       const sporeCol = col(0xffd98a);
       add({
-        count: 160, color: sporeCol, size: 1.1, opacity: 0.6,
+        count: 70, color: sporeCol, size: 0.85, opacity: 0.55,
         blending: THREE.AdditiveBlending, texture: dot, yMin: 2, yMax: 55,
         vx: 0, vy: 3, vz: 0, vjitter: 0.6,
         swayX: 6, swayY: 4, swayZ: 6, swayFreq: 0.4,
