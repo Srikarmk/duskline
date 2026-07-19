@@ -2473,3 +2473,206 @@ export function makeCaveMouth(pal: RealmPalette): THREE.Group {
 
   return g;
 }
+
+// --- storybook mushroom & standalone rock props ----------------------------
+// Faceted low-poly replacements for the old imported mushroom/rock GLTF
+// models, built in the same style as the reworked trees: primitive shapes,
+// flatShading, a seeded per-instance rand() for jitter — cheap enough (a
+// handful of small meshes each) to scatter by the hundreds as roadside
+// clutter.
+
+const ROCK_PROP_COLOR = 0x847e76;
+
+/**
+ * A charming faceted toadstool: a flattened faceted half-sphere cap (NOT a
+ * cone) in warm red/orange with a few raised lighter spots on the crown, a
+ * pale ridged gill underside, and a creamy tapered stalk with a bulged base
+ * and a thin skirt ring just below the cap. `tall` swaps in a taller,
+ * slimmer body topped with a smaller cap. Every instance gets a gentle
+ * rand()-driven jitter (hue, proportions, spot placement, lean) so a cluster
+ * reads as a storybook family rather than stamped clones. ~1.2m normal,
+ * ~1.8m tall.
+ */
+export function makeMushroom(rand: () => number, tall = false): THREE.Group {
+  const g = new THREE.Group();
+
+  const capColor = new THREE.Color(tall ? 0xcf3a1d : 0xd6301c)
+    .offsetHSL((rand() - 0.5) * 0.04, (rand() - 0.5) * 0.08, (rand() - 0.5) * 0.08);
+  const capMat = new THREE.MeshStandardMaterial({ color: capColor, roughness: 0.85, metalness: 0.02, flatShading: true });
+  const spotMat = new THREE.MeshStandardMaterial({ color: 0xfff6e4, roughness: 0.7, flatShading: true });
+  const gillMat = new THREE.MeshStandardMaterial({ color: 0xf2e4c4, roughness: 0.9, flatShading: true, side: THREE.DoubleSide });
+  const stalkMat = new THREE.MeshStandardMaterial({ color: 0xf6ecd2, roughness: 0.85, flatShading: true });
+  const ringMat = new THREE.MeshStandardMaterial({ color: 0xe6d7b4, roughness: 0.85, flatShading: true });
+
+  // --- proportions: total height H spans ground -> cap apex ---------------
+  const H = tall ? 1.7 + rand() * 0.2 : 1.1 + rand() * 0.2;
+  const capR = tall ? H * 0.16 : H * 0.25;
+  const capFlat = tall ? 0.5 : 0.62;
+  const capApex = capR * capFlat;
+  const stalkTop = H - capApex;               // height of the rim under the cap
+  const stalkR = tall ? H * 0.05 : H * 0.1;
+  const bulbH = stalkTop * 0.16;
+  const shaftH = stalkTop - bulbH;
+
+  // --- stalk: a squashed bulb base + a tapered shaft -----------------------
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(stalkR * 1.5, 8, 5), stalkMat);
+  bulb.scale.y = 0.6;
+  bulb.position.y = bulbH * 0.5;
+  g.add(bulb);
+
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(stalkR * 0.82, stalkR * 1.15, shaftH, 8), stalkMat);
+  shaft.position.y = bulbH + shaftH / 2;
+  g.add(shaft);
+
+  // thin skirt ring, just under the cap
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(stalkR, stalkR * 0.3, 4, 12), ringMat);
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = stalkTop * 0.92;
+  g.add(ring);
+
+  // --- cap: a flattened faceted dome (half-sphere), never a cone ----------
+  const cap = new THREE.Mesh(
+    new THREE.SphereGeometry(capR, 9, 4, 0, Math.PI * 2, 0, Math.PI / 2),
+    capMat
+  );
+  cap.scale.y = capFlat;
+  cap.position.y = stalkTop;
+  g.add(cap);
+
+  // pale gilled underside: a shallow open cone, wide at the cap rim and
+  // narrowing toward the stalk — its low-segment facets read as radial gill
+  // ridges rather than a flat disc
+  const gillH = capR * 0.22;
+  const gills = new THREE.Mesh(
+    new THREE.CylinderGeometry(capR * 0.97, capR * 0.3, gillH, 14, 1, true),
+    gillMat
+  );
+  gills.position.y = stalkTop - gillH / 2 - 0.01;
+  g.add(gills);
+
+  // a few raised lighter spots scattered over the crown of the cap, glued
+  // flush against its curved surface (same radial-placement trick as the
+  // mine's spikes)
+  const spotCount = 3 + Math.floor(rand() * 3);
+  const up = new THREE.Vector3(0, 1, 0);
+  for (let i = 0; i < spotCount; i++) {
+    const phi = rand() * Math.PI * 0.4;       // stays near the crown, not the rim
+    const theta = rand() * Math.PI * 2;
+    const nx = Math.sin(phi) * Math.cos(theta);
+    const ny = Math.cos(phi);
+    const nz = Math.sin(phi) * Math.sin(theta);
+    const dir = new THREE.Vector3(nx, ny * capFlat, nz).normalize();
+    const spotR = capR * (0.1 + rand() * 0.06);
+    const spot = new THREE.Mesh(
+      new THREE.SphereGeometry(spotR, 6, 4, 0, Math.PI * 2, 0, Math.PI / 2),
+      spotMat
+    );
+    spot.quaternion.setFromUnitVectors(up, dir);
+    spot.position.set(nx * capR, stalkTop + ny * capR * capFlat, nz * capR).addScaledVector(dir, spotR * 0.1);
+    g.add(spot);
+  }
+
+  // gentle per-instance jitter — lean, yaw, overall scale — so a patch of
+  // mushrooms doesn't read as identical stamped clones
+  g.rotation.y = rand() * Math.PI * 2;
+  g.rotation.z = (rand() - 0.5) * 0.06;
+  g.rotation.x = (rand() - 0.5) * 0.04;
+  g.scale.setScalar(0.92 + rand() * 0.16);
+
+  return g;
+}
+
+/**
+ * A standalone believable boulder: 1-3 clustered lumpy chunks built with the
+ * same displaced-icosahedron trick as boulderGeometry() (weathered per-vertex
+ * bulge, flattened buried underside), merged into one buffer so it's a single
+ * draw call, textured with the real rock PBR set via pbr()/tileSet(lib.rock)
+ * when available (falling back to the procedural stoneMaps, exactly like
+ * makeRockField), with a baked shaded-base -> lit-crest vertex-colour gradient
+ * (subtle per-instance tonal jitter on top). Reads like one of makeRockField's
+ * instanced boulders, just as its own standalone group. ~2-4m.
+ */
+export function makeRockProp(rand: () => number): THREE.Group {
+  const group = new THREE.Group();
+
+  const n = 1 + Math.floor(rand() * 3); // 1..3 chunks
+  const mainR = 0.85 + rand() * 0.35;
+  const chunks: { r: number; x: number; y: number; z: number; sy: number; detail: number; yaw: number }[] = [
+    { r: mainR, x: 0, y: 0, z: 0, sy: 0.78 + rand() * 0.14, detail: 1, yaw: rand() * Math.PI },
+  ];
+  for (let i = 1; i < n; i++) {
+    const a = rand() * Math.PI * 2;
+    const cr = mainR * (0.42 + rand() * 0.28);
+    const dist = mainR * (0.5 + rand() * 0.4);
+    chunks.push({
+      r: cr,
+      x: Math.cos(a) * dist, y: -mainR * 0.15 + rand() * 0.1, z: Math.sin(a) * dist,
+      sy: 0.7 + rand() * 0.2, detail: rand() < 0.5 ? 0 : 1, yaw: rand() * Math.PI,
+    });
+  }
+
+  const parts: THREE.BufferGeometry[] = [];
+  for (const ch of chunks) {
+    const cg = new THREE.IcosahedronGeometry(ch.r, ch.detail);
+    const p = cg.getAttribute("position") as THREE.BufferAttribute;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      const len = Math.hypot(x, y, z) || 1;
+      const nx = x / len, ny = y / len, nz = z / len;
+      const rr = len * (0.8 + 0.44 * dirHash(nx + ch.x * 0.1, ny + ch.y * 0.1, nz + ch.z * 0.1));
+      let yy = ny * rr;
+      if (yy < 0) yy *= 0.4; // flatten the buried underside
+      p.setXYZ(i, nx * rr, yy, nz * rr);
+    }
+    const ng = cg.toNonIndexed();
+    ng.applyMatrix4(new THREE.Matrix4().compose(
+      new THREE.Vector3(ch.x, ch.y, ch.z),
+      new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ch.yaw),
+      new THREE.Vector3(1, ch.sy, 1)
+    ));
+    parts.push(ng);
+  }
+
+  const geo = mergePosUV(parts);
+  geo.computeVertexNormals();
+  geo.computeBoundingBox();
+  const bb = geo.boundingBox!;
+  geo.translate(0, -bb.min.y, 0); // sit the base on the ground
+
+  // same shaded-base -> lit-crest gradient as boulderGeometry(), with a
+  // subtle per-instance tonal jitter so a run of standalone rocks still
+  // reads as a varied field rather than identical props
+  const lowJ = 0.06 * (rand() - 0.5), hiJ = 0.1 * (rand() - 0.5);
+  paintByHeight(
+    geo, 0, 0, bb.max.y - bb.min.y,
+    new THREE.Color(0.52 + lowJ, 0.53 + lowJ, 0.57 + lowJ),
+    new THREE.Color(1.08 + hiJ, 1.05 + hiJ, 0.99 + hiJ)
+  );
+
+  const rawHeight = (bb.max.y - bb.min.y) || 1;
+  const target = 2 + rand() * 2; // ~2-4m tall, whatever the raw chunk cluster came out to
+  const scale = target / rawHeight;
+
+  const lib = pbr();
+  let mat: THREE.MeshStandardMaterial;
+  if (lib) {
+    const t = tileSet(lib.rock, 1);
+    mat = new THREE.MeshStandardMaterial({
+      map: t.diff, normalMap: t.nor, color: 0x8a8a8a, metalness: 0.1, roughness: 0.96,
+      flatShading: true, vertexColors: true,
+    });
+  } else {
+    const stone = stoneMaps(ROCK_PROP_COLOR);
+    mat = new THREE.MeshStandardMaterial({
+      color: ROCK_PROP_COLOR, map: stone.map, bumpMap: stone.bump, bumpScale: 0.2,
+      metalness: 0.1, roughness: 0.96, flatShading: true, vertexColors: true,
+    });
+  }
+
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.scale.setScalar(scale);
+  mesh.rotation.y = rand() * Math.PI * 2;
+  group.add(mesh);
+
+  return group;
+}

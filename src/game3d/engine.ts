@@ -33,7 +33,7 @@ import {
   makeItemBox, makeMissile, makeMine, makeShieldBubble,
   makeStartGantry, varyTint, makeSpaceBackdrop,
   makeTree, makeTreeMaterials,
-  makeSnowman, makeVolcano, makeLavaPool, makeCaveMouth,
+  makeSnowman, makeVolcano, makeLavaPool, makeCaveMouth, makeMushroom, makeRockProp,
   type MechRig, type Placement, type TreeMats,
 } from "./objects";
 import { makeWeather, type WeatherSystem } from "./weather";
@@ -754,6 +754,10 @@ export class Game {
       if (kind === "treeB") return makeTree(rand, this.treeMats, "round");
       if (kind === "treeDark") return makeTree(rand, this.treeMats, "tall");
     }
+    // procedural mushrooms + rocks (nicer than the crude imported GLTF models)
+    if (kind === "mushroom") return makeMushroom(rand, false);
+    if (kind === "mushroomTall") return makeMushroom(rand, true);
+    if (kind === "rockA" || kind === "rockB") return makeRockProp(rand);
     // themed-realm props (self-contained procedural builders)
     switch (kind) {
       case "pyramid": return makePyramid(rand);
@@ -786,13 +790,11 @@ export class Game {
     }
     let obj: THREE.Object3D;
     switch (kind) {
+      // trees fall back to the GLTF kit only if the procedural materials failed
       case "treeA": obj = instantiate(library, "treeA", 3 + rand() * 2.2); break;
       case "treeB": obj = instantiate(library, "treeB", 3 + rand() * 2.2); break;
       case "treeDark": obj = instantiate(library, "treeDark", 2.5 + rand() * 2); break;
-      case "mushroom": obj = instantiate(library, "mushroom", 1.2 + rand() * 1.4); break;
-      case "mushroomTall": obj = instantiate(library, "mushroomTall", 1.6 + rand() * 1.6); break;
-      case "rockA": obj = instantiate(library, "rockA", 2 + rand() * 2.5); break;
-      case "rockB": obj = instantiate(library, "rockB", 2 + rand() * 2.5); break;
+      default: obj = makeRockProp(rand); break; // anything else → a procedural boulder
     }
     // per-instance colour variation so the forest isn't a wall of identical props
     obj.rotation.y = rand() * Math.PI * 2;
@@ -1867,20 +1869,16 @@ export class Game {
     }
     this.carPitch += (pitchTarget - this.carPitch) * Math.min(1, dt * 10);
 
-    // SOLID marker posts along the edge (~7m off-centre): clip that row and you
-    // scrub speed + throw sparks. You can still bash on through onto the terrain,
-    // it just costs you — the posts aren't a free pass-through anymore.
+    // ENV HIT: clip the edge post row (~7m off-centre) and you just throw a
+    // shower of orange sparks — cosmetic only, no deflection, no jolt (the car
+    // keeps driving; you're free to cut across the terrain).
     this.postHitCd = Math.max(0, this.postHitCd - dt);
     const latAbs = Math.abs(this.freeDrive.lateral);
     if (latAbs > 6.3 && latAbs < 7.7 && this.speed > 8 && !this.transformed && this.postHitCd <= 0) {
-      this.freeDrive.vx *= 0.78;           // knock the speed off the impact
-      this.freeDrive.vz *= 0.78;
       const pp = this.playerRoot.position;
-      this.spawnSparks(pp.x, pp.y + 0.4, pp.z, 9);
-      this.shake = Math.max(this.shake, 0.5);
-      this.crashFlash = Math.max(this.crashFlash, 0.22);
+      this.spawnSparks(pp.x, pp.y + 0.4, pp.z, 10);
       this.sound.play("bump");
-      this.postHitCd = 0.26;               // ~one hit per post as you scrape along
+      this.postHitCd = 0.2;                 // ~one shower per post as you scrape along
     }
 
     // OFF-TRACK GRACE (no walls, no penalty): you can cut across the terrain for
@@ -2049,11 +2047,10 @@ export class Game {
       }
     }
 
-    // an opponent occasionally drops a mine on the road behind it (Space Wars
-    // rivals are far more trigger-happy, and the tube holds more live mines)
-    const mineChance = OPPONENT_MINE_CHANCE * (this.cfg.combat ? 5 : 1);
-    const mineCap = this.cfg.combat ? 28 : 14;
-    if (this.opponents.length && this.mines.length < mineCap && Math.random() < mineChance * dt) {
+    // opponents drop mines ONLY in the combat mode (Space Wars) — normal races
+    // stay clean, no random mines scattered across the track
+    if (this.cfg.combat && this.opponents.length && this.mines.length < 28 &&
+        Math.random() < OPPONENT_MINE_CHANCE * 5 * dt) {
       const live = this.opponents.filter((o) => !o.finished && o.stunnedT <= 0);
       if (live.length) {
         const o = live[Math.floor(Math.random() * live.length)];
