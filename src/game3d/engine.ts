@@ -228,6 +228,7 @@ export class Game {
   private camPos = new THREE.Vector3();
   private camYaw = 0; // smoothed camera heading — eases toward the car so the view swings in behind you instead of snapping with every steer
   private reliefAmp = 0; // per-realm amplitude of the rolling hills the ground rises into away from the road
+  private sun!: THREE.DirectionalLight; // shadow-casting key light; its frustum follows the car
   private offTrackT = 0; // seconds left before an off-track respawn (0 = on track / no warning)
   private offTrackExitDist = 0; // arc distance where you left the ribbon — respawn point
   private terrSamp?: { sx: Float64Array; sz: Float64Array; sy: Float64Array }; // cached track polyline for ground-height queries
@@ -339,6 +340,9 @@ export class Game {
     // filmic tone mapping → richer colors + smooth highlight roll-off
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.2;
+    // real-time shadows — the single biggest "this is 3D, not flat" upgrade
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     const hudCanvas = document.createElement("canvas");
     hudCanvas.className = "game-layer game-hud";
@@ -449,7 +453,9 @@ export class Game {
     const pal = realm.palette;
 
     const isVoid = realm.style === "void";
-    scene.add(makeSkyDome(pal));
+    const sky = makeSkyDome(pal);
+    sky.userData.noShadow = true; // the sky must never cast/receive shadows
+    scene.add(sky);
 
     if (!isVoid) {
       // terrain that RISES with the road near the track (roads sit grounded in
@@ -476,6 +482,17 @@ export class Game {
     const sun = new THREE.DirectionalLight(pal.sun, pal.sunInt * 1.9);
     sun.position.set(60, 90, 50);
     scene.add(sun);
+    // this key light also casts the shadows; its ortho frustum follows the car
+    // (updated each frame) so props near you drop real, soft shadows on the road
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.bias = -0.0004;
+    sun.shadow.normalBias = 0.7;
+    const sc = sun.shadow.camera;
+    sc.near = 1; sc.far = 420; sc.left = -105; sc.right = 105; sc.top = 105; sc.bottom = -105;
+    sc.updateProjectionMatrix();
+    scene.add(sun.target);
+    this.sun = sun;
     // cool fill from the opposite side so nothing reads as a black silhouette
     const fill = new THREE.DirectionalLight(pal.hemiSky, 0.7);
     fill.position.set(-70, 45, -90);
@@ -534,6 +551,19 @@ export class Game {
     scene.add(this.weather.object);
 
     this.decorate(library);
+    this.enableShadows();
+  }
+
+  /** Turn on shadow casting/receiving across the world's solid meshes (points,
+   *  sprites and the sky are skipped) so props drop real shadows on the road. */
+  private enableShadows() {
+    this.scene.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!(m as unknown as { isMesh?: boolean }).isMesh) return;
+      if (o.userData.noShadow) return;
+      m.castShadow = true;
+      m.receiveShadow = true;
+    });
   }
 
   private spawnOpponents() {
@@ -2424,6 +2454,11 @@ export class Game {
         : this.track.pointAt(this.position, 0, undefined, true).y;
       this.playerRoot.position.set(this.freeDrive.x, groundY + this.alt + CAR_LIFT, this.freeDrive.z);
       this.playerRoot.rotation.order = "YXZ";
+      // keep the shadow-casting sun (and its frustum) centred on the car
+      if (this.sun) {
+        this.sun.target.position.set(this.freeDrive.x, groundY, this.freeDrive.z);
+        this.sun.position.set(this.freeDrive.x + 55, groundY + 120, this.freeDrive.z + 45);
+      }
       this.playerRoot.rotation.y = this.freeDrive.heading;
       // nose pitch: rides up ramps, arcs in the air, follows the road slope on
       // the ground (computed + smoothed in update) — no more flat "sinking"
