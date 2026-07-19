@@ -474,12 +474,13 @@ export class Game {
       scene.add(makeMountainRing(pal, cx, cz, radius));
     }
 
-    scene.add(new THREE.HemisphereLight(pal.hemiSky, pal.hemiGround, pal.hemiInt * 1.7));
-    // ambient lift so shadows aren't pure black — cuts the harsh neon-on-black
-    // contrast and lets the ground/scenery + their textures read clearly
-    scene.add(new THREE.AmbientLight(pal.hemiSky, 0.62));
-    // key light rakes across surfaces so the bump/texture detail catches light
-    const sun = new THREE.DirectionalLight(pal.sun, pal.sunInt * 1.9);
+    scene.add(new THREE.HemisphereLight(pal.hemiSky, pal.hemiGround, pal.hemiInt * 1.45));
+    // gentle ambient so shadows aren't pure black — but light enough that the new
+    // real-time shadows actually read (too much fill washed them flat)
+    scene.add(new THREE.AmbientLight(pal.hemiSky, 0.42));
+    // key light rakes across surfaces + casts the shadows; punchier now so the
+    // shadowed side reads clearly darker than the lit side
+    const sun = new THREE.DirectionalLight(pal.sun, pal.sunInt * 2.2);
     sun.position.set(60, 90, 50);
     scene.add(sun);
     // this key light also casts the shadows; its ortho frustum follows the car
@@ -494,7 +495,8 @@ export class Game {
     scene.add(sun.target);
     this.sun = sun;
     // cool fill from the opposite side so nothing reads as a black silhouette
-    const fill = new THREE.DirectionalLight(pal.hemiSky, 0.7);
+    // (eased down so it doesn't fill in the shadows the key light now casts)
+    const fill = new THREE.DirectionalLight(pal.hemiSky, 0.5);
     fill.position.set(-70, 45, -90);
     scene.add(fill);
 

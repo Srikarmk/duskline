@@ -648,43 +648,64 @@ export function makeMountainRing(pal: RealmPalette, cx: number, cz: number, radi
 
 // --- pickups & obstacles ---------------------------------------------------
 
-export function makeGem(color: number, air: boolean): THREE.Mesh {
-  // A sharp, cheap cut crystal: an elongated octahedron (bipyramid) with a
-  // bright emissive interior, a hotter core that blooms through the facets, and
-  // a thin rim tracing every edge. Air (mid-air bonus) gems are bigger, glow
-  // harder and carry a faceted halo ring so they read as high-value.
-  const base = new THREE.Color(air ? 0xfbbf24 : color);
-  const r = air ? 0.58 : 0.46;
+/** A low-poly "brilliant cut" jewel silhouette: a hexagonal pavilion tapering
+ *  to a point, a girdle, and a short crown rising to a flat table facet —
+ *  merged into one non-indexed buffer (same trick as boulderGeometry) so a
+ *  single flat-shaded material reads as an actual cut gem instead of a
+ *  stretched octahedron. */
+function gemGeometry(girdleR: number, pavH: number, crownH: number, tableR: number): THREE.BufferGeometry {
+  const seg = 6;
+  const pav = new THREE.CylinderGeometry(girdleR, 0, pavH, seg, 1, true).toNonIndexed();
+  pav.translate(0, -pavH / 2, 0); // apex below the girdle, girdle at y=0
+  const crown = new THREE.CylinderGeometry(tableR, girdleR, crownH, seg, 1, true).toNonIndexed();
+  crown.translate(0, crownH / 2, 0); // girdle at y=0, table at y=crownH
+  const table = new THREE.CircleGeometry(tableR, seg).toNonIndexed();
+  table.rotateX(-Math.PI / 2); // face +Y
+  table.translate(0, crownH, 0);
+  const geo = mergePosUV([pav, crown, table]);
+  geo.computeVertexNormals();
+  return geo;
+}
 
-  const geo = new THREE.OctahedronGeometry(r, 0);
-  geo.scale(0.7, 1.3, 0.7); // stretch into a tall gem
+export function makeGem(color: number, air: boolean): THREE.Mesh {
+  // A proper cut jewel: a hexagonal pavilion tapering to a point, a girdle and
+  // a short crown rising to a flat table — a real brilliant-cut silhouette,
+  // not a stretched octahedron — with a bright emissive core blooming through
+  // the translucent facets and a thin sparkle rim tracing every edge. Air
+  // (mid-air bonus) gems are bigger, glow harder and carry a faceted halo ring
+  // so they read as high-value.
+  const base = new THREE.Color(air ? 0xfbbf24 : color);
+  const R = air ? 0.42 : 0.34; // girdle radius
+  const geo = gemGeometry(R, R * 2.2, R * 0.9, R * 0.42);
+
   const shell = new THREE.MeshStandardMaterial({
     color: base,
     emissive: base.clone().offsetHSL(0, 0.06, -0.04),
-    emissiveIntensity: air ? 1.15 : 0.85,
-    metalness: 0.2,
-    roughness: 0.12,
+    emissiveIntensity: air ? 1.25 : 0.95,
+    metalness: 0.25,
+    roughness: 0.1,
     flatShading: true,
     transparent: true,
-    opacity: 0.86,
+    opacity: 0.85,
   });
   const gem = new THREE.Mesh(geo, shell);
 
-  // hotter inner core visible through the translucent shell
-  const coreGeo = new THREE.OctahedronGeometry(r * 0.52, 0);
-  coreGeo.scale(0.7, 1.3, 0.7);
+  // hotter inner core visible through the translucent shell — same cut,
+  // scaled down, so it reads as a hot heart rather than a blurry blob
+  const coreGeo = geo.clone();
+  coreGeo.scale(0.5, 0.5, 0.5);
   const core = new THREE.Mesh(
     coreGeo,
     new THREE.MeshStandardMaterial({
       color: 0xffffff,
       emissive: base.clone().offsetHSL(0, -0.2, 0.35),
-      emissiveIntensity: air ? 2.4 : 1.9,
+      emissiveIntensity: air ? 2.7 : 2.1,
       flatShading: true,
     })
   );
   gem.add(core);
 
-  // thin bright rim along every facet edge
+  // thin bright rim tracing every facet edge — the cut's sparkle
   const rim = new THREE.LineSegments(
     new THREE.EdgesGeometry(geo),
     new THREE.LineBasicMaterial({
@@ -697,7 +718,7 @@ export function makeGem(color: number, air: boolean): THREE.Mesh {
 
   if (air) {
     const halo = new THREE.Mesh(
-      new THREE.TorusGeometry(r * 1.55, 0.05, 3, 12),
+      new THREE.TorusGeometry(R * 1.9, 0.05, 3, 12),
       new THREE.MeshStandardMaterial({
         color: base.clone().offsetHSL(0, -0.1, 0.2),
         emissive: base.clone().offsetHSL(0, 0, 0.15),
@@ -714,40 +735,45 @@ export function makeGem(color: number, air: boolean): THREE.Mesh {
 
 export function makeNitroCan(): THREE.Group {
   // A sleek energy canister: dark metal sleeves top and bottom leave a glowing
-  // cyan core exposed as an energy window, framed by machined bands and topped
-  // with a nozzle.
+  // cyan core exposed as an energy window, framed by machined bands, set on a
+  // flanged foot, and topped with a nozzle.
   const group = new THREE.Group();
   const cyan = new THREE.Color(0x22d3ee);
   const shellMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.85, roughness: 0.3, flatShading: true });
   const bandMat = new THREE.MeshStandardMaterial({ color: 0xd7dee9, metalness: 0.9, roughness: 0.24, flatShading: true });
-  const coreMat = new THREE.MeshStandardMaterial({ color: 0x67e8f9, emissive: cyan, emissiveIntensity: 1.7, flatShading: true });
+  const coreMat = new THREE.MeshStandardMaterial({ color: 0x67e8f9, emissive: cyan, emissiveIntensity: 2.0, flatShading: true });
 
   const R = 0.32;
 
   // glowing energy core running the full height (exposed in the gap between sleeves)
-  const core = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.94, R * 0.94, 1.0, 10), coreMat);
+  const core = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.94, R * 0.94, 1.0, 12), coreMat);
   core.position.y = 0.55;
   group.add(core);
 
   // metal sleeves, leaving a bright band exposed in the middle
-  const lower = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 0.44, 8), shellMat);
+  const lower = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 0.44, 10), shellMat);
   lower.position.y = 0.27;
-  const upper = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 0.34, 8), shellMat);
+  const upper = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 0.34, 10), shellMat);
   upper.position.y = 0.9;
   group.add(lower, upper);
 
+  // flanged foot ring — a proper machined base instead of a bare cylinder edge
+  const foot = new THREE.Mesh(new THREE.CylinderGeometry(R * 1.1, R * 0.96, 0.07, 10), bandMat);
+  foot.position.y = 0.085;
+  group.add(foot);
+
   // machined bands framing the energy window
   for (const y of [0.5, 0.76]) {
-    const band = new THREE.Mesh(new THREE.TorusGeometry(R + 0.015, 0.04, 4, 14), bandMat);
+    const band = new THREE.Mesh(new THREE.TorusGeometry(R + 0.015, 0.04, 4, 18), bandMat);
     band.rotation.x = Math.PI / 2;
     band.position.y = y;
     group.add(band);
   }
 
   // nozzle + glowing tip
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 0.18, 8), bandMat);
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 0.18, 10), bandMat);
   neck.position.y = 1.16;
-  const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.12, 0.14, 8), coreMat);
+  const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.12, 0.14, 10), coreMat);
   tip.position.y = 1.31;
   group.add(neck, tip);
 
@@ -755,34 +781,44 @@ export function makeNitroCan(): THREE.Group {
 }
 
 export function makeOrb(): THREE.Group {
-  // A contained energy sphere: a hot faceted core inside a translucent shell,
-  // wrapped by two crossed faceted rings that read as an orbiting gyroscope as
-  // the engine spins the whole thing.
+  // A contained energy sphere: a hot faceted core inside a translucent,
+  // gem-cut shell (sparkle rim tracing its facet edges), wrapped by two
+  // crossed faceted rings that read as an orbiting gyroscope as the engine
+  // spins the whole thing.
   const inner = new THREE.Group();
   const violet = new THREE.Color(0xd946ef);
 
   const core = new THREE.Mesh(
     new THREE.IcosahedronGeometry(0.5, 1),
     new THREE.MeshStandardMaterial({
-      color: 0xf5d0fe, emissive: violet, emissiveIntensity: 1.7,
+      color: 0xf5d0fe, emissive: violet, emissiveIntensity: 1.9,
       flatShading: true, transparent: true, opacity: 0.95,
     })
   );
   inner.add(core);
 
+  const shellGeo = new THREE.IcosahedronGeometry(0.82, 1);
   const shell = new THREE.Mesh(
-    new THREE.IcosahedronGeometry(0.82, 0),
+    shellGeo,
     new THREE.MeshStandardMaterial({
       color: violet.clone().offsetHSL(0.03, -0.1, 0.12),
-      emissive: violet, emissiveIntensity: 0.55,
+      emissive: violet, emissiveIntensity: 0.65,
       metalness: 0.2, roughness: 0.1, flatShading: true,
       transparent: true, opacity: 0.26, side: THREE.DoubleSide,
     })
   );
   inner.add(shell);
 
+  // thin bright rim tracing the shell's cut facets — same sparkle trick as
+  // the gem pickup, so the orb reads as a lit jewel rather than a smooth ball
+  const shellRim = new THREE.LineSegments(
+    new THREE.EdgesGeometry(shellGeo),
+    new THREE.LineBasicMaterial({ color: 0xf5d0fe, transparent: true, opacity: 0.7 })
+  );
+  inner.add(shellRim);
+
   const ringMat = new THREE.MeshStandardMaterial({
-    color: 0x67e8f9, emissive: 0x22d3ee, emissiveIntensity: 1.3, flatShading: true,
+    color: 0x67e8f9, emissive: 0x22d3ee, emissiveIntensity: 1.4, flatShading: true,
   });
   const ringA = new THREE.Mesh(new THREE.TorusGeometry(0.95, 0.05, 3, 20), ringMat);
   ringA.rotation.x = Math.PI / 2.2;
@@ -1363,21 +1399,39 @@ export function makeTree(rand: () => number, mats: TreeMats, kind: TreeKind): TH
   return g;
 }
 
+/** Realms scatter this by the hundreds as roadside clutter (some weight it as
+ *  the dominant scenery kind), so it keeps the exact mesh-per-shard budget of
+ *  the original (no extra draw calls) — the upgrade is all in the geometry and
+ *  material: a hexagonal cut (was a crude 5-gon cone) that tapers to a small
+ *  blunt facet instead of a sharp point, plus a baked dim-root -> hot-tip
+ *  vertex-colour gradient (paintByHeight) so each shard reads as glowing from
+ *  within rather than flat-lit, with a brighter, varied emissive kick. */
 export function makeCrystalCluster(rand: () => number, colors: number[]): THREE.Group {
   const group = new THREE.Group();
   const shards = 2 + Math.floor(rand() * 3);
   const facet = stoneMaps(0xbfc8ff).bump;
+  const seg = 6;
   for (let i = 0; i < shards; i++) {
-    const height = 1.2 + rand() * 3;
-    const geo = new THREE.ConeGeometry(0.35 + rand() * 0.3, height, 5);
-    const shade = colors[Math.floor(rand() * colors.length)];
+    const height = 1.2 + rand() * 2.9;
+    const baseR = (0.24 + rand() * 0.22) * (0.75 + height * 0.1);
+    const tipR = baseR * 0.2; // blunt faceted tip, not a sharp cone point
+    const geo = new THREE.CylinderGeometry(tipR, baseR, height, seg);
+    const shade = new THREE.Color(colors[Math.floor(rand() * colors.length)]);
+    paintByHeight(
+      geo, 0, -height / 2, height / 2,
+      shade.clone().multiplyScalar(0.5),          // shaded root
+      shade.clone().offsetHSL(0, -0.12, 0.45)      // hot, near-white tip
+    );
     const mat = new THREE.MeshStandardMaterial({
-      color: shade, emissive: shade, emissiveIntensity: 0.35, roughness: 0.3, metalness: 0.2,
-      bumpMap: facet, bumpScale: 0.05,
+      color: 0xffffff, emissive: shade, emissiveIntensity: 0.8 + rand() * 0.5,
+      roughness: 0.22, metalness: 0.18, flatShading: true, vertexColors: true,
+      bumpMap: facet, bumpScale: 0.035,
+      transparent: true, opacity: 0.92,
     });
     const shard = new THREE.Mesh(geo, mat);
-    shard.position.set((rand() - 0.5) * 1.6, height / 2, (rand() - 0.5) * 1.6);
-    shard.rotation.z = (rand() - 0.5) * 0.4;
+    shard.position.set((rand() - 0.5) * 1.4, height / 2, (rand() - 0.5) * 1.4);
+    shard.rotation.z = (rand() - 0.5) * 0.36;
+    shard.rotation.x = (rand() - 0.5) * 0.2;
     group.add(shard);
   }
   return group;
