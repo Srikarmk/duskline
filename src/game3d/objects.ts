@@ -1095,9 +1095,102 @@ export function makeRamp(kind: RampKind = "standard"): THREE.Group {
 export interface TreeMats { trunk: THREE.Material; foliage: THREE.Material; }
 export type TreeKind = "pine" | "round" | "tall";
 
+/** Procedural bark fallback: vertical woody grain streaks (wobbly, varying
+ *  width/tone) plus a couple of knot rings on a warm brown base, so trunks
+ *  read as real wood even without the CC0 PBR bark set. Follows the file's
+ *  other canvas-texture helpers (small, seeded, repeat-wrapped). */
+function barkTexture(): THREE.Texture {
+  const res = 128;
+  const c = document.createElement("canvas");
+  c.width = res;
+  c.height = res;
+  const ctx = c.getContext("2d")!;
+  const rand = seeded(505);
+
+  ctx.fillStyle = "#5a3a22";
+  ctx.fillRect(0, 0, res, res);
+  // vertical grain streaks, each a wobbly line of varying width/tone
+  for (let i = 0; i < 90; i++) {
+    const dark = rand() < 0.55;
+    ctx.strokeStyle = dark
+      ? `rgba(32,18,10,${(0.12 + rand() * 0.2).toFixed(2)})`
+      : `rgba(150,112,72,${(0.10 + rand() * 0.18).toFixed(2)})`;
+    ctx.lineWidth = 1 + rand() * 2.6;
+    let x = rand() * res;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    for (let y = 8; y <= res; y += 8) {
+      x += (rand() - 0.5) * 5;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  // a couple of knot rings
+  for (let i = 0; i < 3; i++) {
+    const kx = rand() * res, ky = rand() * res, kr = 4 + rand() * 7;
+    for (let ring = 0; ring < 3; ring++) {
+      ctx.strokeStyle = `rgba(28,16,9,${(0.32 - ring * 0.09).toFixed(2)})`;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.ellipse(kx, ky, kr - ring * 2, (kr - ring * 2) * 1.5, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(1, 3);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+
+/** Procedural leaf fallback: mottled green dapple (soft lighter/darker leaf
+ *  clumps) plus fine dark speckles, so foliage reads as leaves rather than
+ *  flat plastic without the CC0 PBR foliage set. Multiplies with the
+ *  material's `color` (pal.clutter), matching how the PBR foliage diffuse
+ *  map is tinted per realm. */
+function leafTexture(): THREE.Texture {
+  const res = 128;
+  const c = document.createElement("canvas");
+  c.width = res;
+  c.height = res;
+  const ctx = c.getContext("2d")!;
+  const rand = seeded(707);
+
+  ctx.fillStyle = "#4f7a3d";
+  ctx.fillRect(0, 0, res, res);
+  // soft mottled leaf clumps, lighter and darker
+  for (let i = 0; i < 70; i++) {
+    const x = rand() * res, y = rand() * res, r = 6 + rand() * 14;
+    const light = rand() < 0.5;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, light ? "rgba(158,196,116,0.4)" : "rgba(28,58,24,0.38)");
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // fine dappled speckle (sun-through-leaves texture)
+  for (let i = 0; i < 900; i++) {
+    ctx.fillStyle = rand() < 0.5 ? "rgba(18,38,14,0.35)" : "rgba(184,214,142,0.25)";
+    const s = 1 + rand() * 2;
+    ctx.fillRect(rand() * res, rand() * res, s, s);
+  }
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(3, 3);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+
 /** Shared trunk (bark) + foliage (leaf) materials for a realm, from the CC0
- *  bark/foliage PBR sets (falls back to flat colours). Reused across every tree
- *  so hundreds of trees don't each allocate materials. */
+ *  bark/foliage PBR sets (falls back to procedural canvas bark/leaf
+ *  textures). Reused across every tree so hundreds of trees don't each
+ *  allocate materials. */
 export function makeTreeMaterials(pal: RealmPalette): TreeMats {
   // foliage uses vertexColors so each tree can bake its own tonal shading + AO +
   // per-instance hue into geometry while the material stays shared. flatShading
@@ -1114,15 +1207,61 @@ export function makeTreeMaterials(pal: RealmPalette): TreeMats {
       }),
     };
   }
+  // procedural fallback — canvas bark/leaf maps so the trunk looks like wood
+  // and the canopy looks leafy even without the CC0 PBR sets. Trunk stays
+  // unmultiplied (true wood browns); only the leaves take the realm tint.
   return {
-    trunk: new THREE.MeshStandardMaterial({ color: 0x5a3a22, roughness: 1, flatShading: true }),
-    foliage: new THREE.MeshStandardMaterial({ color: pal.clutter, roughness: 1, flatShading: true, vertexColors: true }),
+    trunk: new THREE.MeshStandardMaterial({ map: barkTexture(), roughness: 1, flatShading: true }),
+    foliage: new THREE.MeshStandardMaterial({
+      color: pal.clutter, map: leafTexture(), roughness: 1, flatShading: true, vertexColors: true,
+    }),
   };
 }
 
-/** A low-poly tree with a bark trunk and textured foliage — pine (stacked
- *  cones), round (leafy blobs) or tall (slim conifer). Meshes only; the shared
- *  materials come from makeTreeMaterials. */
+/** A ConeGeometry with every vertex nudged outward by a small deterministic
+ *  hash of its own position (shared seam vertices hash identically, so the
+ *  tier stays watertight) and the base rim sagging down unevenly — reads as
+ *  one irregular, slightly drooping tier of foliage rather than a perfect
+ *  cone. */
+function lumpyCone(r: number, h: number, seg: number, jitter: number, droop: number, rand: () => number): THREE.BufferGeometry {
+  const geo = new THREE.ConeGeometry(r, h, seg, 1);
+  const sx = rand() * 60, sy = rand() * 60, sz = rand() * 60; // per-call hash offset
+  const p = geo.getAttribute("position") as THREE.BufferAttribute;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    const hash = dirHash(x + sx, y + sy, z + sz);
+    const rf = 1 + (hash - 0.5) * jitter;
+    let ny = y;
+    if (y < -h / 2 + 1e-3) ny -= hash * droop; // base rim sags, irregularly
+    p.setXYZ(i, x * rf, ny, z * rf);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/** An icosahedron/dodecahedron with every vertex pushed outward by a small
+ *  deterministic hash and flattened vertically — an irregular, lumpy blob of
+ *  leaves instead of a smooth ball (same displace-along-normal trick as
+ *  boulderGeometry). */
+function lumpyBlob(r: number, detail: number, dodeca: boolean, jitter: number, flat: number, rand: () => number): THREE.BufferGeometry {
+  const geo = dodeca ? new THREE.DodecahedronGeometry(r, detail) : new THREE.IcosahedronGeometry(r, detail);
+  const sx = rand() * 60, sy = rand() * 60, sz = rand() * 60;
+  const p = geo.getAttribute("position") as THREE.BufferAttribute;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    const len = Math.hypot(x, y, z) || 1;
+    const nx = x / len, ny = y / len, nz = z / len;
+    const rf = 1 + (dirHash(nx + sx, ny + sy, nz + sz) - 0.5) * jitter;
+    p.setXYZ(i, x * rf, y * rf * flat, z * rf);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/** A low-poly tree with a bark trunk and textured foliage — pine/tall build a
+ *  bushy conifer from several stacked, drooping, jittered tiers; round builds
+ *  a broadleaf crown from a cluster of overlapping lumpy blobs. Meshes only;
+ *  the shared materials come from makeTreeMaterials. */
 export function makeTree(rand: () => number, mats: TreeMats, kind: TreeKind): THREE.Group {
   const g = new THREE.Group();
   const h = kind === "tall" ? 4.4 + rand() * 3.4 : 2.6 + rand() * 2.4;
@@ -1146,8 +1285,12 @@ export function makeTree(rand: () => number, mats: TreeMats, kind: TreeKind): TH
   const shadeHigh = new THREE.Color((1.10 + warm) * tj, 1.12 * tj, (0.94 - warm) * tj);
 
   const foliage: THREE.BufferGeometry[] = [];
-  const addLeaf = (geo: THREE.BufferGeometry, x: number, y: number, z: number, yaw: number, sy = 1) => {
-    geo.scale(1, sy, 1);
+  const addLeaf = (
+    geo: THREE.BufferGeometry, x: number, y: number, z: number, yaw: number,
+    tiltX = 0, tiltZ = 0
+  ) => {
+    if (tiltX) geo.rotateX(tiltX);
+    if (tiltZ) geo.rotateZ(tiltZ);
     geo.rotateY(yaw);
     geo.translate(x, y, z);
     g.add(new THREE.Mesh(geo, mats.foliage));
@@ -1155,40 +1298,54 @@ export function makeTree(rand: () => number, mats: TreeMats, kind: TreeKind): TH
   };
 
   if (kind === "round") {
-    // deciduous: a full canopy of clustered lobes over a broad low mass
-    const cBase = trunkH + h * 0.14;
+    // broadleaf: a full leafy crown built from a cluster of 4-8 overlapping
+    // irregular lobes (icosahedron/dodecahedron, jittered + flattened) —
+    // not a single smooth ball — over a short tapered trunk.
+    const cBase = trunkH + h * 0.12;
     const R = h * 0.32;
-    addLeaf(new THREE.IcosahedronGeometry(R * 1.02, 1), 0, cBase + R * 0.55, 0, rand() * Math.PI);
-    const lobes = 4 + Math.floor(rand() * 3);
-    for (let i = 0; i < lobes; i++) {
-      const a = (i / lobes) * Math.PI * 2 + rand() * 0.6;
-      const rr = R * (0.5 + rand() * 0.28);
-      const rad = R * (0.55 + rand() * 0.3);
+    const lobes = 4 + Math.floor(rand() * 5); // 4..8 blobs total, incl. centre
+    addLeaf(
+      lumpyBlob(R * 1.05, 1, false, 0.3, 0.82 + rand() * 0.14, rand),
+      0, cBase + R * 0.55, 0, rand() * Math.PI
+    );
+    for (let i = 1; i < lobes; i++) {
+      const a = (i / (lobes - 1)) * Math.PI * 2 + rand() * 0.6;
+      const rr = R * (0.45 + rand() * 0.32);
+      const rad = R * (0.5 + rand() * 0.35);
+      const dodeca = rand() < 0.4;
       addLeaf(
-        new THREE.IcosahedronGeometry(rr, i % 2 ? 0 : 1),
-        Math.cos(a) * rad, cBase + R * (0.5 + rand() * 0.6), Math.sin(a) * rad,
-        rand() * Math.PI, 0.92
-      );
-    }
-  } else {
-    // conifer: tiered cones flaring wide at the base, narrowing to a leader tip.
-    // "tall" is the slim variant (narrower spread, more layers).
-    const tall = kind === "tall";
-    const L = tall ? 6 : 5;
-    const spread = h * (tall ? 0.24 : 0.42);
-    const cBase = trunkH * 0.72;
-    const canopyH = h * (tall ? 0.78 : 0.66);
-    const ch = canopyH * (tall ? 0.3 : 0.34);
-    for (let i = 0; i < L; i++) {
-      const t = i / (L - 1);
-      const r = spread * (1 - t * 0.85) * (0.9 + rand() * 0.2) + 0.05;
-      addLeaf(
-        new THREE.ConeGeometry(r, ch, 7),
-        (rand() - 0.5) * r * 0.14, cBase + t * canopyH + ch * 0.34, (rand() - 0.5) * r * 0.14,
+        lumpyBlob(rr, rand() < 0.5 ? 0 : 1, dodeca, 0.36, 0.66 + rand() * 0.3, rand),
+        Math.cos(a) * rad, cBase + R * (0.42 + rand() * 0.62), Math.sin(a) * rad,
         rand() * Math.PI
       );
     }
-    addLeaf(new THREE.ConeGeometry(spread * 0.12 + 0.05, canopyH * 0.3, 6), 0, cBase + canopyH * 1.06, 0, 0);
+  } else {
+    // conifer: 4-5 irregular, slightly drooping tiers stacked on a tapered
+    // leader, flaring wide at the base and narrowing toward the tip — reads
+    // as a bushy pine rather than one sharp cone. "tall" is the slim variant.
+    const tall = kind === "tall";
+    const L = tall ? 5 : 4;
+    const spread = h * (tall ? 0.26 : 0.44);
+    const cBase = trunkH * 0.6;
+    const canopyH = h * (tall ? 0.82 : 0.7);
+    let topApex = cBase;
+    for (let i = 0; i < L; i++) {
+      const t = i / (L - 1);
+      const r = spread * (1 - t * 0.78) * (0.86 + rand() * 0.3) + 0.08;
+      const ch = (canopyH / L) * (1.5 + rand() * 0.6); // tall + overlaps the tier below
+      const seg = 6 + (i % 2); // alternate hexagonal/heptagonal tiers
+      const cy = cBase + t * canopyH * 0.92 + ch * 0.3;
+      const jx = (rand() - 0.5) * r * 0.3, jz = (rand() - 0.5) * r * 0.3;
+      addLeaf(
+        lumpyCone(r, ch, seg, 0.4, ch * 0.24, rand),
+        jx, cy, jz, rand() * Math.PI,
+        (rand() - 0.5) * 0.16, (rand() - 0.5) * 0.16
+      );
+      topApex = Math.max(topApex, cy + ch / 2);
+    }
+    // pointed leader tip poking above the topmost tier
+    const tipH = canopyH * 0.22;
+    addLeaf(new THREE.ConeGeometry(spread * 0.1 + 0.05, tipH, 6), 0, topApex + tipH * 0.32, 0, 0);
   }
 
   // bake the canopy gradient once the masses are placed (shaded base of canopy

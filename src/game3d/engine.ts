@@ -55,7 +55,7 @@ import { Minimap } from "./minimap";
 import { Sound } from "./sound";
 import { loadSetting, loadSettings, type Settings } from "../ui/settings";
 import { Input } from "../game/input";
-import { drawHud, drawToasts, drawCenterText, drawSpeedFx, type Toast } from "../game/render";
+import { drawHud, drawToasts, drawCenterText, drawSpeedFx, drawStartLights, type Toast } from "../game/render";
 import type { GameMode, GameResult, GameOptions, RaceStanding, CarId } from "../game/engine";
 
 type Phase = "loading" | "countdown" | "racing" | "finished";
@@ -227,6 +227,7 @@ export class Game {
   private camYaw = 0; // smoothed camera heading — eases toward the car so the view swings in behind you instead of snapping with every steer
   private reliefAmp = 0; // per-realm amplitude of the rolling hills the ground rises into away from the road
   private offTrackT = 0; // seconds left before an off-track respawn (0 = on track / no warning)
+  private offTrackExitDist = 0; // arc distance where you left the ribbon — respawn point
   private terrSamp?: { sx: Float64Array; sz: Float64Array; sy: Float64Array }; // cached track polyline for ground-height queries
   private camSnap = true;
   private cameraIndex = 0;
@@ -1499,7 +1500,7 @@ export class Game {
   /** Snap the car back onto the centre of the track at its current progress,
    *  facing down-course, after it's roamed off the terrain too long. No penalty. */
   private respawnOnTrack() {
-    this.freeDrive.reset(this.track, this.freeDrive.dist);
+    this.freeDrive.reset(this.track, this.offTrackExitDist); // back where you left, not wherever you wandered to
     this.alt = 0; this.vAlt = 0; this.spin = 0; this.flip = 0;
     this.carPitch = 0; this.stuntAir = false;
     this.offTrackT = 0;
@@ -1788,7 +1789,10 @@ export class Game {
     // track. Never any score penalty.
     const offTrack = !this.transformed && Math.abs(this.freeDrive.lateral) > ROAD_HALF_WIDTH + 1.5;
     if (offTrack && this.phase === "racing") {
-      if (this.offTrackT <= 0) this.offTrackT = OFFTRACK_GRACE; // just left the ribbon
+      if (this.offTrackT <= 0) {
+        this.offTrackT = OFFTRACK_GRACE;          // just left the ribbon
+        this.offTrackExitDist = this.freeDrive.dist; // remember WHERE, so respawn returns here
+      }
       this.offTrackT -= dt;
       if (this.offTrackT <= 0) this.respawnOnTrack();
     } else if (this.offTrackT !== 0) {
@@ -1911,6 +1915,29 @@ export class Game {
           this.toast("BUMP!", "#fca5a5");
           this.bumpCd = 0.5;
         }
+      }
+    }
+
+    // rival-vs-rival collision: keep cars from driving THROUGH each other. If two
+    // overlap (close in distance AND lane), shove them into different lanes and
+    // make the trailing car lift so it tucks in behind instead of clipping through.
+    const opps = this.opponents;
+    for (let i = 0; i < opps.length; i++) {
+      const a = opps[i];
+      if (a.finished) continue;
+      for (let j = i + 1; j < opps.length; j++) {
+        const b = opps[j];
+        if (b.finished) continue;
+        let dd = a.dist - b.dist;                     // + means a is ahead of b
+        if (dd > len / 2) dd -= len; else if (dd < -len / 2) dd += len;
+        if (Math.abs(dd) > 4.2) continue;
+        if (Math.abs(a.lane - b.lane) > 0.55) continue;
+        const dir = a.lane - b.lane >= 0 ? 1 : -1;    // split them apart laterally
+        a.lane = clamp(a.lane + dir * 0.07, -0.95, 0.95); a.targetLane = a.lane;
+        b.lane = clamp(b.lane - dir * 0.07, -0.95, 0.95); b.targetLane = b.lane;
+        const trailing = dd > 0 ? b : a;              // the one behind eases off so it can't overlap
+        trailing.speed *= 0.9;
+        if (Math.abs(dd) < 2.6) trailing.dist -= (2.6 - Math.abs(dd)) * 0.6; // hard nudge apart when nearly on top
       }
     }
 
@@ -2494,8 +2521,7 @@ export class Game {
     drawToasts(ctx, this.toasts, vw);
 
     if (this.phase === "countdown") {
-      const n = Math.ceil(this.countdownT - 0.5);
-      drawCenterText(ctx, n > 0 ? String(n) : "GO!", 72, n > 0 ? "#e8e0ff" : "#a7f3d0", vw, vh);
+      drawStartLights(ctx, this.countdownT, vw, vh);
     } else if (this.phase === "finished") {
       drawCenterText(ctx, "FINISH!", 64, "#fbbf24", vw, vh);
     }

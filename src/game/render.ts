@@ -787,3 +787,55 @@ export function drawCenterText(
   ctx.fillStyle = color;
   ctx.fillText(text, vw / 2, vh / 2);
 }
+
+/** F1-style start gantry: five columns of red bulbs fill up left-to-right over
+ *  the countdown, then all go OUT — that's your "lights out" GO. */
+export function drawStartLights(
+  ctx: CanvasRenderingContext2D, countdownT: number, vw = WIDTH, vh = HEIGHT
+) {
+  const T = countdownT;                         // 3.5 → 0
+  let lit = Math.min(5, Math.max(0, Math.floor((3.5 - T) / 0.5)));
+  const lightsOut = T <= 0.6;                   // all five extinguish just before racing
+  if (lightsOut) lit = 0;
+
+  const cols = 5;
+  const r = Math.max(11, Math.min(20, vw * 0.013));
+  const colGap = r * 3.0;
+  const rowGap = r * 2.4;
+  const totalW = (cols - 1) * colGap;
+  const cx = vw / 2, cy = vh * 0.17;
+  // dark housing bar
+  const padX = r * 1.8, padY = r * 1.5;
+  ctx.fillStyle = "rgba(8, 8, 15, 0.85)";
+  ctx.fillRect(cx - totalW / 2 - padX, cy - rowGap / 2 - r - padY, totalW + padX * 2, rowGap + r * 2 + padY * 2);
+  ctx.strokeStyle = "rgba(255,255,255,0.14)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(cx - totalW / 2 - padX, cy - rowGap / 2 - r - padY, totalW + padX * 2, rowGap + r * 2 + padY * 2);
+
+  for (let i = 0; i < cols; i++) {
+    const x = cx - totalW / 2 + i * colGap;
+    const on = i < lit;
+    for (const y of [cy - rowGap / 2, cy + rowGap / 2]) {
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      if (on) {
+        ctx.shadowColor = "#ff2d2d";
+        ctx.shadowBlur = r * 1.4;
+        ctx.fillStyle = "#ff3535";
+      } else {
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = "#241012";
+      }
+      ctx.fill();
+    }
+  }
+  ctx.shadowBlur = 0;
+
+  if (lightsOut) drawCenterText(ctx, "GO!", 76, "#4ade80", vw, vh);
+  else {
+    ctx.fillStyle = "#8b85a8";
+    ctx.font = "bold 13px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("LIGHTS OUT TO START", vw / 2, cy + rowGap / 2 + r + padY + 16);
+  }
+}
