@@ -169,6 +169,7 @@ export class Game {
   private slashCooldown = 0;
   private bumpCd = 0;
   private postHitCd = 0; // throttles the "clipped a marker post" speed-hit
+  private takedownCd = 0; // throttles Asphalt-style takedowns so one ram = one hit
   private slotFullCd = 0;
   private lastBeep = 99;
   private realm: RealmSpec;
@@ -1969,6 +1970,7 @@ export class Game {
   private updateOpponents(dt: number) {
     const mine = this.playerProgress();
     const len = this.track.length;
+    this.takedownCd = Math.max(0, this.takedownCd - dt);
     for (const o of this.opponents) {
       const gap = mine - o.progress(len); // + means player ahead
       // each racer holds its own pace so the field strings out; only a gentle
@@ -1999,25 +2001,56 @@ export class Game {
         }
       }
 
-      // side-by-side bumping with the player
-      let d = o.dist - this.position;
+      // --- PHYSICAL car-to-car contact with the player (Asphalt-style) --------
+      // Cars shove each other with real momentum: ram a rival hard from behind or
+      // side-slam them and they SPIN OUT (takedown) while you punch through; get
+      // rammed and you're shoved + shaken. No more ghosting through with a tap.
+      let d = o.dist - this.position;        // + = rival ahead of the player
       if (d > len / 2) d -= len;
       if (d < -len / 2) d += len;
-      if (Math.abs(d) < 4 && Math.abs(this.playerX - o.lane) < 0.55) {
-        const dir = this.playerX - o.lane >= 0 ? 1 : -1;
-        this.playerX = clamp(this.playerX + dir * 0.05, -OUT_OF_BOUNDS_X, OUT_OF_BOUNDS_X);
-        o.lane = clamp(o.lane - dir * 0.05, -0.95, 0.95);
+      const laneGap = this.playerX - o.lane;
+      if (Math.abs(d) < 4.2 && Math.abs(laneGap) < 0.62 && this.phase === "racing" && !o.finished) {
+        const dir = laneGap >= 0 ? 1 : -1;   // push player this way, rival the other
+        const rel = this.speed - o.speed;    // closing speed (+ = player faster)
+        const pp = this.playerRoot.position, op = o.obj.position;
+        const cx = (pp.x + op.x) / 2, cy = (pp.y + op.y) / 2 + 0.5, cz = (pp.z + op.z) / 2;
+        const F = { x: Math.sin(this.freeDrive.heading), z: Math.cos(this.freeDrive.heading) };
+        const scrub = (f: number) => { this.freeDrive.vx *= f; this.freeDrive.vz *= f; };
+        const shove = (a: number) => { this.freeDrive.vx += F.x * a; this.freeDrive.vz += F.z * a; };
+
+        // always separate laterally so the two bodies can't overlap
+        this.playerX = clamp(this.playerX + dir * 0.09, -OUT_OF_BOUNDS_X, OUT_OF_BOUNDS_X);
+        o.lane = clamp(o.lane - dir * 0.09, -0.95, 0.95);
         o.targetLane = o.lane;
-        this.speed *= 0.99;
-        o.speed *= 0.99;
-        if (this.bumpCd <= 0 && this.phase === "racing") {
-          this.sound.play("bump");
-          // sparks fly off the point of contact (between the two cars), no text
-          const pp = this.playerRoot.position, op = o.obj.position;
-          this.spawnSparks((pp.x + op.x) / 2, (pp.y + op.y) / 2 + 0.5, (pp.z + op.z) / 2, 14);
-          this.shake = Math.max(this.shake, 0.4);
-          this.bumpCd = 0.5;
+
+        if (d > 0 && rel > 2 && this.takedownCd <= 0) {
+          // player charges INTO the rival ahead — momentum transfers, hard = takedown
+          o.speed += rel * 0.55;             // shove them forward
+          scrub(0.92);                       // you lose a little on the hit
+          if (rel > 7 || this.nitroT > 0) {  // TAKEDOWN — a solid ram, or ANY nitro-ram
+            o.stun(1.4);                     // rival spins out (visible in ai.update)
+            this.boostT = Math.max(this.boostT, PAD_BOOST_DURATION * 0.9); // reward surge
+            this.score += SCORE_HIT;
+            this.spawnSparks(cx, cy, cz, 26);
+            this.shake = Math.max(this.shake, 0.8);
+            this.sound.play("crash");
+            this.takedownCd = 0.7;
+          } else {
+            this.spawnSparks(cx, cy, cz, 12);
+            this.takedownCd = 0.25;
+          }
+        } else if (d < 0 && rel < -5) {
+          // the rival rams YOU from behind — you get shoved forward + shaken
+          shove(Math.min(-rel, 22) * 0.35);
+          o.speed *= 0.9;
+          this.shake = Math.max(this.shake, 0.65);
+          this.spawnSparks(cx, cy, cz, 12);
+        } else {
+          // side-by-side jostle — both scrub a touch, sparks fly
+          scrub(0.985); o.speed *= 0.985;
+          if (this.bumpCd <= 0) this.spawnSparks(cx, cy, cz, 10);
         }
+        if (this.bumpCd <= 0) { this.sound.play("bump"); this.shake = Math.max(this.shake, 0.4); this.bumpCd = 0.3; }
       }
     }
 
