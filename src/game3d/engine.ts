@@ -168,6 +168,7 @@ export class Game {
   private sound = new Sound();
   private slashCooldown = 0;
   private bumpCd = 0;
+  private postHitCd = 0; // throttles the "clipped a marker post" speed-hit
   private slotFullCd = 0;
   private lastBeep = 99;
   private realm: RealmSpec;
@@ -223,6 +224,7 @@ export class Game {
   private bodyPitch = 0;   // dynamic squat (accel) / dive (brake) nod
   private smoke: SmokePuff[] = [];
   private smokeTimer = 0;
+  private sparks: SmokePuff[] = []; // impact-spark pool (bumps/hits)
   private camPos = new THREE.Vector3();
   private camYaw = 0; // smoothed camera heading — eases toward the car so the view swings in behind you instead of snapping with every steer
   private reliefAmp = 0; // per-realm amplitude of the rolling hills the ground rises into away from the road
@@ -515,6 +517,7 @@ export class Game {
     scene.add(this.playerRoot);
     this.playerWheels = collectWheels(this.carModel);
     this.buildSmoke();
+    this.buildSparks();
 
     if (this.cfg.opponents) this.spawnOpponents();
 
@@ -567,9 +570,9 @@ export class Game {
       opp.lane = slotLane(i);
       opp.lap = 1;
       opp.flames = flames;
-      // spread the field but keep it FAST: pole (1.12) down to tail (0.98), so
-      // rivals are genuinely competitive with the player, not stragglers
-      opp.pace = 1.12 - (i / Math.max(1, gridN - 1)) * 0.14;
+      // pole (0.94) down to tail (0.82): every rival tops out BELOW the player's
+      // max speed, so a clean lap actually beats them (they were lapping you before)
+      opp.pace = 0.94 - (i / Math.max(1, gridN - 1)) * 0.12;
       opp.place(this.track); // snap onto the grid now so the field lines up during the countdown
       this.opponents.push(opp);
     }
@@ -625,6 +628,54 @@ export class Game {
     }
   }
 
+  /** A recycled pool of bright additive sparks for impacts (bumps / hits). */
+  private buildSparks() {
+    const c = document.createElement("canvas");
+    c.width = 32; c.height = 32;
+    const ctx = c.getContext("2d")!;
+    const g = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+    g.addColorStop(0, "rgba(255,255,255,1)");
+    g.addColorStop(0.4, "rgba(255,214,130,0.95)");
+    g.addColorStop(1, "rgba(255,140,40,0)");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 32, 32);
+    const tex = new THREE.CanvasTexture(c);
+    this.sparks = [];
+    for (let i = 0; i < 48; i++) {
+      const mat = new THREE.SpriteMaterial({ map: tex, color: 0xffd782, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
+      const spr = new THREE.Sprite(mat);
+      spr.visible = false; spr.renderOrder = 4;
+      this.scene.add(spr);
+      this.sparks.push({ spr, life: 0, max: 0.3, vel: new THREE.Vector3() });
+    }
+  }
+
+  /** Burst `count` sparks outward from an impact point. */
+  private spawnSparks(x: number, y: number, z: number, count = 10) {
+    for (let n = 0; n < count; n++) {
+      const s = this.sparks.find((s) => s.life <= 0);
+      if (!s) break;
+      s.max = 0.2 + Math.random() * 0.24; s.life = s.max;
+      s.spr.position.set(x, y, z);
+      s.spr.scale.setScalar(0.22 + Math.random() * 0.3);
+      s.spr.visible = true;
+      (s.spr.material as THREE.SpriteMaterial).opacity = 1;
+      const a = Math.random() * Math.PI * 2, sp = 4 + Math.random() * 9;
+      s.vel.set(Math.cos(a) * sp, 2 + Math.random() * 4.5, Math.sin(a) * sp);
+    }
+  }
+
+  private updateSparks(dt: number) {
+    for (const s of this.sparks) {
+      if (s.life <= 0) continue;
+      s.life -= dt;
+      if (s.life <= 0) { s.spr.visible = false; continue; }
+      s.vel.y -= dt * 15;                    // gravity — sparks arc down
+      s.spr.position.addScaledVector(s.vel, dt);
+      const t = 1 - s.life / s.max;
+      (s.spr.material as THREE.SpriteMaterial).opacity = 1 - t;
+    }
+  }
+
   /** Spin + steer the wheels, nod the body under acceleration/braking, and puff
    *  tyre smoke while drifting/sliding — the moment-to-moment "feel" of the car. */
   private animateCar(dt: number) {
@@ -659,6 +710,7 @@ export class Game {
       }
     }
     this.updateSmoke(dt);
+    this.updateSparks(dt);
   }
 
   private sceneryObject(kind: SceneryKind, library: ModelLibrary, rand: () => number): THREE.Object3D {
@@ -1783,6 +1835,22 @@ export class Game {
     }
     this.carPitch += (pitchTarget - this.carPitch) * Math.min(1, dt * 10);
 
+    // SOLID marker posts along the edge (~7m off-centre): clip that row and you
+    // scrub speed + throw sparks. You can still bash on through onto the terrain,
+    // it just costs you — the posts aren't a free pass-through anymore.
+    this.postHitCd = Math.max(0, this.postHitCd - dt);
+    const latAbs = Math.abs(this.freeDrive.lateral);
+    if (latAbs > 6.3 && latAbs < 7.7 && this.speed > 8 && !this.transformed && this.postHitCd <= 0) {
+      this.freeDrive.vx *= 0.78;           // knock the speed off the impact
+      this.freeDrive.vz *= 0.78;
+      const pp = this.playerRoot.position;
+      this.spawnSparks(pp.x, pp.y + 0.4, pp.z, 9);
+      this.shake = Math.max(this.shake, 0.5);
+      this.crashFlash = Math.max(this.crashFlash, 0.22);
+      this.sound.play("bump");
+      this.postHitCd = 0.26;               // ~one hit per post as you scrape along
+    }
+
     // OFF-TRACK GRACE (no walls, no penalty): you can cut across the terrain for
     // a few seconds. Stray off the ribbon and a countdown starts; get back on
     // before it expires and nothing happens — ignore it and you respawn on the
@@ -1877,7 +1945,9 @@ export class Game {
       // rubber-band keeps it competitive around the player
       // rubber-band: rivals dig in HARD when you pull away (up to +26%) and ease
       // off only slightly when they're ahead — keeps the race close and tense
-      const base = MAX_SPEED * o.pace * (1 + clamp(gap / 240, -0.06, 0.26));
+      // rubber-band: rivals ease off HARD when they're ahead (up to -30%, so you
+      // can catch a runaway leader) and only dig in a little when you pull away
+      const base = MAX_SPEED * o.pace * (1 + clamp(gap / 220, -0.3, 0.16));
       o.update(dt, this.track, base, this.cfg.laps);
       // stamp the true finishing order the instant a rival crosses the final line
       if (o.finished && o.finishOrder === 0) o.finishOrder = ++this.finishSeq;
@@ -1912,7 +1982,10 @@ export class Game {
         o.speed *= 0.99;
         if (this.bumpCd <= 0 && this.phase === "racing") {
           this.sound.play("bump");
-          this.toast("BUMP!", "#fca5a5");
+          // sparks fly off the point of contact (between the two cars), no text
+          const pp = this.playerRoot.position, op = o.obj.position;
+          this.spawnSparks((pp.x + op.x) / 2, (pp.y + op.y) / 2 + 0.5, (pp.z + op.z) / 2, 14);
+          this.shake = Math.max(this.shake, 0.4);
           this.bumpCd = 0.5;
         }
       }
@@ -1937,7 +2010,10 @@ export class Game {
         b.lane = clamp(b.lane - dir * 0.07, -0.95, 0.95); b.targetLane = b.lane;
         const trailing = dd > 0 ? b : a;              // the one behind eases off so it can't overlap
         trailing.speed *= 0.9;
-        if (Math.abs(dd) < 2.6) trailing.dist -= (2.6 - Math.abs(dd)) * 0.6; // hard nudge apart when nearly on top
+        if (Math.abs(dd) < 2.6) {
+          trailing.dist -= (2.6 - Math.abs(dd)) * 0.6; // hard nudge apart when nearly on top
+          if (Math.random() < 0.25) this.spawnSparks(a.obj.position.x, a.obj.position.y + 0.5, a.obj.position.z, 5);
+        }
       }
     }
 
