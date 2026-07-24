@@ -26,7 +26,7 @@ async function loadSet(name: string): Promise<TexSet> {
   nor.colorSpace = THREE.NoColorSpace;
   for (const t of [diff, nor]) {
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.anisotropy = 16;
+    t.anisotropy = 8;
   }
   const set: TexSet = { diff, nor };
   setCache.set(name, set);
@@ -53,8 +53,8 @@ export function tileSet(set: TexSet, ru: number, rv = ru): TexSet {
   const nor = set.nor.clone();
   diff.repeat.set(ru, rv);
   nor.repeat.set(ru, rv);
-  diff.anisotropy = 16;   // crisp at grazing angles (road/ground into the distance)
-  nor.anisotropy = 16;
+  diff.anisotropy = 8;   // crisp at grazing angles (road/ground into the distance)
+  nor.anisotropy = 8;
   diff.needsUpdate = true;
   nor.needsUpdate = true;
   return { diff, nor };
@@ -82,7 +82,7 @@ function toTex(c: HTMLCanvasElement, repeat = 1, srgb = false) {
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.repeat.set(repeat, repeat);
   t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-  t.anisotropy = 16;
+  t.anisotropy = 8;
   return t;
 }
 

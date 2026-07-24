@@ -409,7 +409,7 @@ export class Game {
     // on the road/props) and HalfFloat keeps the bloom + tone-map smooth
     const db = this.renderer.getDrawingBufferSize(new THREE.Vector2());
     const hdrTarget = new THREE.WebGLRenderTarget(db.x, db.y, {
-      type: THREE.HalfFloatType, samples: 4,
+      type: THREE.HalfFloatType, samples: 0, // MSAA off — 4x on a retina HDR target was a huge bandwidth cost
     });
     this.composer = new EffectComposer(this.renderer, hdrTarget);
     this.composer.setPixelRatio(this.renderer.getPixelRatio());
@@ -424,11 +424,14 @@ export class Game {
     gtao.blendIntensity = 0.85;
     gtao.updateGtaoMaterial({
       radius: 0.4, distanceExponent: 1, thickness: 1, scale: 1,
-      samples: 16, distanceFallOff: 1, screenSpaceRadius: true,
+      samples: 4, distanceFallOff: 1, screenSpaceRadius: true, // 16 -> 4: GTAO was the #1 lag source
     });
-    gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 4, radiusExponent: 1, rings: 2, samples: 16 });
+    gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 4, radiusExponent: 1, rings: 2, samples: 4 });
     this.composer.addPass(gtao);
     this.gtao = gtao;
+    // GTAO nearly HALVED the framerate (37->20ms here) — the shadows + bloom
+    // already ground the scene, so it stays OFF (the game must run smooth first).
+    gtao.enabled = false;
 
     // bloom runs at half resolution — it's a soft blur anyway, so it looks the
     // same but costs a quarter of the fill rate (keeps big retina buffers smooth)
@@ -564,7 +567,7 @@ export class Game {
     // this key light also casts the shadows; its ortho frustum follows the car
     // (updated each frame) so props near you drop real, soft shadows on the road
     sun.castShadow = true;
-    sun.shadow.mapSize.set(4096, 4096);  // crisp, high-res shadows
+    sun.shadow.mapSize.set(2048, 2048);  // 4096 was 4x the shadow cost for little visible gain
     sun.shadow.bias = -0.00035;
     sun.shadow.normalBias = 0.6;
     sun.shadow.radius = 4;               // soft PCF edges (not hard-cut)
