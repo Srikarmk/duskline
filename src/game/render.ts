@@ -721,32 +721,37 @@ export function drawSpeedFx(
   ctx: CanvasRenderingContext2D,
   vw: number, vh: number, speed01: number, boost: boolean, time: number
 ) {
-  // only near top speed, and gently — this must never induce motion sickness
+  // only near top speed, and gently — this must never induce motion sickness.
+  // Boost adds a stronger, warmer rush on top of the base speed streaks.
   const intensity = Math.max(0, speed01 - 0.62) / 0.38;
-  const amt = Math.min(1, intensity * 0.9 + (boost ? 0.35 : 0));
+  const amt = Math.min(1, intensity * 0.9 + (boost ? 0.55 : 0));
   if (amt <= 0.01) return;
   const cx = vw / 2, cy = vh * 0.52;
 
-  // faint vignette at the corners
-  const vg = ctx.createRadialGradient(cx, cy, Math.min(vw, vh) * 0.42, cx, cy, Math.max(vw, vh) * 0.66);
+  // vignette at the corners — tighter + warmer while boosting
+  const vg = ctx.createRadialGradient(cx, cy, Math.min(vw, vh) * (boost ? 0.34 : 0.42), cx, cy, Math.max(vw, vh) * 0.66);
   vg.addColorStop(0, "rgba(0,0,0,0)");
-  vg.addColorStop(1, `rgba(3,2,12,${(0.14 * amt + (boost ? 0.06 : 0)).toFixed(3)})`);
+  vg.addColorStop(1, boost
+    ? `rgba(30,10,2,${(0.16 * amt + 0.12).toFixed(3)})`
+    : `rgba(3,2,12,${(0.14 * amt).toFixed(3)})`);
   ctx.fillStyle = vg;
   ctx.fillRect(0, 0, vw, vh);
 
-  // a few soft streaks, re-seeded slowly (~5 Hz) so they don't strobe
-  const n = Math.round(amt * 16);
+  // radial streaks converging on the vanishing point, re-seeded slowly (~5 Hz)
+  // so they don't strobe. Denser, longer and brighter under boost.
+  const n = Math.round(amt * (boost ? 30 : 16));
   let seed = (Math.floor(time * 5) % 4096) + 1;
   const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
   const rad = Math.max(vw, vh);
-  ctx.lineWidth = 2;
+  ctx.lineCap = "round";
   for (let i = 0; i < n; i++) {
     const a = rnd() * Math.PI * 2;
-    const r0 = rad * (0.4 + rnd() * 0.14);
-    const len = (24 + rnd() * 60) * (0.5 + amt);
+    const r0 = rad * ((boost ? 0.28 : 0.4) + rnd() * 0.16);
+    const len = ((boost ? 40 : 24) + rnd() * (boost ? 120 : 60)) * (0.5 + amt);
     const ca = Math.cos(a), sa = Math.sin(a);
+    ctx.lineWidth = boost ? 1.5 + rnd() * 2 : 2;
     ctx.strokeStyle = boost
-      ? `rgba(251,176,90,${(rnd() * 0.28 * amt).toFixed(3)})`
+      ? `rgba(255,196,120,${(rnd() * 0.42 * amt).toFixed(3)})`
       : `rgba(206,222,255,${(rnd() * 0.2 * amt).toFixed(3)})`;
     ctx.beginPath();
     ctx.moveTo(cx + ca * r0, cy + sa * r0);

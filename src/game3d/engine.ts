@@ -2,6 +2,8 @@ import * as THREE from "three";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
+import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import {
   WIDTH, HEIGHT, STEP,
@@ -25,7 +27,7 @@ import {
 import { Track, makeRoadTexture, makeCheckerTexture } from "./track";
 import { loadModels, instantiate, type ModelLibrary } from "./assets";
 import {
-  makeSkyDome, makeGround, makeGrassTexture,
+  makeSkyDome, makeEnvMap, makeLightShafts, windTime, makeGround, makeGrassTexture,
   makeGrassField, makeRockField, makeMountainRing,
   makeGem, makeNitroCan, makeOrb, makeRamp, RAMP_SPECS, type RampKind,
   makeCrystalCluster, makeMonster,
@@ -43,7 +45,7 @@ import { BranchPath } from "./branch";
 import { FreeDrive } from "./freedrive";
 import { loadPBR } from "./textures";
 import { makeKart, setCarEnvTint, CAR_SPECS, CAR_IDS, type CarStat } from "./cars";
-import { REALMS, pickScenery, REALM_WEATHER, REALM_AMBIENCE, REALM_TUNNELS, REALM_RIVERS, REALM_SPLITS, type RealmSpec, type SceneryKind } from "./realms";
+import { REALMS, pickScenery, REALM_WEATHER, REALM_AMBIENCE, REALM_TUNNELS, REALM_RIVERS, REALM_SPLITS, type RealmSpec, type SceneryKind, type RealmPalette } from "./realms";
 import { makePyramid, makeObelisk, makeSphinx, makePalm, makeSandRock } from "./props/egyptian";
 import { makeTower, makeGatehouse, makeCastleWall, makeBanner, makeTorch } from "./props/castle";
 import { makeGrandstand, makeTyreStack, makeFloodlight, makePitBuilding, makeMarshalBoard } from "./props/circuit";
@@ -131,6 +133,27 @@ function mulberry32(seed: number) {
   };
 }
 
+/** Tyre-mark / smoke tints: dark rubber + grey smoke on tarmac. */
+const SMK_RUBBER = new THREE.Color(0x0a0810);
+const SMK_GREY = new THREE.Color(0xd7d9e2);
+
+/** Screen-space heat-haze: wobbles the image toward the horizon band, strongest
+ *  low on screen and fading up — the rising-hot-air shimmer over the ember flats. */
+const HeatHazeShader = {
+  uniforms: { tDiffuse: { value: null as THREE.Texture | null }, time: { value: 0 }, amount: { value: 0 } },
+  vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform float time; uniform float amount; varying vec2 vUv;
+    void main(){
+      float band = smoothstep(0.72, 0.30, vUv.y);            // 0 at top → 1 lower
+      float w = sin(vUv.y * 42.0 + time * 3.2) * sin(vUv.x * 26.0 - time * 2.1);
+      vec2 uv = vUv;
+      uv.x += w * amount * band * 0.006;
+      uv.y += w * amount * band * 0.004;
+      gl_FragColor = texture2D(tDiffuse, uv);
+    }`,
+};
+
 /** A spinnable/steerable wheel picked out of a built car model. */
 interface WheelRef { obj: THREE.Object3D; front: boolean; r: number; }
 /** One drifting-tyre smoke puff (world-space sprite, recycled from a pool). */
@@ -154,6 +177,9 @@ export class Game {
   private renderer: THREE.WebGLRenderer;
   private composer!: EffectComposer;
   private bloomPass!: UnrealBloomPass;
+  private gtao!: GTAOPass;
+  private heatHaze: ShaderPass | null = null;
+  private lightShafts: THREE.Group | null = null;
   private hudCtx: CanvasRenderingContext2D;
   private hudCanvas: HTMLCanvasElement;
   private scene = new THREE.Scene();
@@ -218,13 +244,21 @@ export class Game {
   private slash: THREE.Mesh | null = null;
   private flames: THREE.Mesh[] = [];
   private underGlow: THREE.Mesh | null = null;
-  // car "feel": spinning/steering wheels, weight transfer, drift smoke
+  // car "feel": spinning/steering wheels, weight transfer, drift smoke, skids…
   private playerWheels: WheelRef[] = [];
   private wheelDist = 0;   // integrated ground distance → wheel spin angle
   private prevSpeed = 0;
   private bodyPitch = 0;   // dynamic squat (accel) / dive (brake) nod
   private smoke: SmokePuff[] = [];
   private smokeTimer = 0;
+  private susp = 0;        // suspension compression (0 rest, + squashed)
+  private suspV = 0;       // suspension spring velocity
+  private skids: THREE.Mesh[] = []; // recycled dark tyre marks laid on the road
+  private skidIdx = 0;
+  private skidTimer = 0;
+  private backfire: THREE.Sprite[] = []; // exhaust flash pops (children of the car)
+  private backfireTimer = 0;
+  private dustColor = new THREE.Color(0xbfa06a); // off-road dust tint (set per realm)
   private sparks: SmokePuff[] = []; // impact-spark pool (bumps/hits)
   private camPos = new THREE.Vector3();
   private camYaw = 0; // smoothed camera heading — eases toward the car so the view swings in behind you instead of snapping with every steer
@@ -361,15 +395,53 @@ export class Game {
     this.camera = new THREE.PerspectiveCamera(CAMERA_PRESETS[0].fov, w / h, 0.1, 1600);
     this.scene.fog = new THREE.Fog(pal.fog, pal.fogNear, pal.fogFar);
 
-    // bloom post-processing so emissive gems / rails / crystals / nitro glow
-    this.composer = new EffectComposer(this.renderer);
+    // image-based lighting: a realm-tinted sky env bounces coloured light onto
+    // every standard material and lets the wet road + props catch reflections
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    pmrem.compileEquirectangularShader();
+    const eq = makeEnvMap(pal);
+    this.scene.environment = pmrem.fromEquirectangular(eq).texture;
+    (this.scene as THREE.Scene & { environmentIntensity?: number }).environmentIntensity = 0.4;
+    eq.dispose();
+    pmrem.dispose();
+
+    // HDR, multisampled composer target: 4x MSAA gives crisp edges (no jaggies
+    // on the road/props) and HalfFloat keeps the bloom + tone-map smooth
+    const db = this.renderer.getDrawingBufferSize(new THREE.Vector2());
+    const hdrTarget = new THREE.WebGLRenderTarget(db.x, db.y, {
+      type: THREE.HalfFloatType, samples: 4,
+    });
+    this.composer = new EffectComposer(this.renderer, hdrTarget);
     this.composer.setPixelRatio(this.renderer.getPixelRatio());
     this.composer.setSize(w, h);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
+
+    // ambient occlusion (GTAO): soft contact shadows in the creases where props
+    // meet the ground and along the road edges — the biggest "grounded, not
+    // floating cardboard" upgrade. Screen-space radius so it works at any scale.
+    const gtao = new GTAOPass(this.scene, this.camera, w, h);
+    gtao.output = GTAOPass.OUTPUT.Default;
+    gtao.blendIntensity = 0.85;
+    gtao.updateGtaoMaterial({
+      radius: 0.4, distanceExponent: 1, thickness: 1, scale: 1,
+      samples: 16, distanceFallOff: 1, screenSpaceRadius: true,
+    });
+    gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 4, radiusExponent: 1, rings: 2, samples: 16 });
+    this.composer.addPass(gtao);
+    this.gtao = gtao;
+
     // bloom runs at half resolution — it's a soft blur anyway, so it looks the
     // same but costs a quarter of the fill rate (keeps big retina buffers smooth)
     this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w / 2, h / 2), 0.11, 0.6, 0.95);
     this.composer.addPass(this.bloomPass);
+
+    // heat-haze shimmer — only the ember realm turns it on
+    const haze = new ShaderPass(HeatHazeShader);
+    haze.uniforms.amount.value = this.realm.id === "ember" ? 1 : 0;
+    haze.enabled = this.realm.id === "ember";
+    this.composer.addPass(haze);
+    this.heatHaze = haze;
+
     // final pass applies tone mapping + sRGB so the composed image is graded
     this.composer.addPass(new OutputPass());
     this.bloomPass.enabled = loadSetting("bloom", true);
@@ -397,6 +469,7 @@ export class Game {
     this.composer.setPixelRatio(dpr);
     this.composer.setSize(w, h);
     this.bloomPass.setSize((w * dpr) / 2, (h * dpr) / 2);
+    if (this.gtao) this.gtao.setSize(w * dpr, h * dpr);
     this.camera.aspect = w / h;
     this.camera.fov = CAMERA_PRESETS[this.cameraIndex].fov;
     this.camera.updateProjectionMatrix();
@@ -475,6 +548,8 @@ export class Game {
       const cz = (track.bounds.minZ + track.bounds.maxZ) / 2;
       const radius = Math.max(track.bounds.maxX - track.bounds.minX, track.bounds.maxZ - track.bounds.minZ) * 0.75 + 260;
       scene.add(makeMountainRing(pal, cx, cz, radius));
+      this.lightShafts = makeLightShafts(pal); // faint god-ray atmosphere
+      scene.add(this.lightShafts);
     }
 
     scene.add(new THREE.HemisphereLight(pal.hemiSky, pal.hemiGround, pal.hemiInt * 1.45));
@@ -489,11 +564,12 @@ export class Game {
     // this key light also casts the shadows; its ortho frustum follows the car
     // (updated each frame) so props near you drop real, soft shadows on the road
     sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.bias = -0.0004;
-    sun.shadow.normalBias = 0.7;
+    sun.shadow.mapSize.set(4096, 4096);  // crisp, high-res shadows
+    sun.shadow.bias = -0.00035;
+    sun.shadow.normalBias = 0.6;
+    sun.shadow.radius = 4;               // soft PCF edges (not hard-cut)
     const sc = sun.shadow.camera;
-    sc.near = 1; sc.far = 420; sc.left = -105; sc.right = 105; sc.top = 105; sc.bottom = -105;
+    sc.near = 1; sc.far = 420; sc.left = -95; sc.right = 95; sc.top = 95; sc.bottom = -95;
     sc.updateProjectionMatrix();
     scene.add(sun.target);
     this.sun = sun;
@@ -504,7 +580,8 @@ export class Game {
     scene.add(fill);
 
     if (!isVoid) scene.add(track.buildVergeMesh(makeGrassTexture(pal)));
-    scene.add(track.buildRoadMesh(makeRoadTexture(pal)));
+    scene.add(track.buildRoadMesh(makeRoadTexture(pal), pal.roadFinish));
+    this.buildPuddles(pal); // reflective puddles on wet/icy tracks
     if (!isVoid) scene.add(track.buildEdgePosts(pal.rumbleB, pal.edgeLine));
     scene.add(track.buildStartLine(makeCheckerTexture()));
     if (isVoid) {
@@ -538,7 +615,10 @@ export class Game {
     this.playerRoot.add(this.playerBody);
     scene.add(this.playerRoot);
     this.playerWheels = collectWheels(this.carModel);
+    this.dustColor.set(pal.groundSpeck);
     this.buildSmoke();
+    this.buildSkids();
+    this.buildBackfire();
     this.buildSparks();
 
     if (this.cfg.opponents) this.spawnOpponents();
@@ -613,6 +693,35 @@ export class Game {
     }
   }
 
+  /** Scatter flat, near-mirror reflective patches on the road for wet/icy
+   *  realms — they catch the sky/neon env like standing water or a glaze of ice. */
+  private buildPuddles(pal: RealmPalette) {
+    const finish = pal.roadFinish;
+    if (finish !== "wet" && finish !== "ice") return;
+    const g = new THREE.Group();
+    const mat = new THREE.MeshStandardMaterial({
+      color: finish === "ice" ? 0xbfe4ff : 0x0a0e18,
+      roughness: 0.05, metalness: 0.25, envMapIntensity: 2.4,
+      transparent: true, opacity: 0.72, depthWrite: false,
+    });
+    const geo = new THREE.CircleGeometry(1, 14);
+    const len = this.track.length;
+    let seed = 4242;
+    const rand = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    for (let i = 0; i < 50; i++) {
+      const p = this.track.pointAt(rand() * len, (rand() * 2 - 1) * ROAD_HALF_WIDTH * 0.72);
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(p.x, p.y + 0.02, p.z);
+      m.rotation.x = -Math.PI / 2;
+      m.rotation.z = rand() * Math.PI;
+      m.scale.set(1.2 + rand() * 2.8, 0.9 + rand() * 2.0, 1);
+      m.renderOrder = 1;
+      m.userData.noShadow = true;
+      g.add(m);
+    }
+    this.scene.add(g);
+  }
+
   /** Build a recycled pool of world-space smoke sprites for drifting tyres. */
   private buildSmoke() {
     const c = document.createElement("canvas");
@@ -637,7 +746,7 @@ export class Game {
     }
   }
 
-  private spawnSmoke(x: number, y: number, z: number, tanx: number, tanz: number) {
+  private spawnSmoke(x: number, y: number, z: number, tanx: number, tanz: number, color: THREE.Color) {
     const puff = this.smoke.find((s) => s.life <= 0);
     if (!puff) return;
     puff.max = 0.5 + Math.random() * 0.22;
@@ -645,6 +754,7 @@ export class Game {
     puff.spr.position.set(x + (Math.random() - 0.5) * 0.25, y, z + (Math.random() - 0.5) * 0.25);
     puff.spr.scale.setScalar(0.45 + Math.random() * 0.2);
     puff.spr.visible = true;
+    (puff.spr.material as THREE.SpriteMaterial).color.copy(color);
     (puff.spr.material as THREE.SpriteMaterial).opacity = 0.6;
     // billow up and kick out behind the car (opposite its heading) with scatter
     puff.vel.set(-tanx * 1.3 + (Math.random() - 0.5) * 1.3, 0.9 + Math.random() * 0.5, -tanz * 1.3 + (Math.random() - 0.5) * 1.3);
@@ -711,6 +821,78 @@ export class Game {
     }
   }
 
+  /** A recycled ring of dark decals laid flat on the road as tyre marks. */
+  private buildSkids() {
+    const c = document.createElement("canvas");
+    c.width = 32; c.height = 32;
+    const ctx = c.getContext("2d")!;
+    const g = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+    g.addColorStop(0, "rgba(255,255,255,0.9)");   // white alpha mask — tinted per surface
+    g.addColorStop(0.6, "rgba(255,255,255,0.5)");
+    g.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 32, 32);
+    const tex = new THREE.CanvasTexture(c);
+    const geo = new THREE.PlaneGeometry(0.44, 0.44);
+    this.skids = [];
+    for (let i = 0; i < 150; i++) {
+      const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false });
+      const m = new THREE.Mesh(geo, mat);
+      m.rotation.x = -Math.PI / 2;   // lie flat on the road
+      m.visible = false;
+      m.renderOrder = 1;             // over the road, under the cars
+      m.userData.noShadow = true;
+      this.scene.add(m);
+      this.skids.push(m);
+    }
+  }
+
+  private spawnSkid(x: number, y: number, z: number, color: THREE.Color, alpha: number) {
+    const m = this.skids[this.skidIdx];
+    this.skidIdx = (this.skidIdx + 1) % this.skids.length;
+    m.position.set(x, y + 0.03, z);
+    m.visible = true;
+    const s = 0.85 + Math.random() * 0.4;
+    m.scale.set(s, s, 1);
+    m.userData.life = m.userData.max = 3.0 + Math.random() * 1.0;
+    const mat = m.material as THREE.MeshBasicMaterial;
+    mat.color.copy(color);
+    mat.opacity = alpha;
+    m.userData.alpha = alpha;
+  }
+
+  private updateSkids(dt: number) {
+    for (const m of this.skids) {
+      if (!m.visible) continue;
+      m.userData.life -= dt;
+      if (m.userData.life <= 0) { m.visible = false; continue; }
+      (m.material as THREE.MeshBasicMaterial).opacity = (m.userData.alpha as number) * (m.userData.life / m.userData.max);
+    }
+  }
+
+  /** Two additive flash sprites at the exhausts that pop while boosting. */
+  private buildBackfire() {
+    const c = document.createElement("canvas");
+    c.width = 32; c.height = 32;
+    const ctx = c.getContext("2d")!;
+    const g = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+    g.addColorStop(0, "rgba(255,255,255,1)");
+    g.addColorStop(0.35, "rgba(255,190,110,0.9)");
+    g.addColorStop(1, "rgba(255,120,40,0)");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 32, 32);
+    const tex = new THREE.CanvasTexture(c);
+    this.backfire = [];
+    for (const x of [-0.5, 0.5]) {
+      const mat = new THREE.SpriteMaterial({ map: tex, color: 0xffcaa0, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
+      const spr = new THREE.Sprite(mat);
+      spr.position.set(x, 0.55, -2.25);
+      spr.scale.setScalar(0.22);
+      spr.visible = false;
+      spr.userData.pop = 0;
+      this.playerBody.add(spr);
+      this.backfire.push(spr);
+    }
+  }
+
   /** Spin + steer the wheels, nod the body under acceleration/braking, and puff
    *  tyre smoke while drifting/sliding — the moment-to-moment "feel" of the car. */
   private animateCar(dt: number) {
@@ -727,24 +909,70 @@ export class Game {
     this.prevSpeed = this.speed;
     const pitchTarget = clamp(-accel * 0.012, -0.05, 0.05);
     this.bodyPitch += (pitchTarget - this.bodyPitch) * Math.min(1, dt * 6);
-    if (this.carModel) this.carModel.rotation.x = this.bodyPitch;
 
-    // drifting / sliding rear tyres throw smoke (grounded and moving only)
+    // suspension: a damped spring squash-and-stretch (kicked on landings/impacts)
+    this.suspV += (-this.susp * 150 - this.suspV * 13) * dt;
+    this.susp += this.suspV * dt;
+    if (this.carModel) {
+      this.carModel.rotation.x = this.bodyPitch;
+      const s = clamp(this.susp, -0.16, 0.42);
+      this.carModel.scale.set(1 + s * 0.28, 1 - s * 0.55, 1 + s * 0.28);
+    }
+
+    // drifting / sliding rear tyres throw smoke AND lay marks, coloured to the
+    // surface: dark rubber + grey smoke on tarmac, kicked-up realm dust off-road
     const smoking = (this.drifting || this.slipping) && this.alt < 0.35 && this.speed > 6 && !this.transformed;
     if (smoking) {
+      const offRoad = Math.abs(this.playerX) > 1;
+      const skidCol = offRoad ? this.dustColor : SMK_RUBBER;
+      const skidAlpha = offRoad ? 0.5 : 0.66;
+      const smokeCol = offRoad ? this.dustColor : SMK_GREY;
+      const wp = new THREE.Vector3();
       this.smokeTimer -= dt;
-      if (this.smokeTimer <= 0) {
-        this.smokeTimer = 0.025;
+      const puff = this.smokeTimer <= 0;
+      if (puff) this.smokeTimer = 0.025;
+      this.skidTimer -= dt;
+      const mark = this.skidTimer <= 0;
+      if (mark) this.skidTimer = 0.02;
+      if (puff || mark) {
         const tan = this.pathTangent(0);
-        const wp = new THREE.Vector3();
         for (const w of this.playerWheels) {
           if (w.front) continue;
           w.obj.getWorldPosition(wp);
-          this.spawnSmoke(wp.x, wp.y - w.r * 0.4, wp.z, tan.x, tan.z);
+          if (puff) this.spawnSmoke(wp.x, wp.y - w.r * 0.4, wp.z, tan.x, tan.z, smokeCol);
+          if (mark) this.spawnSkid(wp.x, wp.y - w.r, wp.z, skidCol, skidAlpha);
         }
       }
     }
+
+    // exhaust backfire: rapid pops while boosting, plus a bang when you snap off
+    // the throttle at speed
+    const boost = this.nitroT > 0 || this.driftBoostT > 0 || this.boostT > 0;
+    if (boost && !this.transformed) {
+      this.backfireTimer -= dt;
+      if (this.backfireTimer <= 0) {
+        this.backfireTimer = 0.05 + Math.random() * 0.12;
+        const spr = this.backfire[Math.floor(Math.random() * this.backfire.length)];
+        if (spr) spr.userData.pop = 0.13;
+      }
+    }
+    if (!this.transformed && this.speed > MAX_SPEED * 0.45 && accel < -9 && Math.random() < 0.5)
+      for (const spr of this.backfire) spr.userData.pop = 0.12;
+    for (const spr of this.backfire) {
+      const p = spr.userData.pop as number;
+      if (p > 0) {
+        spr.userData.pop = p - dt;
+        spr.visible = true;
+        const k = Math.max(0, p / 0.13);
+        spr.scale.setScalar(0.24 + (1 - k) * 0.55);
+        const mat = spr.material as THREE.SpriteMaterial;
+        mat.opacity = k;
+        mat.color.setHex(this.transformed ? 0x9fe8ff : 0xffcaa0);
+      } else if (spr.visible) spr.visible = false;
+    }
+
     this.updateSmoke(dt);
+    this.updateSkids(dt);
     this.updateSparks(dt);
   }
 
@@ -1843,8 +2071,10 @@ export class Game {
     }
     if (this.alt <= 0) {
       this.alt = 0;
+      const impact = Math.max(0, -this.vAlt); // downward speed at touchdown
       this.vAlt = 0;
       if (this.stuntAir) this.land();
+      if (impact > 0.5) this.susp = Math.min(0.42, this.susp + impact * 0.045); // compress the springs
     }
 
     // on the ground, any residual barrel-roll / flip eases back to level, so the
@@ -2570,6 +2800,17 @@ export class Game {
       }
       // weather (snow/ash/sand/rain/…) drifts and follows the camera so it fills view
       if (this.weather) this.weather.update(this.time, this.camera.position);
+      // drive the foliage wind + shimmer/sway the god-ray shafts so they breathe
+      windTime.value = this.time;
+      if (this.heatHaze && this.heatHaze.enabled) this.heatHaze.uniforms.time.value = this.time;
+      if (this.lightShafts) {
+        this.lightShafts.children.forEach((h, i) => {
+          h.rotation.z = Math.sin(this.time * 0.15 + i) * 0.14;
+          const mat = ((h as THREE.Group).children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial;
+          const base = (h.userData.baseOpacity as number) ?? (h.userData.baseOpacity = mat.opacity);
+          mat.opacity = base * (0.65 + 0.35 * Math.sin(this.time * 0.6 + i * 1.7));
+        });
+      }
       // monsters are positioned in updateMonsters (they move + charge)
 
       // FREE-ROAM chase camera: sit behind + above the car along its heading and
@@ -2585,8 +2826,8 @@ export class Game {
       else this.camYaw += dyaw * 0.12;
       const fx = Math.sin(this.camYaw), fz = Math.cos(this.camYaw);
 
-      const targetFov = preset.fov + spd * 9 + (boosting ? 7 : 0); // stronger speed-rush FOV kick
-      this.camera.fov += (targetFov - this.camera.fov) * 0.08;
+      const targetFov = preset.fov + spd * 9 + (boosting ? 12 : 0); // speed-rush FOV kick, harder on boost
+      this.camera.fov += (targetFov - this.camera.fov) * (boosting ? 0.14 : 0.08); // snappier kick, gentle relax
       this.camera.updateProjectionMatrix();
 
       const camAnchor = new THREE.Vector3(

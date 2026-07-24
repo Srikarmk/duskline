@@ -3,6 +3,16 @@ import { ROAD_HALF_WIDTH } from "./constants";
 import { asphaltBump, pbr, tileSet } from "./textures";
 import type { RealmPalette } from "./realms";
 
+/** Per-realm road surface: roughness / metalness / env-reflection strength. */
+export type RoadFinish = "wet" | "gloss" | "ice" | "matte" | "dusty";
+const ROAD_FINISH: Record<RoadFinish, { rough: number; metal: number; env: number }> = {
+  wet:   { rough: 0.26, metal: 0.18, env: 2.4 }, // rain-slick neon streets, mirror-ish
+  ice:   { rough: 0.34, metal: 0.16, env: 2.2 }, // glassy frozen sheen
+  gloss: { rough: 0.5,  metal: 0.12, env: 1.7 }, // damp, polished asphalt
+  matte: { rough: 0.66, metal: 0.08, env: 1.1 }, // dry volcanic rock, low sheen
+  dusty: { rough: 0.82, metal: 0.05, env: 0.6 }, // sun-baked desert, no shine
+};
+
 const TEX_TILE_METERS = 10;
 const VERGE_WIDTH = 18; // grass bank from road edge out to flat ground
 // The CatmullRom curve can undershoot below its control points in dips; keep the
@@ -171,7 +181,7 @@ export class Track {
     return pts;
   }
 
-  buildRoadMesh(texture: THREE.Texture): THREE.Mesh {
+  buildRoadMesh(texture: THREE.Texture, finish: RoadFinish = "gloss"): THREE.Mesh {
     const step = 2;
     const count = Math.ceil(this.length / step);
     const positions: number[] = [];
@@ -215,19 +225,24 @@ export class Track {
 
     // procedural colour (keeps the lane markings + kerbs) + real asphalt normal
     const lib = pbr();
+    // per-realm surface finish: wet neon streets reflect hard, desert dust is
+    // matte, ice is glassy. The scene-env reflection + the asphalt normal make
+    // it read as a real damp/dry/frozen surface rather than a flat plane.
+    const f = ROAD_FINISH[finish];
     const matOpts: THREE.MeshStandardMaterialParameters = {
-      map: texture, metalness: 0.0, roughness: 0.95, side: THREE.DoubleSide,
+      map: texture, metalness: f.metal, roughness: f.rough, side: THREE.DoubleSide,
+      envMapIntensity: f.env,
       polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
     };
     if (lib) {
       const nor = tileSet(lib.road, 6, 5).nor;
       matOpts.normalMap = nor;
-      matOpts.normalScale = new THREE.Vector2(0.7, 0.7);
+      matOpts.normalScale = new THREE.Vector2(0.85, 0.85);
     } else {
       const bump = asphaltBump();
       bump.repeat.set(4, 4);
       matOpts.bumpMap = bump;
-      matOpts.bumpScale = 0.04;
+      matOpts.bumpScale = 0.05;
     }
     const mat = new THREE.MeshStandardMaterial(matOpts);
     const mesh = new THREE.Mesh(geo, mat);

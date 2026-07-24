@@ -147,6 +147,8 @@ export interface RealmPalette {
   rumbleB: string;
   laneLine: string;
   edgeLine: string;
+  /** surface finish of the road: wet neon streets, glassy ice, dry desert dust… */
+  roadFinish?: "wet" | "gloss" | "ice" | "matte" | "dusty";
   // props
   crystalColors: number[];
   mountain: number;
@@ -239,7 +241,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       sun: 0xd8f3e0, sunInt: 1.05,
       groundBase: "#18542f", groundSpeck: "#2c7648", groundDark: "#0e3521",
       road: "#233a34", roadDark: "#1a2c27", rumbleA: "#0f9d76", rumbleB: "#5eead4",
-      laneLine: "#a7f3e0", edgeLine: "#d0fff0",
+      laneLine: "#a7f3e0", edgeLine: "#d0fff0", roadFinish: "gloss",
       crystalColors: [0x2dd4bf, 0x5eead4, 0x99f6e4],
       mountain: 0x1a4d35, mountainDark: 0x0d2c1f, clutter: 0x35ad66, gem: 0x34d399,
     },
@@ -279,7 +281,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       sun: 0xff8a40, sunInt: 1.1,
       groundBase: "#140d0a", groundSpeck: "#2a1208", groundDark: "#0a0604",
       road: "#1c1816", roadDark: "#120f0d", rumbleA: "#8a2508", rumbleB: "#ff7a1a",
-      laneLine: "#ffcf8a", edgeLine: "#ffb066",
+      laneLine: "#ffcf8a", edgeLine: "#ffb066", roadFinish: "matte",
       crystalColors: [0x7c2d12, 0xdc2626, 0xf97316],
       mountain: 0x2a140a, mountainDark: 0x160a05, clutter: 0x3a1a10, gem: 0xf59e0b,
     },
@@ -320,7 +322,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       sun: 0xeaf6ff, sunInt: 0.95,
       groundBase: "#e8f2fc", groundSpeck: "#c7ddf0", groundDark: "#9fc0dd",
       road: "#3d4a5c", roadDark: "#303c4c", rumbleA: "#1a4a8a", rumbleB: "#8fd4f5",
-      laneLine: "#eef8ff", edgeLine: "#dbeafe",
+      laneLine: "#eef8ff", edgeLine: "#dbeafe", roadFinish: "ice",
       crystalColors: [0x60d0f5, 0xa8e6ff, 0xf0fbff],
       mountain: 0x8fb0d0, mountainDark: 0x5f85ad, clutter: 0xc7ddf0, gem: 0x38bdf8,
     },
@@ -365,7 +367,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       sun: 0xb0a8ff, sunInt: 0.7,
       groundBase: "#0a0620", groundSpeck: "#160f38", groundDark: "#040210",
       road: "#1a1440", roadDark: "#120d30", rumbleA: "#6d28d9", rumbleB: "#a78bfa",
-      laneLine: "#c4b5fd", edgeLine: "#ddd6fe",
+      laneLine: "#c4b5fd", edgeLine: "#ddd6fe", roadFinish: "wet",
       crystalColors: [0x8b5cf6, 0xa78bfa, 0xc4b5fd],
       mountain: 0x1a1040, mountainDark: 0x0d0a2e, clutter: 0x1a1040, gem: 0xa78bfa,
     },
@@ -404,7 +406,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       groundBase: "#d9a668", groundSpeck: "#c48a4a", groundDark: "#9c6b34",
       groundTint: 0xcaa46a,
       road: "#8a6f4a", roadDark: "#705a3c", rumbleA: "#b3892f", rumbleB: "#f0b24a",
-      laneLine: "#ffe6b0", edgeLine: "#fff2cc",
+      laneLine: "#ffe6b0", edgeLine: "#fff2cc", roadFinish: "dusty",
       crystalColors: [0xf0b24a, 0xffcf80, 0xffe6b0],
       mountain: 0xc48a4a, mountainDark: 0x8a6234, clutter: 0xc48a4a, gem: 0xf59e0b,
     },
@@ -445,7 +447,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       sun: 0xc0b0e8, sunInt: 0.85,
       groundBase: "#241c38", groundSpeck: "#2e2444", groundDark: "#160f28",
       road: "#3a2e42", roadDark: "#2c2334", rumbleA: "#6d28d9", rumbleB: "#f0a840",
-      laneLine: "#e0d4f5", edgeLine: "#f5ecff",
+      laneLine: "#e0d4f5", edgeLine: "#f5ecff", roadFinish: "gloss",
       crystalColors: [0x6d28d9, 0x8b5cf6, 0xf0a840],
       mountain: 0x241c3c, mountainDark: 0x160f28, clutter: 0x4a3a30, gem: 0xf0a840,
     },
@@ -489,7 +491,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       sun: 0xffffff, sunInt: 1.3,
       groundBase: "#3f8a3a", groundSpeck: "#4f9f45", groundDark: "#2f6f2c",
       road: "#302f34", roadDark: "#26262a", rumbleA: "#e0342f", rumbleB: "#ffffff",
-      laneLine: "#ffffff", edgeLine: "#ffffff",
+      laneLine: "#ffffff", edgeLine: "#ffffff", roadFinish: "gloss",
       crystalColors: [0x22d3ee, 0xe0342f, 0xffffff],
       mountain: 0x6a7280, mountainDark: 0x454b56, clutter: 0xa8afb8, gem: 0x22d3ee,
     },
@@ -531,7 +533,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       groundBase: "#26242e", groundSpeck: "#332e3e", groundDark: "#1a1822",
       groundTint: 0x484258,
       road: "#1c1c22", roadDark: "#121216", rumbleA: "#ff2ea5", rumbleB: "#22e0e8",
-      laneLine: "#ffe97a", edgeLine: "#fff08a",
+      laneLine: "#ffe97a", edgeLine: "#fff08a", roadFinish: "wet",
       crystalColors: [0xff2ea5, 0x22e0e8, 0xd6c8ff],
       mountain: 0x1c1830, mountainDark: 0x0e0c1c, clutter: 0x332e3e, gem: 0x22e0e8,
     },
@@ -563,7 +565,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       sun: 0x8dffc0, sunInt: 0.75,
       groundBase: "#06140f", groundSpeck: "#123a24", groundDark: "#03100b",
       road: "#0d2818", roadDark: "#081c10", rumbleA: "#0f9d4a", rumbleB: "#5eff9c",
-      laneLine: "#8dffb0", edgeLine: "#c0ffd8",
+      laneLine: "#8dffb0", edgeLine: "#c0ffd8", roadFinish: "wet",
       crystalColors: [0x22e88a, 0x7dffb0, 0xc8ffd8],
       mountain: 0x0a3020, mountainDark: 0x051f14, clutter: 0x0a3020, gem: 0x22e88a,
     },

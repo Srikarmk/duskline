@@ -6,6 +6,30 @@ import type { RealmId } from "../game/engine";
 import type { CarId } from "./cars";
 import { CAR_SPECS } from "./carData";
 
+/** Shared wind clock driving the foliage sway (the engine advances .value). */
+export const windTime = { value: 0 };
+
+/** Inject a gentle world-space wind sway into a foliage material's vertex stage:
+ *  leaves higher up sway more, phase varies by world position so trees don't
+ *  move in lockstep. Kept small so it reads as a breeze, not jelly. */
+function applyFoliageWind(mat: THREE.Material) {
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.windTime = windTime;
+    shader.vertexShader =
+      "uniform float windTime;\n" +
+      shader.vertexShader.replace(
+        "#include <begin_vertex>",
+        `#include <begin_vertex>
+         vec3 wpos = (modelMatrix * vec4(transformed, 1.0)).xyz;
+         float sway = sin(windTime * 1.3 + wpos.x * 0.14 + wpos.z * 0.1);
+         float gust = sin(windTime * 0.7 + wpos.z * 0.08) * 0.5 + 0.5;
+         float amt = max(transformed.y, 0.0) * 0.045 * (0.6 + gust);
+         transformed.x += sway * amt;
+         transformed.z += cos(windTime * 1.1 + wpos.z * 0.12) * amt * 0.7;`
+      );
+  };
+}
+
 // --- sky ------------------------------------------------------------------
 
 export function makeSkyDome(pal: RealmPalette): THREE.Mesh {
@@ -67,6 +91,101 @@ export function makeSkyDome(pal: RealmPalette): THREE.Mesh {
   const geo = new THREE.SphereGeometry(900, 32, 16);
   const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, fog: false });
   return new THREE.Mesh(geo, mat);
+}
+
+/**
+ * An equirectangular sky→ground gradient for the realm, to be PMREM-processed
+ * into the scene's environment map. It gives every standard material subtle
+ * image-based lighting (a coloured sky bounce) and lets the wet road + props
+ * catch real reflections — the same lift the cars got from their studio env.
+ */
+export function makeEnvMap(pal: RealmPalette): THREE.Texture {
+  const c = document.createElement("canvas");
+  c.width = 256;
+  c.height = 128;
+  const ctx = c.getContext("2d")!;
+  const grad = ctx.createLinearGradient(0, 0, 0, 128);
+  grad.addColorStop(0.0, pal.sky[0]);
+  grad.addColorStop(0.32, pal.sky[1]);
+  grad.addColorStop(0.5, pal.sky[2]);          // horizon band
+  grad.addColorStop(0.54, pal.sky[3]);
+  grad.addColorStop(1.0, hexStr(pal.fog));     // ground bounce = fog colour
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 256, 128);
+  // a soft warm/bright band at the horizon for a specular glint on wet surfaces
+  const glow = ctx.createLinearGradient(0, 56, 0, 72);
+  glow.addColorStop(0, "rgba(255,255,255,0)");
+  glow.addColorStop(0.5, "rgba(255,255,255,0.4)");
+  glow.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 56, 256, 16);
+  const tex = new THREE.CanvasTexture(c);
+  tex.mapping = THREE.EquirectangularReflectionMapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function hexStr(h: number): string {
+  return "#" + (h & 0xffffff).toString(16).padStart(6, "0");
+}
+
+/** Soft light-shaft texture: a bright vertical beam that fades at its side edges
+ *  and softly down its length (brightest near the sky). */
+function shaftTexture(): THREE.Texture {
+  const c = document.createElement("canvas");
+  c.width = 64;
+  c.height = 256;
+  const ctx = c.getContext("2d")!;
+  const hg = ctx.createLinearGradient(0, 0, 64, 0);
+  hg.addColorStop(0, "rgba(255,255,255,0)");
+  hg.addColorStop(0.5, "rgba(255,255,255,1)");
+  hg.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = hg;
+  ctx.fillRect(0, 0, 64, 256);
+  ctx.globalCompositeOperation = "destination-in";
+  const vg = ctx.createLinearGradient(0, 0, 0, 256);
+  vg.addColorStop(0, "rgba(0,0,0,0.95)");
+  vg.addColorStop(0.7, "rgba(0,0,0,0.45)");
+  vg.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, 64, 256);
+  ctx.globalCompositeOperation = "source-over";
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/**
+ * Faint god-ray light shafts angled down from the sky, tinted to the realm sun.
+ * Additive + very low opacity so they read as atmosphere/volumetric light, not
+ * solid beams. Two crossed billboards per shaft so they hold up from any angle.
+ */
+export function makeLightShafts(pal: RealmPalette): THREE.Group {
+  const g = new THREE.Group();
+  const color = new THREE.Color(pal.sun);
+  const tex = shaftTexture();
+  let seed = 90210;
+  const rand = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  for (let i = 0; i < 9; i++) {
+    const h = 150 + rand() * 110;
+    const w = 26 + rand() * 34;
+    const geo = new THREE.PlaneGeometry(w, h);
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex, color, transparent: true, opacity: 0.1 + rand() * 0.09,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false,
+    });
+    const a = new THREE.Mesh(geo, mat);
+    const b = new THREE.Mesh(geo, mat);
+    b.rotation.y = Math.PI / 2;
+    const holder = new THREE.Group();
+    holder.add(a, b);
+    // spread over and around the track so beams descend near the action
+    holder.position.set((rand() * 2 - 1) * 470, h * 0.4 + 14, (rand() * 2 - 1) * 470);
+    holder.rotation.z = (rand() * 2 - 1) * 0.22; // slight sun-angle lean
+    holder.userData.noShadow = true;
+    g.add(holder);
+  }
+  return g;
 }
 
 // --- deep-space backdrop (void realm): a ringed gas giant + a nebula --------
@@ -359,14 +478,15 @@ export function makeRockField(pal: RealmPalette, pts: Placement[]): THREE.Instan
   if (lib) {
     const t = tileSet(lib.rock, 1);
     mat = new THREE.MeshStandardMaterial({
-      map: t.diff, normalMap: t.nor, color: 0x8a8a8a, metalness: 0.1, roughness: 0.96,
-      flatShading: true, vertexColors: true,
+      map: t.diff, normalMap: t.nor, normalScale: new THREE.Vector2(1.4, 1.4),
+      color: 0x8a8a8a, metalness: 0.12, roughness: 0.82,
+      flatShading: true, vertexColors: true, envMapIntensity: 0.55,
     });
   } else {
     const stone = stoneMaps(pal.mountainDark);
     mat = new THREE.MeshStandardMaterial({
-      color: pal.mountainDark, map: stone.map, bumpMap: stone.bump, bumpScale: 0.2,
-      metalness: 0.1, roughness: 0.96, flatShading: true, vertexColors: true,
+      color: pal.mountainDark, map: stone.map, bumpMap: stone.bump, bumpScale: 0.28,
+      metalness: 0.12, roughness: 0.82, flatShading: true, vertexColors: true, envMapIntensity: 0.55,
     });
   }
   const mesh = new THREE.InstancedMesh(geo, mat, pts.length);
@@ -1231,26 +1351,35 @@ export function makeTreeMaterials(pal: RealmPalette): TreeMats {
   // foliage uses vertexColors so each tree can bake its own tonal shading + AO +
   // per-instance hue into geometry while the material stays shared. flatShading
   // gives the faceted low-poly leaf/bark read.
+  // slightly glossy foliage (damp leaves catch the sky bounce) + deeper bark
+  // relief, so trees pick up the scene's image-based lighting like the cars do
   const lib = pbr();
   if (lib) {
     const bark = tileSet(lib.bark, 1, 2.2);
     const fol = tileSet(lib.foliage, 2.2, 2.2);
+    const foliage = new THREE.MeshStandardMaterial({
+      color: pal.clutter, map: fol.diff, normalMap: fol.nor, roughness: 0.78, metalness: 0,
+      flatShading: true, vertexColors: true, envMapIntensity: 0.6,
+    });
+    applyFoliageWind(foliage);
     return {
-      trunk: new THREE.MeshStandardMaterial({ map: bark.diff, normalMap: bark.nor, roughness: 1, metalness: 0, flatShading: true }),
-      foliage: new THREE.MeshStandardMaterial({
-        color: pal.clutter, map: fol.diff, normalMap: fol.nor, roughness: 1, metalness: 0,
-        flatShading: true, vertexColors: true,
+      trunk: new THREE.MeshStandardMaterial({
+        map: bark.diff, normalMap: bark.nor, normalScale: new THREE.Vector2(1.3, 1.3),
+        roughness: 0.92, metalness: 0, flatShading: true, envMapIntensity: 0.5,
       }),
+      foliage,
     };
   }
   // procedural fallback — canvas bark/leaf maps so the trunk looks like wood
   // and the canopy looks leafy even without the CC0 PBR sets. Trunk stays
   // unmultiplied (true wood browns); only the leaves take the realm tint.
+  const foliage = new THREE.MeshStandardMaterial({
+    color: pal.clutter, map: leafTexture(), roughness: 0.78, flatShading: true, vertexColors: true, envMapIntensity: 0.6,
+  });
+  applyFoliageWind(foliage);
   return {
-    trunk: new THREE.MeshStandardMaterial({ map: barkTexture(), roughness: 1, flatShading: true }),
-    foliage: new THREE.MeshStandardMaterial({
-      color: pal.clutter, map: leafTexture(), roughness: 1, flatShading: true, vertexColors: true,
-    }),
+    trunk: new THREE.MeshStandardMaterial({ map: barkTexture(), roughness: 0.92, flatShading: true, envMapIntensity: 0.5 }),
+    foliage,
   };
 }
 
