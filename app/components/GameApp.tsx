@@ -129,61 +129,98 @@ export default function GameApp() {
   if (screen === "intermission" && gp) {
     const rows = toRows(gp.champ, name);
     const nextRealm = REALMS[GP_ORDER[gp.round]];
+    const done = gp.round;
+    const totalRounds = GP_ORDER.length;
     return (
-      <div className="home">
-        <h1 className="title">GRAND PRIX</h1>
-        <p className="subtitle">round {gp.round} of {GP_ORDER.length} complete</p>
-        <div className="leaderboard">
-          <h2>CHAMPIONSHIP</h2>
-          <table>
-            <tbody>
-              {rows.map((r, i) => (
-                <tr key={r.name} className={r.isPlayer ? "you" : ""}>
-                  <td>{i + 1}.</td>
-                  <td>{r.name}</td>
-                  <td className="score">{r.points} pts</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <div className="home gp-screen">
+        <div className="result-hero tier-none">
+          <span className="result-badge">INTERMISSION</span>
+          <h1 className="title result-title">GRAND PRIX</h1>
+          <p className="subtitle">round {done} of {totalRounds} complete</p>
+          <div className="gp-rounds" aria-label={`Round ${done} of ${totalRounds}`}>
+            {GP_ORDER.map((_, i) => (
+              <span key={i} className={`gp-dot ${i < done ? "done" : i === done ? "next" : ""}`} />
+            ))}
+          </div>
         </div>
-        <p className="subtitle">next: {nextRealm.name}</p>
-        <button className="start" onClick={() => setScreen("race")}>
-          NEXT RACE →
-        </button>
+
+        <div className="result-card">
+          <div className="result-standings championship">
+            <h2>CHAMPIONSHIP</h2>
+            <ol>
+              {rows.map((r, i) => (
+                <li key={r.name} className={r.isPlayer ? "you" : ""}>
+                  <span className={`pos rank-${i + 1 <= 3 ? i + 1 : "n"}`}>{i + 1}</span>
+                  <span className="who">{r.name}</span>
+                  {r.isPlayer && <span className="tag">YOU</span>}
+                  <span className="pts">{r.points} pts</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+          <div className="realm-lore">
+            <em>UP NEXT · {nextRealm.name.toUpperCase()}</em>
+            <p>{nextRealm.blurb}</p>
+          </div>
+        </div>
+
+        <div className="result-actions">
+          <button className="start" onClick={() => setScreen("race")}>
+            ▸ NEXT RACE
+          </button>
+        </div>
       </div>
     );
   }
 
   if (screen === "gpresult" && gpFinal) {
     const win = gpFinal[0]?.isPlayer;
+    const rank = gpFinal.findIndex((r) => r.isPlayer) + 1 || 1;
+    const podium = rank <= 3;
+    const tier = win ? "gold" : rank === 2 ? "silver" : rank === 3 ? "bronze" : "none";
     return (
-      <div className="home">
-        <h1 className="title">{win ? "CHAMPION!" : "GRAND PRIX"}</h1>
-        <p className="subtitle">final championship standings</p>
-        <div className="leaderboard">
-          <h2>{win ? "🏆 YOU WIN" : "RESULTS"}</h2>
-          <table>
-            <tbody>
-              {gpFinal.map((r, i) => (
-                <tr key={r.name} className={r.isPlayer ? "you" : ""}>
-                  <td>{i + 1}.</td>
-                  <td>{r.name}</td>
-                  <td className="score">{r.points} pts</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <div className="home gp-screen results-screen">
+        <div className={`result-hero tier-${tier} ${podium ? "podium" : ""}`}>
+          <span className="result-badge">GRAND PRIX</span>
+          <div className="place-hero">
+            <div className="place-ordinal" aria-label={`${rank} place overall`}>
+              <span className="place-num" aria-hidden="true">{rank}</span>
+              <span className="place-suffix" aria-hidden="true">
+                {["th", "st", "nd", "rd"][rank] ?? "th"}
+              </span>
+            </div>
+            <div className="place-label">{win ? "CHAMPION" : podium ? "ON THE PODIUM" : "SEASON COMPLETE"}</div>
+          </div>
+          <p className="subtitle result-subhead">final championship standings</p>
         </div>
-        <button
-          className="start"
-          onClick={() => {
-            setGpFinal(null);
-            setScreen("home");
-          }}
-        >
-          BACK TO MENU
-        </button>
+
+        <div className="result-card">
+          <div className="result-standings championship">
+            <h2>FINAL STANDINGS</h2>
+            <ol>
+              {gpFinal.map((r, i) => (
+                <li key={r.name} className={r.isPlayer ? "you" : ""}>
+                  <span className={`pos rank-${i + 1 <= 3 ? i + 1 : "n"}`}>{i + 1}</span>
+                  <span className="who">{r.name}</span>
+                  {r.isPlayer && <span className="tag">YOU</span>}
+                  <span className="pts">{r.points} pts</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </div>
+
+        <div className="result-actions">
+          <button
+            className="start"
+            onClick={() => {
+              setGpFinal(null);
+              setScreen("home");
+            }}
+          >
+            ▸ BACK TO MENU
+          </button>
+        </div>
       </div>
     );
   }

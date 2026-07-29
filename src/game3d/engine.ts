@@ -57,7 +57,7 @@ import { Minimap } from "./minimap";
 import { Sound } from "./sound";
 import { loadSetting, loadSettings, type Settings } from "../ui/settings";
 import { Input } from "../game/input";
-import { drawHud, drawToasts, drawCenterText, drawSpeedFx, drawStartLights, type Toast } from "../game/render";
+import { drawHud, drawToasts, drawCallout, drawCenterText, drawSpeedFx, drawFrameGrade, drawStartLights, type Toast } from "../game/render";
 import type { GameMode, GameResult, GameOptions, RaceStanding, CarId } from "../game/engine";
 
 type Phase = "loading" | "countdown" | "racing" | "finished";
@@ -333,6 +333,11 @@ export class Game {
 
   private crashFlash = 0;
   private toasts: Toast[] = [];
+  // big centre-screen race-drama callouts (overtakes, final lap) — distinct
+  // from the small stacked toasts; one at a time, with a pop + fade
+  private callout: { text: string; sub: string; color: string; t: number; life: number } | null = null;
+  private lastPosition = 0;   // player's rank last frame, to detect overtakes
+  private overtakeCd = 0;     // debounce so grid shuffles don't spam callouts
 
   constructor(container: HTMLElement, options: GameOptions) {
     this.container = container;
@@ -525,6 +530,9 @@ export class Game {
     this.freeDrive.reset(this.track, 0);
     this.lastFreeDist = 0;
     this.lapProgress = 0;
+    this.lastPosition = 0;
+    this.overtakeCd = 0;
+    this.callout = null;
     this.phase = "countdown";
   }
 
@@ -1867,6 +1875,34 @@ export class Game {
     if (this.toasts.length > 4) this.toasts.length = 4;
   }
 
+  /** Fire a big centre-screen callout (overtake, final lap, …). Overwrites any
+   *  current one so the freshest drama always shows. */
+  private announce(text: string, sub: string, color: string, life = 1.5) {
+    this.callout = { text, sub, color, t: life, life };
+  }
+
+  /** Detect the player gaining/losing a place and fire an overtake callout.
+   *  Skips the opening grid shuffle and debounces rapid swaps. */
+  private trackOvertakes(dt: number) {
+    this.overtakeCd = Math.max(0, this.overtakeCd - dt);
+    if (!this.opponents.length) return;
+    const p = this.computePosition();
+    // seed on the first couple of seconds without firing (grid still sorting)
+    if (this.lastPosition === 0 || this.raceTime < 2.5) { this.lastPosition = p; return; }
+    if (p !== this.lastPosition && this.overtakeCd <= 0) {
+      const ord = (n: number) => ["1ST", "2ND", "3RD", "4TH", "5TH", "6TH", "7TH", "8TH", "9TH"][n - 1] ?? `${n}TH`;
+      if (p < this.lastPosition) {
+        this.announce("OVERTAKE!", p === 1 ? "TAKING THE LEAD" : `UP TO ${ord(p)}`, p === 1 ? "#fbbf24" : "#a7f3d0");
+        this.sound.play("lane");
+      } else {
+        this.announce("PASSED", `DOWN TO ${ord(p)}`, "#f87171");
+        this.sound.play("bump");
+      }
+      this.overtakeCd = 0.7;
+    }
+    this.lastPosition = p;
+  }
+
   private effectiveMaxSpeed() {
     let max = MAX_SPEED * this.carStat.speed;
     if (this.transformed) max *= TRANSFORM_SPEED_FACTOR;
@@ -1937,6 +1973,7 @@ export class Game {
     this.time += dt;
     for (const t of this.toasts) t.t -= dt;
     this.toasts = this.toasts.filter((t) => t.t > 0);
+    if (this.callout) { this.callout.t -= dt; if (this.callout.t <= 0) this.callout = null; }
     this.crashFlash = Math.max(0, this.crashFlash - dt);
     this.swingT = Math.max(0, this.swingT - dt);
     this.slashCooldown = Math.max(0, this.slashCooldown - dt);
@@ -1993,6 +2030,7 @@ export class Game {
     }
 
     this.raceTime += dt;
+    this.trackOvertakes(dt);
     const speedPercent = Math.min(this.speed / MAX_SPEED, 1);
     const airborne = this.alt > 0.15;
     this.shake = Math.max(0, this.shake - dt * 2.2);
@@ -2241,6 +2279,8 @@ export class Game {
       if (!this.onBranch) this.collideMonsters();
     }
     this.sound.setEngine(this.speed / MAX_SPEED, this.nitroT > 0);
+    // lift the music with speed + nitro so the track drives harder when flat out
+    this.sound.setMusicIntensity(0.32 + (this.speed / MAX_SPEED) * 0.55 + (this.nitroT > 0 ? 0.18 : 0));
 
     // advance & laps — `position` is the free-roam projection onto the track;
     // detect a forward crossing of the start/finish seam (guard jitter/reverse)
@@ -2268,6 +2308,7 @@ export class Game {
         } else {
           this.sound.play("lap");
           this.toast(`LAP ${this.lap}/${this.cfg.laps}`, "#c084fc");
+          if (this.lap === this.cfg.laps && this.cfg.laps > 1) this.announce("FINAL LAP", "LEAVE IT ALL OUT THERE", "#fbbf24", 2);
           this.clearProjectiles();
           for (const e of this.entities) {
             if (e.collectedLap !== 0 && e.collectedLap !== this.lap) {
@@ -2947,6 +2988,7 @@ export class Game {
 
     // sense-of-speed overlay sits under the HUD panels
     if (this.phase === "racing" || this.phase === "finished") {
+      drawFrameGrade(ctx, vw, vh); // subtle always-on cinematic vignette
       const boosting = this.nitroT > 0 || this.driftBoostT > 0 || this.boostT > 0;
       drawSpeedFx(ctx, vw, vh, this.speed / MAX_SPEED, boosting, this.time);
     }
@@ -2989,6 +3031,9 @@ export class Game {
     );
 
     drawToasts(ctx, this.toasts, vw);
+    // race-drama callout (overtake / final lap) sits above the toasts; hide it
+    // once finished so it doesn't fight the FINISH! banner
+    if (this.callout && this.phase !== "finished") drawCallout(ctx, this.callout, vw, vh);
 
     if (this.phase === "countdown") {
       drawStartLights(ctx, this.countdownT, vw, vh);

@@ -49,6 +49,8 @@ export class Sound {
   private started = false;
   private musicVol = 0.7;
   private sfxVol = 0.9;
+  private musicIntensity = 0.4; // eased value the sequencer reads
+  private musicIntTarget = 0.4; // driven by the engine from speed + nitro
 
   constructor() {
     if (typeof window !== "undefined") {
@@ -109,6 +111,13 @@ export class Sound {
     this.musicBus?.gain.setTargetAtTime(0.22 * music, t, 0.05);
     this.sfxBus?.gain.setTargetAtTime(0.85 * sfx, t, 0.05);
     this.ambientBus?.gain.setTargetAtTime(0.18 * music, t, 0.05);
+  }
+
+  /** 0..1 — how hard the music drives. The engine feeds this from the car's
+   *  speed + nitro so the track lifts (hats, snare, lead, extra kicks) as you
+   *  go faster and settles when you slow. Safe before the context exists. */
+  setMusicIntensity(x: number) {
+    this.musicIntTarget = Math.max(0, Math.min(1, x));
   }
 
   toggleMute() {
@@ -249,31 +258,138 @@ export class Sound {
   }
 
   private startMusic() {
-    // soft minor-pentatonic arpeggio loop with an occasional bass note
-    const scale = [220, 261.6, 293.66, 349.23, 392, 523.25];
+    // A driving 4-bar groove over an Am–F–C–G progression: four-on-the-floor
+    // kick, backbeat snare, hats, a rolling bassline and an arpeggiated lead.
+    // Layers fade in with `musicIntensity` (fed by speed) so the track lifts as
+    // the car goes faster and settles to a calm pulse when idling/finished.
+    const bassRoots = [110, 87.31, 65.41, 98];        // Am  F   C   G
+    const leadPools = [
+      [220, 261.63, 329.63, 392, 440],    // Am: A C E G A
+      [174.61, 220, 261.63, 349.23, 440], // F:  F A C F A
+      [196, 261.63, 329.63, 392, 523.25], // C:  G C E G C
+      [196, 246.94, 293.66, 392, 587.33], // G:  G B D G D
+    ];
     this.musicTimer = setInterval(() => {
       if (!this.ctx || !this.musicBus || this.muted) return;
-      const note = scale[this.musicStep % scale.length];
-      this.arp(note, 0.5, 0.09);
-      if (this.musicStep % 4 === 0) this.arp(note / 2, 0.9, 0.07); // bass
-      this.musicStep++;
-    }, 320);
+      // ease intensity toward its target so speed changes glide, not jump
+      this.musicIntensity += (this.musicIntTarget - this.musicIntensity) * 0.15;
+      const I = this.musicIntensity;
+      const s = this.musicStep++;
+      const step = s % 16;                 // sixteenth within the bar
+      const root = bassRoots[Math.floor(s / 16) % 4];
+      const pool = leadPools[Math.floor(s / 16) % 4];
+
+      // pad: a soft root/fifth/octave swell on each downbeat for body
+      if (step === 0) this.mPad([root, root * 1.5, root * 2], 0.05 + (1 - I) * 0.035);
+
+      // kick: four-on-the-floor, with syncopation added when driving hard
+      if (step % 4 === 0) this.mKick(0.55);
+      if (I > 0.6 && step === 10) this.mKick(0.42);
+      if (I > 0.82 && step === 14) this.mKick(0.44);
+
+      // backbeat snare (enters once you're moving)
+      if (I > 0.25 && (step === 4 || step === 12)) this.mSnare(0.2 + I * 0.12);
+
+      // hats: offbeats, then full sixteenths when flat out
+      if (I > 0.3 && step % 2 === 1) this.mHat(0.05 + I * 0.05);
+      if (I > 0.72 && step % 2 === 0) this.mHat(0.03);
+
+      // bass: rolling pattern, jumping to the fifth for movement
+      if (step === 0 || step === 3 || step === 6 || step === 8 || step === 11 || step === 14) {
+        const f = (step === 6 || step === 14) ? root * 1.5 : root;
+        this.mBass(f, 0.2 + I * 0.08);
+      }
+
+      // lead arpeggio: enters with intensity, doubles up when flat out
+      if (I > 0.45 && step % 2 === 0) this.mLead(pool[(s >> 1) % pool.length], 0.05 + I * 0.09);
+      if (I > 0.78 && step % 2 === 1) this.mLead(pool[s % pool.length] * 2, 0.04 + I * 0.05);
+    }, 118);
   }
 
-  private arp(freq: number, dur: number, gain: number) {
+  /** One musical tone routed to the music bus (optional pitch sweep + lowpass). */
+  private mTone(freq: number, dur: number, type: OscillatorType, gain: number, sweepTo?: number, filterHz?: number) {
     if (!this.ctx || !this.musicBus) return;
     const t = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
     const g = this.ctx.createGain();
-    osc.type = "triangle";
-    osc.frequency.value = freq;
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t);
+    if (sweepTo) osc.frequency.exponentialRampToValueAtTime(Math.max(1, sweepTo), t + dur);
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(gain, t + 0.04);
+    g.gain.exponentialRampToValueAtTime(gain, t + 0.012);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(g);
+    let tail: AudioNode = g;
+    if (filterHz) {
+      const filt = this.ctx.createBiquadFilter();
+      filt.type = "lowpass";
+      filt.frequency.value = filterHz;
+      g.connect(filt);
+      tail = filt;
+    }
+    tail.connect(this.musicBus);
+    osc.start(t);
+    osc.stop(t + dur + 0.02);
+  }
+
+  /** One percussive noise hit routed to the music bus. */
+  private mNoise(dur: number, gain: number, filterType: BiquadFilterType, freq: number) {
+    if (!this.ctx || !this.musicBus) return;
+    const t = this.ctx.currentTime;
+    const len = Math.floor(this.ctx.sampleRate * dur);
+    const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    const filt = this.ctx.createBiquadFilter();
+    filt.type = filterType;
+    filt.frequency.value = freq;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(gain, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(filt);
+    filt.connect(g);
+    g.connect(this.musicBus);
+    src.start(t);
+    src.stop(t + dur);
+  }
+
+  private mKick(gain: number) {
+    if (!this.ctx || !this.musicBus) return;
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(150, t);
+    osc.frequency.exponentialRampToValueAtTime(46, t + 0.13);
+    g.gain.setValueAtTime(gain, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.17);
     osc.connect(g);
     g.connect(this.musicBus);
     osc.start(t);
-    osc.stop(t + dur + 0.02);
+    osc.stop(t + 0.19);
+  }
+
+  private mSnare(gain: number) {
+    this.mNoise(0.14, gain, "bandpass", 1900);
+    this.mTone(190, 0.11, "triangle", gain * 0.5, 90);
+  }
+
+  private mHat(gain: number) {
+    this.mNoise(0.03, gain, "highpass", 8000);
+  }
+
+  private mBass(freq: number, gain: number) {
+    this.mTone(freq, 0.17, "sawtooth", gain, undefined, 320);
+  }
+
+  private mLead(freq: number, gain: number) {
+    this.mTone(freq, 0.17, "triangle", gain);
+  }
+
+  private mPad(freqs: number[], gain: number) {
+    for (const f of freqs) this.mTone(f, 1.5, "sine", gain, undefined, 1400);
   }
 
   /**

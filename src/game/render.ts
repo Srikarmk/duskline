@@ -715,6 +715,19 @@ export function drawHud(
   }
 }
 
+/** A subtle, always-on cinematic vignette: gentle corner darkening only. Purely
+ *  2D and cheap — lifts the whole frame toward a "produced" look and focuses the
+ *  eye on the car, without touching the 3D pipeline (no fog/haze, no perf cost). */
+export function drawFrameGrade(ctx: CanvasRenderingContext2D, vw: number, vh: number) {
+  const cx = vw / 2, cy = vh * 0.5;
+  const vg = ctx.createRadialGradient(cx, cy, Math.min(vw, vh) * 0.5, cx, cy, Math.max(vw, vh) * 0.72);
+  vg.addColorStop(0, "rgba(0,0,0,0)");
+  vg.addColorStop(0.72, "rgba(4,3,14,0.06)");
+  vg.addColorStop(1, "rgba(4,3,14,0.2)");
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, vw, vh);
+}
+
 /** Sense-of-speed overlay: a darkening vignette + radial streaks that build up
  *  with speed and flare during a boost. Drawn under the HUD panels. */
 export function drawSpeedFx(
@@ -777,6 +790,48 @@ export function drawToasts(ctx: CanvasRenderingContext2D, toasts: Toast[], vw = 
     ctx.fillStyle = toast.color;
     ctx.fillText(toast.text, vw / 2, 150 + i * 30);
   });
+  ctx.globalAlpha = 1;
+}
+
+/** Big race-drama callout (overtake / final lap): pops in, holds, fades out,
+ *  sitting in the upper third so it never covers the road or the car. */
+export function drawCallout(
+  ctx: CanvasRenderingContext2D,
+  callout: { text: string; sub: string; color: string; t: number; life: number },
+  vw = WIDTH, vh = HEIGHT
+) {
+  const { text, sub, color, t, life } = callout;
+  const age = life - t;                               // 0 at spawn → life at end
+  const popIn = Math.min(1, age / 0.16);              // fast scale-up on entry
+  const ease = 1 - Math.pow(1 - popIn, 3);            // ease-out cubic
+  const scale = 0.72 + ease * 0.28;                   // 0.72 → 1.0
+  const alpha = Math.min(1, popIn) * Math.min(1, t / 0.4); // fade in fast, out over last 0.4s
+  const cx = vw / 2, cy = vh * 0.3;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.translate(cx, cy);
+  ctx.scale(scale, scale);
+
+  const big = Math.max(30, Math.min(52, vw * 0.05));
+  ctx.font = `bold ${big}px monospace`;
+  ctx.lineWidth = Math.max(3, big * 0.12);
+  ctx.strokeStyle = "rgba(8, 6, 20, 0.85)";
+  ctx.strokeText(text, 0, 0);
+  ctx.fillStyle = color;
+  ctx.fillText(text, 0, 0);
+
+  if (sub) {
+    const small = Math.max(12, big * 0.34);
+    ctx.font = `bold ${small}px monospace`;
+    ctx.lineWidth = Math.max(2, small * 0.14);
+    ctx.strokeText(sub, 0, big * 0.72);
+    ctx.fillStyle = "#f4f0ff";
+    ctx.fillText(sub, 0, big * 0.72);
+  }
+  ctx.restore();
   ctx.globalAlpha = 1;
 }
 

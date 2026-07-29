@@ -372,17 +372,35 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
           {shownScores.length === 0 ? (
             <p className="board-hint">no scores yet — be the first!</p>
           ) : (
-            <table>
+            <table className="board-table">
+              <thead>
+                <tr>
+                  <th className="rank-col">#</th>
+                  <th>RACER</th>
+                  <th>MODE</th>
+                  <th>TIME</th>
+                  <th className="score">SCORE</th>
+                </tr>
+              </thead>
               <tbody>
-                {shownScores.map((s, i) => (
-                  <tr key={i}>
-                    <td>{i + 1}.</td>
-                    <td>{s.name}</td>
-                    <td>{MODE_LABEL[s.mode] ?? s.mode}</td>
-                    <td>{formatTime(s.timeMs)}</td>
-                    <td className="score">{s.score}</td>
-                  </tr>
-                ))}
+                {shownScores.map((s, i) => {
+                  const rankClass = i + 1 <= 3 ? `rank-${i + 1}` : "rank-n";
+                  const isYou = name.trim().length > 0 && s.name === name.trim();
+                  return (
+                    <tr key={i} className={isYou ? "you" : ""}>
+                      <td>
+                        <span className={`board-rank ${rankClass}`}>{i + 1}</span>
+                      </td>
+                      <td className="board-name">
+                        {s.name}
+                        {isYou && <span className="board-you">YOU</span>}
+                      </td>
+                      <td className="board-mode">{MODE_LABEL[s.mode] ?? s.mode}</td>
+                      <td>{formatTime(s.timeMs)}</td>
+                      <td className="score">{s.score.toLocaleString()}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}

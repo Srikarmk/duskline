@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import type { GameResult } from "@/src/game/engine";
 
 interface Props {
@@ -34,11 +35,13 @@ export default function ResultsScreen({
   const total = result.totalRacers ?? 1;
   const win = !solo && pos === 1;
   const podium = !solo && pos <= 3;
+  const tier = win ? "gold" : pos === 2 ? "silver" : pos === 3 ? "bronze" : "none";
+  const suffix = ordinal(pos).slice(String(pos).length);
 
-  const headline = solo
+  const label = solo
     ? "RACE COMPLETE"
     : win
-      ? "🏆 VICTORY"
+      ? "VICTORY"
       : podium
         ? "PODIUM FINISH"
         : "RACE COMPLETE";
@@ -47,7 +50,24 @@ export default function ResultsScreen({
     ? `${modeLabel} · ${realmName}`
     : `${ordinal(pos)} of ${total} · ${modeLabel} · ${realmName}`;
 
-  const rows: { label: string; value: string; accent?: boolean }[] = [
+  // Race again is the primary action — focus it and wire Enter / Esc.
+  const againRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    againRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        onRaceAgain();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        onMenu();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onRaceAgain, onMenu]);
+
+  const rows: { label: string; value: string }[] = [
     { label: "TIME", value: formatTime(result.timeMs) },
     { label: "GEMS", value: `${result.gems}` },
     { label: "STUNTS", value: `${result.stunts}` },
@@ -57,10 +77,24 @@ export default function ResultsScreen({
 
   return (
     <div className="home results-screen">
-      <div className={`result-hero ${win ? "win" : podium ? "podium" : ""}`}>
-        <span className="result-badge">FINISH</span>
-        <h1 className="title result-title">{headline}</h1>
-        <p className="subtitle">{subhead}</p>
+      <div className={`result-hero tier-${tier} ${podium ? "podium" : ""} ${solo ? "solo" : ""}`}>
+        <span className="result-badge">FINISH LINE</span>
+
+        <div className="place-hero">
+          {solo ? (
+            <div className="place-time" aria-label={`Finish time ${formatTime(result.timeMs)}`}>
+              {formatTime(result.timeMs)}
+            </div>
+          ) : (
+            <div className="place-ordinal" aria-label={`${ordinal(pos)} place`}>
+              <span className="place-num" aria-hidden="true">{pos}</span>
+              <span className="place-suffix" aria-hidden="true">{suffix}</span>
+            </div>
+          )}
+          <div className="place-label">{label}</div>
+        </div>
+
+        <p className="subtitle result-subhead">{subhead}</p>
       </div>
 
       <div className="result-card">
@@ -92,7 +126,7 @@ export default function ResultsScreen({
                 .sort((a, b) => a.position - b.position)
                 .map((s) => (
                   <li key={s.position} className={s.isPlayer ? "you" : ""}>
-                    <span className="pos">{s.position}</span>
+                    <span className={`pos rank-${s.position <= 3 ? s.position : "n"}`}>{s.position}</span>
                     <span className="who">{s.name}</span>
                     {s.isPlayer && <span className="tag">YOU</span>}
                   </li>
@@ -103,8 +137,10 @@ export default function ResultsScreen({
       </div>
 
       <div className="result-actions">
-        <button className="start" onClick={onRaceAgain}>▸ RACE AGAIN</button>
-        <button className="result-menu" onClick={onMenu}>MENU</button>
+        <button ref={againRef} className="start" onClick={onRaceAgain}>▸ RACE AGAIN</button>
+        <button className="result-menu" onClick={onMenu}>
+          MENU <kbd>Esc</kbd>
+        </button>
       </div>
     </div>
   );
