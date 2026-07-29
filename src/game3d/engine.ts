@@ -196,6 +196,9 @@ export class Game {
   private bumpCd = 0;
   private postHitCd = 0; // throttles the "clipped a marker post" speed-hit
   private takedownCd = 0; // throttles Asphalt-style takedowns so one ram = one hit
+  private obstacles: { x: number; z: number; r: number }[] = []; // solid scenery you can't drive through
+  private obstacleGrid = new Map<string, number[]>(); // spatial buckets into `obstacles`
+  private obstacleHitCd = 0; // throttles the impact spark/sound on a scrape
   private slotFullCd = 0;
   private lastBeep = 99;
   private realm: RealmSpec;
@@ -639,6 +642,7 @@ export class Game {
     scene.add(this.weather.object);
 
     this.decorate(library);
+    this.buildObstacleGrid();
     this.enableShadows();
   }
 
@@ -652,6 +656,61 @@ export class Game {
       m.castShadow = true;
       m.receiveShadow = true;
     });
+  }
+
+  // --- solid obstacles (trees/rocks/buildings you can't drive through) --------
+  private static readonly OBS_CELL = 18;
+  private obsKey(x: number, z: number) {
+    return Math.floor(x / Game.OBS_CELL) + "," + Math.floor(z / Game.OBS_CELL);
+  }
+  /** Bucket the recorded obstacles into a spatial grid for cheap per-frame lookup. */
+  private buildObstacleGrid() {
+    this.obstacleGrid.clear();
+    this.obstacles.forEach((o, i) => {
+      const key = this.obsKey(o.x, o.z);
+      const b = this.obstacleGrid.get(key);
+      if (b) b.push(i); else this.obstacleGrid.set(key, [i]);
+    });
+  }
+  /** Keep the car OUT of solid scenery: on overlap, push it clear along the
+   *  contact normal, kill the into-obstacle velocity (so it can't tunnel), scrub
+   *  a little speed, and throw sparks. Makes the world feel physically real. */
+  private resolveObstacles(dt: number) {
+    this.obstacleHitCd = Math.max(0, this.obstacleHitCd - dt);
+    if (!this.obstacles.length) return;
+    const CAR_R = 1.4;
+    const cx = this.freeDrive.x, cz = this.freeDrive.z;
+    const gx = Math.floor(cx / Game.OBS_CELL), gz = Math.floor(cz / Game.OBS_CELL);
+    let hit = false;
+    for (let ix = gx - 1; ix <= gx + 1; ix++) {
+      for (let iz = gz - 1; iz <= gz + 1; iz++) {
+        const bucket = this.obstacleGrid.get(ix + "," + iz);
+        if (!bucket) continue;
+        for (const idx of bucket) {
+          const o = this.obstacles[idx];
+          const dx = cx - o.x, dz = cz - o.z;
+          const min = CAR_R + o.r;
+          const d2 = dx * dx + dz * dz;
+          if (d2 >= min * min || d2 < 1e-6) continue;
+          const d = Math.sqrt(d2);
+          const nx = dx / d, nz = dz / d;               // contact normal (out of the obstacle)
+          const push = min - d;
+          this.freeDrive.x += nx * push;                 // shove the car clear
+          this.freeDrive.z += nz * push;
+          const into = this.freeDrive.vx * nx + this.freeDrive.vz * nz; // velocity component INTO it
+          if (into < 0) { this.freeDrive.vx -= nx * into; this.freeDrive.vz -= nz * into; } // cancel it (no tunnel)
+          this.freeDrive.vx *= 0.86; this.freeDrive.vz *= 0.86;         // impact scrub
+          hit = true;
+        }
+      }
+    }
+    if (hit && this.obstacleHitCd <= 0) {
+      const pp = this.playerRoot.position;
+      this.spawnSparks(pp.x, pp.y + 0.4, pp.z, 10);
+      this.shake = Math.max(this.shake, 0.45);
+      this.sound.play("bump");
+      this.obstacleHitCd = 0.18;
+    }
   }
 
   private spawnOpponents() {
@@ -688,9 +747,10 @@ export class Game {
       opp.lane = slotLane(i);
       opp.lap = 1;
       opp.flames = flames;
-      // pole (0.94) down to tail (0.82): every rival tops out BELOW the player's
-      // max speed, so a clean lap actually beats them (they were lapping you before)
-      opp.pace = 0.94 - (i / Math.max(1, gridN - 1)) * 0.12;
+      // pole (1.0 = your top speed) down to tail (0.90): a real fight now — with
+      // the strong catch-up rubber-band they stay right on you (competitive), but
+      // slow when they get ahead so a clean lap still wins (no more lapping you)
+      opp.pace = 1.0 - (i / Math.max(1, gridN - 1)) * 0.10;
       opp.place(this.track); // snap onto the grid now so the field lines up during the countdown
       this.opponents.push(opp);
     }
@@ -1329,6 +1389,11 @@ export class Game {
       "pyramid", "tower", "gatehouse", "grandstand", "floodlight", "pitBuilding", "skyscraper",
       "hogwartsCastle", "waterfall", "quidditchHoop",
     ]);
+    // scenery you should be able to pass through (water, floating, thin flags) —
+    // everything else (trees, rocks, buildings, mushrooms) is a solid obstacle
+    const SOFT_SCENERY = new Set<SceneryKind>([
+      "waterfall", "floatingCandle", "goldenSnitch", "banner", "torch", "quidditchHoop",
+    ]);
 
     if (realm.style === "void") {
       this.decorateVoid(library, rand);
@@ -1344,22 +1409,26 @@ export class Game {
             const kind = pickScenery(realm, rand);
             const obj = this.sceneryObject(kind, library, rand);
             // keep big monuments off the verge so they don't overhang the track
-            const nearOff = LANDMARK_KINDS.has(kind) ? 34 + rand() * 22 : 5 + rand() * 13;
+            const isLandmark = LANDMARK_KINDS.has(kind);
+            const nearOff = isLandmark ? 34 + rand() * 22 : 5 + rand() * 13;
             const off = side * (ROAD_HALF_WIDTH + nearOff);
             const jd = d + rand() * 4;
             const p = track.pointAt(jd, off);
             obj.position.set(p.x, this.terrainYAt(jd, off), p.z); // sit on the terrain (roads have elevation now)
             this.scene.add(obj);
+            if (!SOFT_SCENERY.has(kind)) this.obstacles.push({ x: p.x, z: p.z, r: isLandmark ? 5 : 1.7 });
           }
           // mid band
           if (rand() < 0.56) {
-            const obj = this.sceneryObject(pickScenery(realm, rand), library, rand);
+            const kind = pickScenery(realm, rand);
+            const obj = this.sceneryObject(kind, library, rand);
             const off = side * (ROAD_HALF_WIDTH + 20 + rand() * 36);
             const jd = d + rand() * 4;
             const p = track.pointAt(jd, off);
             obj.position.set(p.x, this.terrainYAt(jd, off), p.z);
             obj.scale.multiplyScalar(1.1 + rand() * 0.5);
             this.scene.add(obj);
+            if (!SOFT_SCENERY.has(kind)) this.obstacles.push({ x: p.x, z: p.z, r: 2.2 });
           }
           // far band (big, fills the mid-distance out toward the mountains)
           if (rand() < 0.34) {
@@ -1402,6 +1471,7 @@ export class Game {
                 t.rotation.y = rand() * Math.PI * 2;
                 t.scale.multiplyScalar(0.95 + rand() * 1.0);
                 this.scene.add(t);
+                this.obstacles.push({ x: p.x, z: p.z, r: 1.7 }); // solid tree trunk
               }
             }
           }
@@ -1955,6 +2025,7 @@ export class Game {
       dt, this.track,
       { maxSpeed: this.effectiveMaxSpeed(), accel: driveAccel, turnRate: FREE_TURN_RATE, grip: FREE_GRIP },
     );
+    this.resolveObstacles(dt); // keep the car OUT of solid scenery (trees/rocks/buildings)
     // derive the rail-space coordinates every other system still reads
     this.position = this.freeDrive.dist;
     this.playerX = clamp(this.freeDrive.lateral / (ROAD_HALF_WIDTH * 0.9), -3, 3);

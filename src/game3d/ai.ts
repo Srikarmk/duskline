@@ -224,6 +224,9 @@ export class Opponent {
     const gripScrub = Math.min(overcook * 2.2, 0.14);
     let target = baseSpeed * (1 - cornerLift) * (1 - gripScrub) * slipMult;
     if (this.boostT > 0) target *= this.boostMult;
+    // never let a rival exceed what the player can hit on nitro — otherwise they
+    // rocket away uncatchably and the race stops feeling like a fair fight
+    target = Math.min(target, MAX_SPEED * 1.34);
     this.speed += (target - this.speed) * Math.min(1, dt * 1.5);
 
     this.dist += this.speed * dt;
