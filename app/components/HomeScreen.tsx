@@ -316,7 +316,7 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
               </button>
 
               <p className="controls-help">
-                arrows / WASD · SPACE nitro · E item · SHIFT fly · C camera
+                arrows / WASD drive · SPACE nitro · drift for boost · ram rivals to take them down · C camera
               </p>
             </div>
           )}
