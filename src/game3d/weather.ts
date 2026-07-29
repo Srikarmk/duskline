@@ -170,11 +170,16 @@ function makeLayer(o: LayerOpts): Layer {
     geo.setAttribute("color", colAttr);
   }
 
+  // Big haze/fog clouds (size > 4) keep size-attenuation so they read as volume.
+  // Small flakes/motes DON'T — with attenuation on, any that drift near the lens
+  // balloon into giant white blobs (the recurring "map is glitching"). Rendered
+  // at a fixed screen size they stay tidy dots no matter how close.
+  const attenuate = o.size > 4;
   const mat = new THREE.PointsMaterial({
     color: twinkles ? 0xffffff : base,
     map: o.texture,
-    size: o.size,
-    sizeAttenuation: true,
+    size: attenuate ? o.size : o.size * 2.6, // fixed-pixel flakes need a bump to stay visible
+    sizeAttenuation: attenuate,
     transparent: true,
     opacity: o.opacity,
     depthWrite: false,

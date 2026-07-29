@@ -40,8 +40,8 @@ export const LATERAL_DAMP = 7.5;
 export const CENTRI_K = 0.78; // stronger corner load — you must actively steer/brake, not coast turns
 
 // --- free-roam driving (the car is a world-space body, not rail-locked) ---
-export const FREE_TURN_RATE = 3.0; // base yaw rate (rad/s) — sharper turn-in, more responsive
-export const FREE_GRIP = 9.6;      // lateral traction (side-slip bleed / s) — planted, not floaty; handbrake loosens it for drift
+export const FREE_TURN_RATE = 2.6; // base yaw rate (rad/s) — dialed back from 3.0 so it's controllable, not darty
+export const FREE_GRIP = 11.5;     // lateral traction (side-slip bleed / s) — high, so the car stays PLANTED and stable; handbrake still breaks it loose for drift
 /** grip while braking (weight forward → sharper turn-in) */
 export const WEIGHT_BRAKE_GRIP = 1.3;
 /** grip while on the throttle (weight back → a touch looser) */
