@@ -5,6 +5,7 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import {
   WIDTH, HEIGHT, STEP,
   ROAD_HALF_WIDTH, LANE_CENTERS, CAR_LIFT,
@@ -1056,7 +1057,84 @@ export class Game {
     this.updateSparks(dt);
   }
 
+  /** Signature that dedups visually-identical materials, so a prop's sub-meshes
+   *  built with separate-but-equal material instances still batch together. */
+  private static matSig(mat: THREE.Material): string {
+    const m = mat as unknown as {
+      type: string; color?: THREE.Color; roughness?: number; metalness?: number;
+      emissive?: THREE.Color; emissiveIntensity?: number; map?: { uuid: string } | null;
+      transparent?: boolean; opacity?: number; side?: number; vertexColors?: boolean; flatShading?: boolean;
+    };
+    return [
+      m.type, m.color ? m.color.getHexString() : "-", m.roughness ?? "-", m.metalness ?? "-",
+      m.emissive ? m.emissive.getHexString() : "-", m.emissiveIntensity ?? "-",
+      m.map ? m.map.uuid : "-", m.transparent ? 1 : 0, m.opacity ?? 1, m.side ?? 0,
+      m.vertexColors ? 1 : 0, m.flatShading ? 1 : 0,
+    ].join("|");
+  }
+
+  /** Collapse a freshly-built prop's sub-meshes into one mesh per material, in
+   *  the prop's LOCAL space — so the caller's placement transform AND the wind
+   *  sway (which keys its amount off local vertex height and its phase off world
+   *  position) both keep working. Roughly 4x fewer draw calls across the world,
+   *  which is the dominant per-frame cost. Props containing sprites / instanced /
+   *  skinned / multi-material meshes are left untouched, and ANY failure returns
+   *  the original — batching must never change how a prop looks or break one. */
+  private mergeProp(root: THREE.Object3D): THREE.Object3D {
+    try {
+      let mergeable = true;
+      const meshes: THREE.Mesh[] = [];
+      root.traverse((o) => {
+        if (!mergeable) return;
+        const a = o as unknown as { isMesh?: boolean; isInstancedMesh?: boolean; isSkinnedMesh?: boolean; isSprite?: boolean; isLine?: boolean; isPoints?: boolean };
+        if (a.isSprite || a.isLine || a.isPoints || a.isInstancedMesh || a.isSkinnedMesh) { mergeable = false; return; }
+        if (a.isMesh) {
+          const m = o as THREE.Mesh;
+          if (Array.isArray(m.material) || o.userData.noMerge) { mergeable = false; return; }
+          meshes.push(m);
+        }
+      });
+      if (!mergeable || meshes.length < 2) return root;
+
+      root.updateMatrixWorld(true);
+      const invRoot = root.matrixWorld.clone().invert();
+      const buckets = new Map<string, { mat: THREE.Material; cast: boolean; recv: boolean; geos: THREE.BufferGeometry[] }>();
+      for (const m of meshes) {
+        let g = m.geometry.clone();
+        if (g.index) g = g.toNonIndexed();
+        // bake the mesh's transform relative to the prop root (local space)
+        g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(invRoot, m.matrixWorld));
+        // bucket by material AND exact attribute set, so a merge can never mismatch
+        const key = Game.matSig(m.material as THREE.Material) + "#" + Object.keys(g.attributes).sort().join(",");
+        let b = buckets.get(key);
+        if (!b) { b = { mat: m.material as THREE.Material, cast: !!m.castShadow, recv: !!m.receiveShadow, geos: [] }; buckets.set(key, b); }
+        b.geos.push(g);
+      }
+
+      const out = new THREE.Group();
+      out.position.copy(root.position);
+      out.quaternion.copy(root.quaternion);
+      out.scale.copy(root.scale);
+      out.userData = root.userData;
+      for (const b of buckets.values()) {
+        const merged = b.geos.length === 1 ? b.geos[0] : mergeGeometries(b.geos, false);
+        if (!merged) return root; // incompatible → keep the original, never break the look
+        const mesh = new THREE.Mesh(merged, b.mat);
+        mesh.castShadow = b.cast;
+        mesh.receiveShadow = b.recv;
+        out.add(mesh);
+      }
+      return out;
+    } catch {
+      return root; // any error → original prop, unchanged
+    }
+  }
+
   private sceneryObject(kind: SceneryKind, library: ModelLibrary, rand: () => number): THREE.Object3D {
+    return this.mergeProp(this.sceneryObjectRaw(kind, library, rand));
+  }
+
+  private sceneryObjectRaw(kind: SceneryKind, library: ModelLibrary, rand: () => number): THREE.Object3D {
     if (kind === "crystal") return makeCrystalCluster(rand, this.realm.palette.crystalColors);
     // textured procedural trees (bark trunk + leaf foliage) instead of the flat
     // low-poly kit models — shared materials so hundreds stay cheap
@@ -1480,7 +1558,7 @@ export class Game {
           for (const side of [-1, 1]) {
             for (const row of [0, 1]) {
               if (rand() < (row === 0 ? 0.8 : 0.32)) {
-                const t = makeTree(rand, this.treeMats!, kinds[Math.floor(rand() * kinds.length)]);
+                const t = this.mergeProp(makeTree(rand, this.treeMats!, kinds[Math.floor(rand() * kinds.length)]));
                 const off = side * (ROAD_HALF_WIDTH + 4 + row * 18 + rand() * 12);
                 const jd = d + rand() * 5;
                 const p = track.pointAt(this.track.wrap(jd), off);
