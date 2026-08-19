@@ -377,7 +377,10 @@ export class Game {
     this.viewW = w;
     this.viewH = h;
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    // preserveDrawingBuffer left OFF: nothing reads the WebGL backbuffer (realm
+    // thumbnails are static JPGs) and keeping it on blocks the browser's swap
+    // optimizations — a free perf win.
+    this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(w, h, false);
     this.renderer.domElement.className = "game-layer";
@@ -583,7 +586,13 @@ export class Game {
     sun.shadow.normalBias = 0.6;
     sun.shadow.radius = 4;               // soft PCF edges (not hard-cut)
     const sc = sun.shadow.camera;
-    sc.near = 1; sc.far = 420; sc.left = -95; sc.right = 95; sc.top = 95; sc.bottom = -95;
+    // Tight ±58m frustum (was ±95): the shadow pass is draw-call bound, and this
+    // culls the thousands of distant scenery casters that cost full price for a
+    // shadow you can barely see — the single biggest smoothness win. Bonus: the
+    // same 2048 map now covers a smaller area, so NEAR shadows are sharper. The
+    // frustum is biased toward travel direction (see render) so the road ahead
+    // stays shadowed.
+    sc.near = 1; sc.far = 320; sc.left = -58; sc.right = 58; sc.top = 58; sc.bottom = -58;
     sc.updateProjectionMatrix();
     scene.add(sun.target);
     this.sun = sun;
@@ -2843,10 +2852,17 @@ export class Game {
         : this.track.pointAt(this.position, 0, undefined, true).y;
       this.playerRoot.position.set(this.freeDrive.x, groundY + this.alt + CAR_LIFT, this.freeDrive.z);
       this.playerRoot.rotation.order = "YXZ";
-      // keep the shadow-casting sun (and its frustum) centred on the car
+      // keep the shadow-casting sun (and its tight frustum) centred slightly
+      // AHEAD of the car — along its travel direction — so the shorter-range
+      // frustum still covers the road you're driving into, not the space behind.
       if (this.sun) {
-        this.sun.target.position.set(this.freeDrive.x, groundY, this.freeDrive.z);
-        this.sun.position.set(this.freeDrive.x + 55, groundY + 120, this.freeDrive.z + 45);
+        const vx = this.freeDrive.vx, vz = this.freeDrive.vz;
+        const vl = Math.hypot(vx, vz);
+        const bx = vl > 1 ? (vx / vl) * 24 : 0;
+        const bz = vl > 1 ? (vz / vl) * 24 : 0;
+        const tx = this.freeDrive.x + bx, tz = this.freeDrive.z + bz;
+        this.sun.target.position.set(tx, groundY, tz);
+        this.sun.position.set(tx + 55, groundY + 120, tz + 45);
       }
       this.playerRoot.rotation.y = this.freeDrive.heading;
       // nose pitch: rides up ramps, arcs in the air, follows the road slope on
