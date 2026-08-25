@@ -1,8 +1,9 @@
 # Fantasy Racer — Progress Log
 
 A fantasy kart racer that started as a single 800×600 canvas and grew into a
-full 3D game with four realms, AI opponents, a transforming sword-mech, drift,
-stunts, a championship mode, sound, and a global leaderboard.
+full 3D game with eight realms, a competitive AI grid, a physically solid world
+with takedowns, a transforming sword-mech, drift, stunts, a championship mode,
+dynamic music, and a global leaderboard.
 
 **Play it:** https://fantasy-racer.vercel.app
 
@@ -512,16 +513,85 @@ route and a ramp on the other, over a striped central island](screenshots/forks-
 
 ---
 
+## Making it physical (this pass)
+
+The world stopped being a backdrop you drive through and became something you can hit.
+
+- **Solid scenery** — trees, rocks, buildings and mushrooms are real obstacles now:
+  overlap one and the car is pushed clear along the contact normal, its into-the-object
+  velocity is cancelled (no more tunnelling), speed scrubs and sparks throw. Soft things
+  (water, floating candles, thin flags) stay passable. Recorded as `{x,z,r}` in a spatial
+  grid and resolved every frame.
+- **Asphalt-style takedowns** — ram a rival and it spins out (~1.4 s) while you get a boost
+  and a score bump; environment hits are just an orange spark shower, no fake deflection.
+- **Off-track grace** — leaving the ribbon starts a countdown, not a wall; you respawn
+  cleanly where you left it. Random mines were removed.
+
+## A fair fight — competitive AI
+
+The grid was re-tuned into an actual race: the pole rival matches your top speed and the
+field strings out by personality, rubber-banded so a bad lap doesn't bury you — but **capped
+at your nitro ceiling** so nobody rockets off uncatchably. Finish-order ranking now uses the
+real line-crossing sequence.
+
+## Sound with a pulse + race drama
+
+- **Dynamic music** — the sleepy minor-pentatonic arpeggio became a **driving 4-bar groove**
+  (four-on-the-floor kick, backbeat snare, hats, a rolling bassline, an arp lead) whose layers
+  fade in with a speed/nitro-driven intensity signal — full tilt when you're flat out, a calm
+  pulse when you idle or finish.
+- **Callouts** — big centre-screen **OVERTAKE!** (with the place gained), **PASSED** and
+  **FINAL LAP** banners, debounced past the opening grid shuffle.
+
+## The payoff screen + flow
+
+The results screen makes your **finishing position the hero** — a giant ordinal with
+gold/silver/bronze podium glow (solo modes show finish time instead), score + personal best,
+and a one-tap rematch. Championship and intermission screens were reworked to match, the
+leaderboard gained rank medals + a "YOU" highlight, and a `prefers-reduced-motion` guard was
+added. A subtle always-on **cinematic vignette** now frames every frame.
+
+## Real-time shadows + a graphics pass
+
+PCF soft shadows from a sun whose frustum follows the car, a lighting rebalance, procedural
+rebuilds of the mushrooms / rocks / trees / gems, and a fix for weather particles ballooning
+into near-camera blobs.
+
+## The smoothness war-story — 33 → 85 fps (this pass)
+
+It looked done but didn't *feel* smooth, so I profiled the running engine instead of guessing:
+
+- **Physics was free** (~0.05 ms/frame). The whole cost was **rendering**, and it was
+  **draw-call bound**: ~**12,500 meshes** but only 800k triangles. Lowering the pixel ratio did
+  nothing — per-object CPU overhead, not fill.
+- **Fix 1 — tighter shadows.** Shrank the sun's shadow frustum (±95 m → ±58 m, biased toward
+  travel direction) so it stops drawing thousands of distant casters; near shadows came out
+  sharper. Dropped `preserveDrawingBuffer` (nothing reads the backbuffer — the realm thumbs
+  are static JPGs).
+- **Fix 2 — batched scenery, in local space.** Each prop's 5–8 sub-meshes collapse into one
+  mesh per material. It *had* to be local-space: the foliage wind shader keys its sway off
+  **local vertex height**, so a world-space merge would've made the trees flail. Defensive by
+  design — anything it can't safely batch it leaves untouched, so it never changes the look.
+
+**Meshes 12,474 → 5,627. Render ~24 ms → 11.75 ms. ~33 → ~85 fps. Forest pixel-for-pixel
+identical.**
+
+---
+
 ## Where it stands now
 
 - **8 realms**: Enchanted Forest, Ember Wastes, Crystal Peaks, Void Circuit,
   Sunspire Sands (Egypt), Hogwarts (wizarding castle), Apex Speedway (F1 stadium),
   Neon Metro (NYC) — each with its own weather, ambience, lore and set-pieces
-- **8 karts**: Comet, Bolt, Titan, Wisp, Apex (F1), Goliath (monster truck),
-  Corsair (ship), Baron (limo) — each a distinct model + stat line, picked in
-  a live 3D garage
+- **10 karts**: Comet, Bolt, Titan, Wisp, Apex, Goliath, Wraith, Nitro, Dune,
+  Blaze — each a distinct model + stat line, picked in a live 3D garage
 - **4 modes**: Classic, Time Trial, Nitro Sprint, Transformer Rush
-- **8-car F1 grid** (7 rivals + you) with live position + a top-down minimap
+- **8-car F1 grid** (7 rivals + you) — a competitive, rubber-banded AI capped at
+  your nitro ceiling so it's a catchable fight, with live position, **OVERTAKE! /
+  FINAL LAP** callouts, and a top-down minimap
+- **A physically solid world** — scenery you can hit (push-out + speed scrub +
+  sparks), **Asphalt-style takedowns** (ram a rival to spin it out for a boost),
+  and off-track grace + clean respawn instead of walls
 - **Branching routes** — forks that split around a central island into two
   routes (a boost gate one way, a jump ramp the other) and rejoin
 - **Track quirks** — rideable single-lane ramps (sideways = crash), drive-through
@@ -532,12 +602,19 @@ route and a ramp on the other, over a striped central island](screenshots/forks-
 - **Transformer mech** with an energy sword + monster combat
 - **Power-ups**: boost / shield / homing missile / mines, item boxes, and
   opponents that fight back — press **E** to fire
-- **Bloom** + **ACES tone mapping** (dialled to a calm glow), speed-FX overlay,
-  procedural sound + per-realm ambience, pause + settings, a results screen
+- **Real-time PCF soft shadows** (frustum follows the car), **bloom** + **ACES
+  tone mapping** (dialled to a calm glow), an always-on cinematic vignette + a
+  speed-FX overlay
+- **Dynamic music** that builds with your speed + nitro, procedural SFX and
+  per-realm ambience, pause + settings
+- **A podium results screen** where your finishing position is the hero (medal
+  tiers, score + personal best), plus championship + intermission flow
 - **Global leaderboard** (activates fully once a KV store is connected)
 
 **Stack:** Next.js 15 · React 19 · TypeScript · Three.js · Web Audio ·
-Vercel. Assets: Kenney CC0 kits. ~60 fps (measured ~1.4 ms/frame with bloom).
+Vercel. Assets: Kenney CC0 kits. Comfortably **60+ fps** after a draw-call
+batching pass — the scenery render was profiled and cut from ~12,500 meshes to
+~5,600 (render time roughly halved).
 
 ---
 
@@ -554,9 +631,16 @@ The look and UX are in good shape; the next arc is depth of play.
   per-realm weather + ambience, tunnels, waterfalls and river-bridge jumps, and
   new track quirks (boost gates, escalators, rideable ramps). Still open: hazards,
   time-of-day variety, more modes.
-- **Feel & polish** — real counter-steer drift, boost chaining, speed lines,
-  screen shake, dynamic camera, juicier hit/pickup feedback.
+- ~~**Feel & polish**~~ — ✅ mostly shipped: drift-boost, weight transfer, a
+  camera that banks + kicks FOV, speed-FX + vignette, screen shake, dynamic music
+  that builds with speed, and race-drama callouts. A physically solid world with
+  takedowns landed too. Still open: boost chaining, true counter-steer drift.
+- ~~**Performance**~~ — ✅ profiled and fixed: the render was draw-call bound on
+  ~12,500 scenery meshes; per-prop batching + a tighter shadow frustum roughly
+  halved frame time (~33 → ~85 fps in a headless browser). Next lever for locked-60
+  on weak hardware: cross-prop chunk-batching of the *non-foliage* static props
+  (safe only where there's no wind shader).
 
-Also open: textured foliage (the nature kit ships no atlas — needs custom UV
-maps), a shared KV leaderboard, and touch controls for mobile. (Banked corners
-now ship as berm-lifted turns.)
+Also open: a shared KV leaderboard, and touch controls for mobile. (Textured
+foliage now ships via procedural bark/leaf materials; banked corners ship as
+berm-lifted turns.)
