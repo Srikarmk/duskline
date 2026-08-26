@@ -15,6 +15,7 @@ export interface DriveTuning {
   accel: number;      // forward acceleration (m/s²)
   turnRate: number;   // base yaw rate (rad/s) at moderate speed
   grip: number;       // lateral traction (per-second bleed of side-slip)
+  contain?: boolean;  // soft walls keep the car on the ribbon (default true); false = free flight (mech)
 }
 
 const clampN = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -80,8 +81,8 @@ export class FreeDrive {
     const spd = Math.abs(vf);
     const speedFrac = clampN(spd / tuning.maxSpeed, 0, 1);
     const move = clampN(spd / 4, 0, 1);                           // needs some motion to turn
-    // more stable at speed (0.62..1.0) so fast corners aren't twitchy
-    const turn = steer * tuning.turnRate * (0.62 + 0.38 * (1 - speedFrac)) * move * Math.sign(vf || 1);
+    // more stable at speed (0.5..1.0) so fast corners aren't twitchy
+    const turn = steer * tuning.turnRate * (0.5 + 0.5 * (1 - speedFrac)) * move * Math.sign(vf || 1);
     this.heading += turn * dt;
 
     // --- grip: bleed side-slip (traction). Handbrake or grass = looser = drift.
@@ -126,13 +127,33 @@ export class FreeDrive {
     this.lateral = bestLat;
     this.onBranchIdx = kind;
     this.offRoad = Math.abs(bestLat) > ROAD_HALF_WIDTH;
+    void cx; void cz;
 
-    // NO walls — you're free to leave the ribbon and cut across the terrain.
-    // The engine runs a short off-track timer and respawns you if you stray too
-    // long; here we just report offRoad (which loosens grip) and never contain
-    // the car. Grass already bleeds speed via grassMul above.
+    // SOFT-BUT-FIRM WALLS keep the car on the ribbon (and inside tubes/tunnels).
+    // You can run a little onto the verge, but past `soft` you're smoothly steered
+    // back, and you can never cross `hard` — so the car never sails off into the
+    // void or out of a tunnel. Disabled for the flying mech (contain === false).
     this.onWall = false;
-    void cx; void cz; void rx; void rz;
+    if (tuning.contain !== false) {
+      const absLat = Math.abs(bestLat);
+      const soft = ROAD_HALF_WIDTH + 0.6;  // grass overrun begins (~5.6 m)
+      const hard = ROAD_HALF_WIDTH + 1.6;  // absolute limit (~6.6 m) — never past this
+      if (absLat > soft) {
+        // inward direction (toward the centreline) = -sign(lateral) · road-right
+        const inx = -Math.sign(bestLat) * rx, inz = -Math.sign(bestLat) * rz;
+        const over = absLat - soft;
+        // gentle spring back toward `soft`, plus a hard clamp so you can't pass `hard`
+        let corr = over * Math.min(1, dt * 10);
+        if (absLat > hard) corr = Math.max(corr, absLat - hard);
+        this.x += inx * corr; this.z += inz * corr;
+        // kill the outward-heading velocity so you don't keep plowing off the edge
+        const outward = this.vx * -inx + this.vz * -inz;
+        if (outward > 0) { this.vx += inx * outward; this.vz += inz * outward; }
+        this.lateral = Math.sign(bestLat) * (absLat - corr); // reflect the correction
+        this.offRoad = Math.abs(this.lateral) > ROAD_HALF_WIDTH;
+        this.onWall = true;
+      }
+    }
   }
 
   /** Ground height at the car (track surface). Engine adds jump altitude on top. */

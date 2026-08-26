@@ -24,7 +24,7 @@ export const OFF_ROAD_LIMIT = MAX_SPEED / 4;
 // transfer, steering inertia and speed-sensitive authority give it heft.
 
 /** how fast the "wheel" turns toward the input (steering inertia = weight) */
-export const STEER_RESPONSE = 12;
+export const STEER_RESPONSE = 8;  // lower = the wheel eases in, not a twitchy snap
 /** how fast steering re-centers when released */
 export const STEER_RETURN = 13;
 /** lateral accel from full steer at speed (playerX units/s²) */
@@ -40,7 +40,7 @@ export const LATERAL_DAMP = 7.5;
 export const CENTRI_K = 0.78; // stronger corner load — you must actively steer/brake, not coast turns
 
 // --- free-roam driving (the car is a world-space body, not rail-locked) ---
-export const FREE_TURN_RATE = 2.6; // base yaw rate (rad/s) — dialed back from 3.0 so it's controllable, not darty
+export const FREE_TURN_RATE = 2.0; // base yaw rate (rad/s) — dialed back further (was 2.6) so it isn't over-sensitive/darty
 export const FREE_GRIP = 11.5;     // lateral traction (side-slip bleed / s) — high, so the car stays PLANTED and stable; handbrake still breaks it loose for drift
 /** grip while braking (weight forward → sharper turn-in) */
 export const WEIGHT_BRAKE_GRIP = 1.3;

@@ -681,6 +681,13 @@ export class Game {
   private obsKey(x: number, z: number) {
     return Math.floor(x / Game.OBS_CELL) + "," + Math.floor(z / Game.OBS_CELL);
   }
+  /** A prop is a SOLID obstacle only if its whole body sits clear of the road —
+   *  i.e. even its nearest edge is off the ribbon. Anything whose body reaches
+   *  onto the racing line (usually a prop the track curves back toward) is left
+   *  passable, so there are no invisible walls in your way. */
+  private obstacleClear(x: number, z: number, r: number): boolean {
+    return Math.abs(this.track.project(x, z).lateral) - r > ROAD_HALF_WIDTH + 0.5;
+  }
   /** Bucket the recorded obstacles into a spatial grid for cheap per-frame lookup. */
   private buildObstacleGrid() {
     this.obstacleGrid.clear();
@@ -717,7 +724,7 @@ export class Game {
           this.freeDrive.z += nz * push;
           const into = this.freeDrive.vx * nx + this.freeDrive.vz * nz; // velocity component INTO it
           if (into < 0) { this.freeDrive.vx -= nx * into; this.freeDrive.vz -= nz * into; } // cancel it (no tunnel)
-          this.freeDrive.vx *= 0.86; this.freeDrive.vz *= 0.86;         // impact scrub
+          this.freeDrive.vx *= 0.92; this.freeDrive.vz *= 0.92;         // impact scrub (gentle — a clip shouldn't stop you dead)
           hit = true;
         }
       }
@@ -1511,7 +1518,8 @@ export class Game {
             const p = track.pointAt(jd, off);
             obj.position.set(p.x, this.terrainYAt(jd, off), p.z); // sit on the terrain (roads have elevation now)
             this.scene.add(obj);
-            if (!SOFT_SCENERY.has(kind)) this.obstacles.push({ x: p.x, z: p.z, r: isLandmark ? 5 : 1.7 });
+            const nr = isLandmark ? 5 : 1.7;
+            if (!SOFT_SCENERY.has(kind) && this.obstacleClear(p.x, p.z, nr)) this.obstacles.push({ x: p.x, z: p.z, r: nr });
           }
           // mid band
           if (rand() < 0.56) {
@@ -1523,7 +1531,7 @@ export class Game {
             obj.position.set(p.x, this.terrainYAt(jd, off), p.z);
             obj.scale.multiplyScalar(1.1 + rand() * 0.5);
             this.scene.add(obj);
-            if (!SOFT_SCENERY.has(kind)) this.obstacles.push({ x: p.x, z: p.z, r: 2.2 });
+            if (!SOFT_SCENERY.has(kind) && this.obstacleClear(p.x, p.z, 2.2)) this.obstacles.push({ x: p.x, z: p.z, r: 2.2 });
           }
           // far band (big, fills the mid-distance out toward the mountains)
           if (rand() < 0.34) {
@@ -1566,7 +1574,7 @@ export class Game {
                 t.rotation.y = rand() * Math.PI * 2;
                 t.scale.multiplyScalar(0.95 + rand() * 1.0);
                 this.scene.add(t);
-                this.obstacles.push({ x: p.x, z: p.z, r: 1.7 }); // solid tree trunk
+                if (this.obstacleClear(p.x, p.z, 1.7)) this.obstacles.push({ x: p.x, z: p.z, r: 1.7 }); // solid tree trunk
               }
             }
           }
@@ -2148,7 +2156,7 @@ export class Game {
         handbrake,
       },
       dt, this.track,
-      { maxSpeed: this.effectiveMaxSpeed(), accel: driveAccel, turnRate: FREE_TURN_RATE, grip: FREE_GRIP },
+      { maxSpeed: this.effectiveMaxSpeed(), accel: driveAccel, turnRate: FREE_TURN_RATE, grip: FREE_GRIP, contain: !this.transformed },
     );
     this.resolveObstacles(dt); // keep the car OUT of solid scenery (trees/rocks/buildings)
     // derive the rail-space coordinates every other system still reads
@@ -2327,7 +2335,9 @@ export class Game {
     // a few seconds. Stray off the ribbon and a countdown starts; get back on
     // before it expires and nothing happens — ignore it and you respawn on the
     // track. Never any score penalty.
-    const offTrack = !this.transformed && Math.abs(this.freeDrive.lateral) > ROAD_HALF_WIDTH + 1.5;
+    // The soft walls now hold the car within ~6.6 m of centre, so this respawn is
+    // only a failsafe for the rare case something knocks it clean past the wall.
+    const offTrack = !this.transformed && Math.abs(this.freeDrive.lateral) > ROAD_HALF_WIDTH + 3;
     if (offTrack && this.phase === "racing") {
       if (this.offTrackT <= 0) {
         this.offTrackT = OFFTRACK_GRACE;          // just left the ribbon
