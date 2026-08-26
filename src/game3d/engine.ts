@@ -110,13 +110,18 @@ const MODE_CONFIG: Record<GameMode, ModeConfig> = {
   spacewars: { laps: 3, opponents: true,  orbs: false, monsters: false, startNitro: 1, label: "SPACE WARS", combat: true },
 };
 
+/** Lateral half-width for a hit, in ROAD_HALF_WIDTH units (1.0 = 5 m). Pickups are
+ *  deliberately GENEROUS — arcade racers reward driving near a gem, not pixel-perfect
+ *  aim — while hazards (rock/monster) stay tight so you're never hit unfairly. */
 const COLLIDE_WIDTH: Record<EntityType, number> = {
-  gem: 0.36, airGem: 0.42, nitro: 0.36, orb: 0.44, ramp: 1.45, rock: 0.34, monster: 0.38, itembox: 0.56,
-  boostpad: 1.0, boostgate: 0.45,
+  gem: 0.5, airGem: 0.55, nitro: 0.5, orb: 0.58, ramp: 1.45, rock: 0.34, monster: 0.38, itembox: 0.7,
+  boostpad: 1.0, boostgate: 0.5,
 };
 
 const BUCKET_METERS = 5;
-const COLLIDE_DIST = 3.4;
+/** longitudinal hit window (m). Must comfortably exceed the per-step travel at
+ *  nitro speed (~78 m/s ÷ 60 Hz ≈ 1.3 m) so nothing is ever stepped over. */
+const COLLIDE_DIST = 4.2;
 /** how many power-ups you can bank at once (fire with E, oldest first) */
 const MAX_ITEMS = 3;
 
@@ -2626,8 +2631,10 @@ export class Game {
       let gap = e.dist - this.position;
       if (gap > len / 2) gap -= len;
       if (gap < -len / 2) gap += len;
-      if (Math.abs(gap) > 3) continue;
-      if (Math.abs(this.playerX - e.lateral) > COLLIDE_WIDTH.monster) continue;
+      // monsters CHARGE, so the closing speed is high — a tight window made hits
+      // land only on lucky frames. Wider window + metre-space lateral (see collide).
+      if (Math.abs(gap) > 5) continue;
+      if (Math.abs(this.freeDrive.lateral - e.lateral * ROAD_HALF_WIDTH) > COLLIDE_WIDTH.monster * ROAD_HALF_WIDTH) continue;
       if (this.alt > 1.6) continue;
 
       if (this.transformed && this.slashCooldown <= 0) {
@@ -2675,7 +2682,12 @@ export class Game {
         let dd = Math.abs(e.dist - this.position);
         dd = Math.min(dd, this.track.length - dd);
         if (dd > COLLIDE_DIST) continue;
-        if (Math.abs(this.playerX - e.lateral) > COLLIDE_WIDTH[e.type]) continue;
+        // Compare laterals in METRES. Entities are placed at `lateral *
+        // ROAD_HALF_WIDTH` (5 m/unit) but playerX is scaled by ROAD_HALF_WIDTH *
+        // 0.9 (4.5 m/unit) — mixing the two skewed every check by up to ~0.5 m
+        // near the edges, which is why pickups missed inconsistently.
+        const latGapM = Math.abs(this.freeDrive.lateral - e.lateral * ROAD_HALF_WIDTH);
+        if (latGapM > COLLIDE_WIDTH[e.type] * ROAD_HALF_WIDTH) continue;
         this.hitEntity(e, speedPercent);
       }
     }
@@ -3039,9 +3051,24 @@ export class Game {
       // auto-follow: the camera yaw eases toward the car's heading instead of
       // snapping to it, so flicking the wheel swings the view in smoothly behind
       // you (much easier to place the car). Snap it on a hard cut (start/camera cycle).
-      let dyaw = this.freeDrive.heading - this.camYaw;
+      // AUTO-TURN INTO BENDS: aim the camera down the ROAD AHEAD, not just where
+      // the nose points, so a corner opens up BEFORE you reach it and you can
+      // place the car instead of discovering the turn late (and running wide).
+      // Looks further ahead the faster you go; fades out if you leave the ribbon
+      // (then it just follows the car) and while the mech is flying.
+      let targetYaw = this.freeDrive.heading;
+      if (!this.transformed && this.freeDrive.speed > 2) {
+        const lookAhead = 16 + spd * 30;
+        const tA = this.track.tangentAt(this.track.wrap(this.freeDrive.dist + lookAhead));
+        let toRoad = Math.atan2(tA.x, tA.z) - this.freeDrive.heading;
+        toRoad = Math.atan2(Math.sin(toRoad), Math.cos(toRoad)); // shortest way round
+        // full strength on the ribbon, easing to 0 by ~6 m off it
+        const onRibbon = clamp(1 - (Math.abs(this.freeDrive.lateral) - ROAD_HALF_WIDTH) / 6, 0, 1);
+        targetYaw = this.freeDrive.heading + toRoad * 0.6 * onRibbon;
+      }
+      let dyaw = targetYaw - this.camYaw;
       dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw));
-      if (this.camSnap) this.camYaw = this.freeDrive.heading;
+      if (this.camSnap) this.camYaw = targetYaw;
       else this.camYaw += dyaw * 0.12;
       const fx = Math.sin(this.camYaw), fz = Math.cos(this.camYaw);
 

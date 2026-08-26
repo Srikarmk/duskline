@@ -101,8 +101,15 @@ export class Track {
   }
 
   /** Project a world (x,z) onto the centreline. Returns the arc distance of the
-   *  nearest point and the signed lateral offset in METRES (right of travel = +).
-   *  Used by the free-roam driving model for progress, grounding and walls. */
+   *  nearest point and the signed lateral offset in METRES.
+   *
+   *  The sign convention MATCHES `pointAt(dist, lateral)` — i.e. projecting the
+   *  point `pointAt(d, L)` gives back `lateral === L`. That round-trip matters:
+   *  everything in the world (entities, AI lanes, mines) is PLACED with pointAt,
+   *  while the car's position is MEASURED with project, and the two are compared
+   *  against each other constantly (pickups, monster homing, rival gaps). The raw
+   *  cross-product below is the opposite handedness to pointAt's right-vector, so
+   *  it is negated here to keep the two in agreement. */
   project(x: number, z: number): { dist: number; lateral: number } {
     const n = this.samples;
     let bi = 0, bd = Infinity;
@@ -125,7 +132,7 @@ export class Track {
         let da = this.cd[a], db = this.cd[b];
         if (db < da) db += this.length; // seam wrap
         const invLen = 1 / Math.sqrt(segLen2);
-        best = { dist: this.wrap(da + (db - da) * t), lateral: (sz * dx - sx * dz) * invLen, d2 };
+        best = { dist: this.wrap(da + (db - da) * t), lateral: (sx * dz - sz * dx) * invLen, d2 };
       }
     }
     return { dist: best.dist, lateral: best.lateral };

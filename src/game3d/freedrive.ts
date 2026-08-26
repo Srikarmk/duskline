@@ -139,8 +139,10 @@ export class FreeDrive {
       const soft = ROAD_HALF_WIDTH + 0.6;  // grass overrun begins (~5.6 m)
       const hard = ROAD_HALF_WIDTH + 1.6;  // absolute limit (~6.6 m) — never past this
       if (absLat > soft) {
-        // inward direction (toward the centreline) = -sign(lateral) · road-right
-        const inx = -Math.sign(bestLat) * rx, inz = -Math.sign(bestLat) * rz;
+        // Inward direction (toward the centreline). `rx,rz` here is (tan.z,-tan.x),
+        // which is the OPPOSITE of pointAt's right-vector — and project()'s lateral
+        // now matches pointAt — so inward is +sign(lateral) · (rx,rz).
+        const inx = Math.sign(bestLat) * rx, inz = Math.sign(bestLat) * rz;
         const over = absLat - soft;
         // gentle spring back toward `soft`, plus a hard clamp so you can't pass `hard`
         let corr = over * Math.min(1, dt * 10);
