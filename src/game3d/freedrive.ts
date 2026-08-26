@@ -16,6 +16,7 @@ export interface DriveTuning {
   turnRate: number;   // base yaw rate (rad/s) at moderate speed
   grip: number;       // lateral traction (per-second bleed of side-slip)
   contain?: boolean;  // soft walls keep the car on the ribbon (default true); false = free flight (mech)
+  assist?: number;    // gentle auto-turn into bends (rad/s per rad of error); 0/undefined = off
 }
 
 const clampN = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -128,6 +129,22 @@ export class FreeDrive {
     this.onBranchIdx = kind;
     this.offRoad = Math.abs(bestLat) > ROAD_HALF_WIDTH;
     void cx; void cz;
+
+    // GENTLE AUTO-TURN: a light steering assist that eases the nose toward the
+    // road ahead through bends, so the car tracks the corner instead of running
+    // wide. Deliberately subtle — it never drives for you: it backs off as soon
+    // as you steer, is off while drifting, and only helps when you're already
+    // pointing roughly down the road and on the ribbon.
+    if (tuning.assist && !input.handbrake && vf > 5) {
+      const ta = track.tangentAt(track.wrap(this.dist + 14));
+      let toRoad = Math.atan2(ta.x, ta.z) - this.heading;
+      toRoad = Math.atan2(Math.sin(toRoad), Math.cos(toRoad)); // shortest way round
+      if (Math.abs(toRoad) < 0.7) {
+        const onRibbon = clampN(1 - (Math.abs(this.lateral) - ROAD_HALF_WIDTH) / 4, 0, 1);
+        const yieldToInput = 1 - Math.min(1, Math.abs(steer)) * 0.7; // your input wins
+        this.heading += toRoad * tuning.assist * yieldToInput * onRibbon * dt;
+      }
+    }
 
     // SOFT-BUT-FIRM WALLS keep the car on the ribbon (and inside tubes/tunnels).
     // You can run a little onto the verge, but past `soft` you're smoothly steered

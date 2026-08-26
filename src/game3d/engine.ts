@@ -11,7 +11,7 @@ import {
   ROAD_HALF_WIDTH, LANE_CENTERS, CAR_LIFT,
   MAX_SPEED, ACCEL, BRAKING, DECEL, OFF_ROAD_DECEL, OFF_ROAD_LIMIT,
   STEER_RESPONSE, STEER_RETURN, TURN_ACCEL, STEER_SPEED_FALLOFF,
-  GRIP_LIMIT, LATERAL_DAMP, CENTRI_K, FREE_TURN_RATE, FREE_GRIP, WEIGHT_BRAKE_GRIP, WEIGHT_THROTTLE_GRIP,
+  GRIP_LIMIT, LATERAL_DAMP, CENTRI_K, FREE_TURN_RATE, FREE_GRIP, FREE_STEER_ASSIST, WEIGHT_BRAKE_GRIP, WEIGHT_THROTTLE_GRIP,
   DRIFT_GRIP_MULT, DRIFT_STEER_MULT, DRIFT_MIN_CHARGE, DRIFT_BOOST_FACTOR,
   OUT_OF_BOUNDS_X, OFFTRACK_GRACE,
   NITRO_MAX_CHARGES, NITRO_DURATION, NITRO_SPEED_FACTOR,
@@ -1440,13 +1440,33 @@ export class Game {
    *  ribbon, easing over `fall` metres into per-realm rolling hills further out. */
   private groundHeightAtXZ(x: number, z: number): number {
     const { sx, sz, sy } = this.ensureTerrSamples();
-    let best = 1e18, by = 0;
-    for (let i = 0; i < sx.length; i++) { const dx = x - sx[i], dz = z - sz[i]; const d = dx * dx + dz * dz; if (d < best) { best = d; by = sy[i]; } }
-    const dist = Math.sqrt(best);
+    const n = sx.length;
+    let best = 1e18, bi = 0;
+    for (let i = 0; i < n; i++) { const dx = x - sx[i], dz = z - sz[i]; const d = dx * dx + dz * dz; if (d < best) { best = d; bi = i; } }
+    // Interpolate the road height ALONG the centreline rather than snapping to the
+    // nearest sample. Snapping produced a staircase whose steps stood up to ~0.2 m
+    // ABOVE the real (smooth) road surface between samples — that is the terrain
+    // poking through the ribbon that reads as "dirt instead of road".
+    let by = sy[bi], bd2 = best;
+    for (const j of [(bi - 1 + n) % n, (bi + 1) % n]) {
+      const ax = sx[bi], az = sz[bi], ux = sx[j] - ax, uz = sz[j] - az;
+      const L2 = ux * ux + uz * uz || 1;
+      const t = Math.max(0, Math.min(1, ((x - ax) * ux + (z - az) * uz) / L2));
+      const px = ax + ux * t, pz = az + uz * t;
+      const dx = x - px, dz = z - pz, d2 = dx * dx + dz * dz;
+      if (d2 < bd2) { bd2 = d2; by = sy[bi] + (sy[j] - sy[bi]) * t; }
+    }
+    const dist = Math.sqrt(bd2);
     const near = 34, fall = 108; // narrower flat shelf + steeper onset = more dramatic land
     const t = dist <= near ? 1 : dist >= near + fall ? 0 : 1 - (dist - near) / fall;
     const ts = t * t * (3 - 2 * t);
-    return by * ts + this.reliefAmp * (1 - ts) * this.terrainRelief(x, z);
+    const y = by * ts + this.reliefAmp * (1 - ts) * this.terrainRelief(x, z);
+    // Hold the ground a few cm BELOW the ribbon across the road corridor so the
+    // road always wins the depth test (no z-fighting, no dirt bleeding over the
+    // tarmac). Eased out over ~20 m, so it's far too gentle to feel while driving.
+    const CLEAR = 0.12, CLEAR_FAR = 26;
+    const fade = Math.max(0, dist - ROAD_HALF_WIDTH) / (CLEAR_FAR - ROAD_HALF_WIDTH);
+    return y - CLEAR * Math.max(0, 1 - fade);
   }
 
   private buildGroundTerrain(mat: THREE.Material): THREE.Mesh {
@@ -2161,7 +2181,12 @@ export class Game {
         handbrake,
       },
       dt, this.track,
-      { maxSpeed: this.effectiveMaxSpeed(), accel: driveAccel, turnRate: FREE_TURN_RATE, grip: FREE_GRIP, contain: !this.transformed },
+      {
+        maxSpeed: this.effectiveMaxSpeed(), accel: driveAccel, turnRate: FREE_TURN_RATE, grip: FREE_GRIP,
+        contain: !this.transformed,
+        // no auto-turn in the air (you're aiming a landing) or as the flying mech
+        assist: (this.stuntAir || this.transformed) ? 0 : FREE_STEER_ASSIST,
+      },
     );
     this.resolveObstacles(dt); // keep the car OUT of solid scenery (trees/rocks/buildings)
     // derive the rail-space coordinates every other system still reads

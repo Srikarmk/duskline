@@ -262,12 +262,23 @@ export class Sound {
     // kick, backbeat snare, hats, a rolling bassline and an arpeggiated lead.
     // Layers fade in with `musicIntensity` (fed by speed) so the track lifts as
     // the car goes faster and settles to a calm pulse when idling/finished.
-    const bassRoots = [110, 87.31, 65.41, 98];        // Am  F   C   G
-    const leadPools = [
-      [220, 261.63, 329.63, 392, 440],    // Am: A C E G A
-      [174.61, 220, 261.63, 349.23, 440], // F:  F A C F A
-      [196, 261.63, 329.63, 392, 523.25], // C:  G C E G C
-      [196, 246.94, 293.66, 392, 587.33], // G:  G B D G D
+    // An EIGHT-bar progression (Am F C G | Am F G E) rather than a 4-bar loop, so
+    // it takes twice as long to come round and the E turnaround gives the phrase a
+    // real resolution instead of chasing its own tail.
+    const bassRoots = [110, 87.31, 65.41, 98, 110, 87.31, 98, 82.41];
+    // A written MELODY (one entry per bar, sixteenth-indexed) instead of a random
+    // walk through a note pool — a hook you can actually whistle. 0 = rest.
+    const A4 = 440, C5 = 523.25, D5 = 587.33, E5 = 659.25, G5 = 783.99;
+    const F5 = 698.46, B4 = 493.88, G4 = 392, E4 = 329.63, A5 = 880;
+    const melody: number[][] = [
+      [A4, 0, C5, 0, E5, 0, D5, 0, C5, 0, 0, 0, B4, 0, 0, 0],   // Am
+      [0, 0, A4, 0, C5, 0, F5, 0, E5, 0, 0, 0, C5, 0, 0, 0],    // F
+      [G4, 0, C5, 0, E5, 0, G5, 0, E5, 0, 0, 0, D5, 0, 0, 0],   // C
+      [0, 0, B4, 0, D5, 0, G5, 0, D5, 0, B4, 0, 0, 0, 0, 0],    // G
+      [A4, 0, E5, 0, C5, 0, A5, 0, G5, 0, E5, 0, C5, 0, 0, 0],  // Am (octave lift)
+      [0, 0, F5, 0, A5, 0, G5, 0, F5, 0, 0, 0, E5, 0, 0, 0],    // F
+      [G4, 0, D5, 0, G5, 0, F5, 0, D5, 0, 0, 0, B4, 0, 0, 0],   // G
+      [E4, 0, B4, 0, E5, 0, D5, 0, B4, 0, 0, 0, 0, 0, 0, 0],    // E (turnaround)
     ];
     this.musicTimer = setInterval(() => {
       if (!this.ctx || !this.musicBus || this.muted) return;
@@ -275,9 +286,10 @@ export class Sound {
       this.musicIntensity += (this.musicIntTarget - this.musicIntensity) * 0.15;
       const I = this.musicIntensity;
       const s = this.musicStep++;
-      const step = s % 16;                 // sixteenth within the bar
-      const root = bassRoots[Math.floor(s / 16) % 4];
-      const pool = leadPools[Math.floor(s / 16) % 4];
+      const step = s % 16;                       // sixteenth within the bar
+      const bar = Math.floor(s / 16) % 8;        // which bar of the eight
+      const root = bassRoots[bar];
+      const line = melody[bar];
 
       // pad: a soft root/fifth/octave swell on each downbeat for body
       if (step === 0) this.mPad([root, root * 1.5, root * 2], 0.05 + (1 - I) * 0.035);
@@ -287,8 +299,9 @@ export class Sound {
       if (I > 0.6 && step === 10) this.mKick(0.42);
       if (I > 0.82 && step === 14) this.mKick(0.44);
 
-      // backbeat snare (enters once you're moving)
+      // backbeat snare (enters once you're moving), with a fill into each 8-bar turn
       if (I > 0.25 && (step === 4 || step === 12)) this.mSnare(0.2 + I * 0.12);
+      if (I > 0.5 && bar === 7 && step >= 12) this.mSnare(0.12 + (step - 12) * 0.05);
 
       // hats: offbeats, then full sixteenths when flat out
       if (I > 0.3 && step % 2 === 1) this.mHat(0.05 + I * 0.05);
@@ -300,10 +313,13 @@ export class Sound {
         this.mBass(f, 0.2 + I * 0.08);
       }
 
-      // lead arpeggio: enters with intensity, doubles up when flat out
-      if (I > 0.45 && step % 2 === 0) this.mLead(pool[(s >> 1) % pool.length], 0.05 + I * 0.09);
-      if (I > 0.78 && step % 2 === 1) this.mLead(pool[s % pool.length] * 2, 0.04 + I * 0.05);
-    }, 118);
+      // the melody carries the tune once you're moving; a soft octave doubling
+      // and an offbeat counter-note stack on top when you're flat out
+      const note = line[step];
+      if (note && I > 0.34) this.mLead(note, 0.06 + I * 0.09);
+      if (note && I > 0.8) this.mLead(note * 2, 0.02 + I * 0.03);
+      if (I > 0.62 && !note && step % 4 === 2) this.mLead(root * 4, 0.02 + I * 0.03);
+    }, 112);
   }
 
   /** One musical tone routed to the music bus (optional pitch sweep + lowpass). */

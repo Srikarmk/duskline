@@ -42,6 +42,10 @@ export const CENTRI_K = 0.78; // stronger corner load — you must actively stee
 // --- free-roam driving (the car is a world-space body, not rail-locked) ---
 export const FREE_TURN_RATE = 2.0; // base yaw rate (rad/s) — dialed back further (was 2.6) so it isn't over-sensitive/darty
 export const FREE_GRIP = 11.5;     // lateral traction (side-slip bleed / s) — high, so the car stays PLANTED and stable; handbrake still breaks it loose for drift
+/** gentle auto-turn into bends (rad/s per rad of heading error). Subtle on
+ *  purpose — it helps the car track a corner without steering for you, and
+ *  fades out the moment you touch the wheel. Raise for more assist. */
+export const FREE_STEER_ASSIST = 1.2;
 /** grip while braking (weight forward → sharper turn-in) */
 export const WEIGHT_BRAKE_GRIP = 1.3;
 /** grip while on the throttle (weight back → a touch looser) */
