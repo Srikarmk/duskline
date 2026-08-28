@@ -1142,6 +1142,66 @@ export class Game {
     }
   }
 
+  /** Densely-sampled centreline, cached — used to guarantee no prop overlaps the
+   *  road ANYWHERE (a lateral offset only clears the road locally; on a winding
+   *  circuit the track loops back and can run right into a monument placed
+   *  "safely" 40 m off a different corner). */
+  private roadSamples: { x: Float64Array; z: Float64Array } | null = null;
+  private ensureRoadSamples() {
+    if (this.roadSamples) return this.roadSamples;
+    const step = 4;
+    const n = Math.max(64, Math.ceil(this.track.length / step));
+    const x = new Float64Array(n), z = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      const p = this.track.pointAt((this.track.length * i) / n, 0);
+      x[i] = p.x; z[i] = p.z;
+    }
+    this.roadSamples = { x, z };
+    return this.roadSamples;
+  }
+
+  /** How far a prop's own geometry reaches from its origin in X/Z (after scaling). */
+  private footprintReach(obj: THREE.Object3D): number {
+    obj.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(obj);
+    if (!isFinite(box.min.x) || !isFinite(box.max.x)) return 0;
+    return Math.max(
+      Math.abs(box.min.x), Math.abs(box.max.x),
+      Math.abs(box.min.z), Math.abs(box.max.z),
+    );
+  }
+
+  /** True if a prop of the given footprint, standing at (x,z), leaves the whole
+   *  circuit clear by `margin`. */
+  private roadClear(x: number, z: number, reach: number, margin = 3): boolean {
+    const { x: sx, z: sz } = this.ensureRoadSamples();
+    const need = ROAD_HALF_WIDTH + margin + reach;
+    const n2 = need * need;
+    for (let i = 0; i < sx.length; i++) {
+      const dx = x - sx[i], dz = z - sz[i];
+      if (dx * dx + dz * dz < n2) return false;
+    }
+    return true;
+  }
+
+  /** Push a prop's lateral offset out until its OWN footprint clears the road.
+   *  Monuments (pyramids, castles, grandstands) are tens of metres wide, so a
+   *  fixed band offset let them overhang the tarmac — you'd round a bend into a
+   *  pyramid sitting on the racing line. This measures the prop's ACTUAL scaled
+   *  footprint and guarantees a gap, in every realm and every band. Call AFTER
+   *  scaling and BEFORE positioning (the prop is still at the origin). */
+  private clearOffset(obj: THREE.Object3D, off: number, gap = 4): number {
+    obj.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(obj);
+    if (!isFinite(box.min.x) || !isFinite(box.max.x)) return off;
+    const reach = Math.max(
+      Math.abs(box.min.x), Math.abs(box.max.x),
+      Math.abs(box.min.z), Math.abs(box.max.z),
+    );
+    const need = ROAD_HALF_WIDTH + gap + reach;
+    return Math.sign(off) * Math.max(Math.abs(off), need);
+  }
+
   private sceneryObject(kind: SceneryKind, library: ModelLibrary, rand: () => number): THREE.Object3D {
     return this.mergeProp(this.sceneryObjectRaw(kind, library, rand));
   }
@@ -1538,9 +1598,12 @@ export class Game {
             // keep big monuments off the verge so they don't overhang the track
             const isLandmark = LANDMARK_KINDS.has(kind);
             const nearOff = isLandmark ? 34 + rand() * 22 : 5 + rand() * 13;
-            const off = side * (ROAD_HALF_WIDTH + nearOff);
+            const off = this.clearOffset(obj, side * (ROAD_HALF_WIDTH + nearOff));
             const jd = d + rand() * 4;
             const p = track.pointAt(jd, off);
+            // the offset clears the road HERE, but a winding circuit can loop back
+            // into this spot — drop the prop rather than block the racing line
+            if (!this.roadClear(p.x, p.z, this.footprintReach(obj))) continue;
             obj.position.set(p.x, this.terrainYAt(jd, off), p.z); // sit on the terrain (roads have elevation now)
             this.scene.add(obj);
             const nr = isLandmark ? 5 : 1.7;
@@ -1550,22 +1613,24 @@ export class Game {
           if (rand() < 0.56) {
             const kind = pickScenery(realm, rand);
             const obj = this.sceneryObject(kind, library, rand);
-            const off = side * (ROAD_HALF_WIDTH + 20 + rand() * 36);
+            obj.scale.multiplyScalar(1.1 + rand() * 0.5); // scale BEFORE clearing, so the gap uses the real size
+            const off = this.clearOffset(obj, side * (ROAD_HALF_WIDTH + 20 + rand() * 36));
             const jd = d + rand() * 4;
             const p = track.pointAt(jd, off);
+            if (!this.roadClear(p.x, p.z, this.footprintReach(obj))) continue;
             obj.position.set(p.x, this.terrainYAt(jd, off), p.z);
-            obj.scale.multiplyScalar(1.1 + rand() * 0.5);
             this.scene.add(obj);
             if (!SOFT_SCENERY.has(kind) && this.obstacleClear(p.x, p.z, 2.2)) this.obstacles.push({ x: p.x, z: p.z, r: 2.2 });
           }
           // far band (big, fills the mid-distance out toward the mountains)
           if (rand() < 0.34) {
             const obj = this.sceneryObject(pickScenery(realm, rand), library, rand);
-            const off = side * (ROAD_HALF_WIDTH + 58 + rand() * 70);
+            obj.scale.multiplyScalar(1.5 + rand() * 1.1); // scale BEFORE clearing, so the gap uses the real size
+            const off = this.clearOffset(obj, side * (ROAD_HALF_WIDTH + 58 + rand() * 70));
             const jd = d + rand() * 5;
             const p = track.pointAt(jd, off);
+            if (!this.roadClear(p.x, p.z, this.footprintReach(obj))) continue;
             obj.position.set(p.x, this.terrainYAt(jd, off), p.z);
-            obj.scale.multiplyScalar(1.5 + rand() * 1.1);
             this.scene.add(obj);
           }
         }
@@ -1630,9 +1695,16 @@ export class Game {
     // (boost pads, boost gates/rings and decorative ring hoops all removed —
     //  the track stays clean; only gems + nitro cans remain as pickups)
 
-    // nitro canisters
-    for (let d = 150; d < len - 40; d += 280) {
-      this.addEntity("nitro", d, lane(), makeNitroCan());
+    // nitro canisters — frequent enough that nitro is a rhythm you can count on
+    // rather than a rarity. Each site drops a PAIR in different lanes, so you no
+    // longer have to be in the one exact lane to ever pick a charge up.
+    let ni = 0;
+    for (let d = 130; d < len - 40; d += 145) {
+      const a = LANE_CENTERS[ni % 3];
+      const b = LANE_CENTERS[(ni + 1) % 3];
+      ni++;
+      this.addEntity("nitro", d, a, makeNitroCan());
+      this.addEntity("nitro", d + 7, b, makeNitroCan());
     }
 
     // (ramps + crest-jumps removed — focus is on clean driving + environments)
@@ -1691,7 +1763,16 @@ export class Game {
     // group takes a free random spin.
     const drop = (group: THREE.Object3D, frac: number, side: 1 | -1, off: number, faceRoad: boolean) => {
       const d = track.wrap(frac * len);
-      const lat = side * off;
+      // Hero monuments are huge, so a local offset isn't enough — walk them out
+      // until their whole footprint clears the ENTIRE circuit (a twisty lap can
+      // otherwise come back round straight into a pyramid).
+      let lat = this.clearOffset(group, side * off, 12);
+      const reach = this.footprintReach(group);
+      for (let tries = 0; tries < 24; tries++) {
+        const q = track.pointAt(d, lat);
+        if (this.roadClear(q.x, q.z, reach, 6)) break;
+        lat += side * 14;
+      }
       const p = track.pointAt(d, lat);
       group.position.set(p.x, this.terrainYAt(d, lat), p.z);
       if (faceRoad) {
@@ -1838,6 +1919,9 @@ export class Game {
     const place = (obj: THREE.Object3D, d: number, off: number, yaw = rand() * Math.PI * 2) => {
       const w = track.wrap(d);
       const p = track.pointAt(w, off);
+      // never let a realm feature sit on the racing line (the circuit can wind
+      // back into a spot that looked clear at this arc distance)
+      if (!this.roadClear(p.x, p.z, this.footprintReach(obj), 2)) return;
       obj.position.set(p.x, this.terrainYAt(w, off), p.z);
       obj.rotation.y = yaw;
       this.scene.add(obj);
@@ -2463,7 +2547,10 @@ export class Game {
       // off only slightly when they're ahead — keeps the race close and tense
       // rubber-band: rivals ease off HARD when they're ahead (up to -30%, so you
       // can catch a runaway leader) and only dig in a little when you pull away
-      const base = MAX_SPEED * o.pace * (1 + clamp(gap / 220, -0.3, 0.16));
+      // Gentle elastic only. The old -0.30 made a leading rival visibly brake to
+      // wait for you (and +0.16 made a trailing one reel you in on a straight) —
+      // the clearest "they're fake" tell. Now the field mostly races its own pace.
+      const base = MAX_SPEED * o.pace * (1 + clamp(gap / 320, -0.12, 0.09));
       o.update(dt, this.track, base, this.cfg.laps);
       // stamp the true finishing order the instant a rival crosses the final line
       if (o.finished && o.finishOrder === 0) o.finishOrder = ++this.finishSeq;
@@ -3083,18 +3170,18 @@ export class Game {
       // (then it just follows the car) and while the mech is flying.
       let targetYaw = this.freeDrive.heading;
       if (!this.transformed && this.freeDrive.speed > 2) {
-        const lookAhead = 16 + spd * 30;
+        const lookAhead = 20 + spd * 38;
         const tA = this.track.tangentAt(this.track.wrap(this.freeDrive.dist + lookAhead));
         let toRoad = Math.atan2(tA.x, tA.z) - this.freeDrive.heading;
         toRoad = Math.atan2(Math.sin(toRoad), Math.cos(toRoad)); // shortest way round
         // full strength on the ribbon, easing to 0 by ~6 m off it
         const onRibbon = clamp(1 - (Math.abs(this.freeDrive.lateral) - ROAD_HALF_WIDTH) / 6, 0, 1);
-        targetYaw = this.freeDrive.heading + toRoad * 0.6 * onRibbon;
+        targetYaw = this.freeDrive.heading + toRoad * 0.92 * onRibbon; // near-fully road-aligned: the bend opens up early
       }
       let dyaw = targetYaw - this.camYaw;
       dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw));
       if (this.camSnap) this.camYaw = targetYaw;
-      else this.camYaw += dyaw * 0.12;
+      else this.camYaw += dyaw * 0.17; // settle faster so the view leads the corner instead of trailing it
       const fx = Math.sin(this.camYaw), fz = Math.cos(this.camYaw);
 
       const targetFov = preset.fov + spd * 9 + (boosting ? 12 : 0); // speed-rush FOV kick, harder on boost
