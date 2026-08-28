@@ -1162,13 +1162,29 @@ export class Game {
 
   /** How far a prop's own geometry reaches from its origin in X/Z (after scaling). */
   private footprintReach(obj: THREE.Object3D): number {
+    return this.propMetrics(obj).reach;
+  }
+
+  /** A prop's XZ reach AND its height, plus the clearance it should keep from the
+   *  road. Clearance scales with HEIGHT on purpose: a 2 m bush at the verge is
+   *  scenery, but a 25 m pyramid the same distance away is a wall looming over
+   *  the racing line (and something you slam into the moment you run wide).
+   *  Tall monuments therefore stand well back and read as landscape. */
+  private propMetrics(obj: THREE.Object3D): { reach: number; height: number; margin: number } {
     obj.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(obj);
-    if (!isFinite(box.min.x) || !isFinite(box.max.x)) return 0;
-    return Math.max(
+    if (!isFinite(box.min.x) || !isFinite(box.max.x)) return { reach: 0, height: 0, margin: 3 };
+    const reach = Math.max(
       Math.abs(box.min.x), Math.abs(box.max.x),
       Math.abs(box.min.z), Math.abs(box.max.z),
     );
+    const height = Math.max(0, box.max.y - box.min.y);
+    // Scale the standoff by BULK (footprint), not height. A tall thin tree or
+    // obelisk at the verge is good scenery; a 25 m-WIDE pyramid the same
+    // distance away is a wall over the racing line. Keying on reach keeps the
+    // forest lush right up to the road while pushing monuments back.
+    const margin = 3 + Math.max(0, reach - 4) * 1.4;
+    return { reach, height, margin };
   }
 
   /** True if a prop of the given footprint, standing at (x,z), leaves the whole
@@ -1603,7 +1619,8 @@ export class Game {
             const p = track.pointAt(jd, off);
             // the offset clears the road HERE, but a winding circuit can loop back
             // into this spot — drop the prop rather than block the racing line
-            if (!this.roadClear(p.x, p.z, this.footprintReach(obj))) continue;
+            const mt = this.propMetrics(obj);
+            if (!this.roadClear(p.x, p.z, mt.reach, mt.margin)) continue;
             obj.position.set(p.x, this.terrainYAt(jd, off), p.z); // sit on the terrain (roads have elevation now)
             this.scene.add(obj);
             const nr = isLandmark ? 5 : 1.7;
@@ -1617,7 +1634,8 @@ export class Game {
             const off = this.clearOffset(obj, side * (ROAD_HALF_WIDTH + 20 + rand() * 36));
             const jd = d + rand() * 4;
             const p = track.pointAt(jd, off);
-            if (!this.roadClear(p.x, p.z, this.footprintReach(obj))) continue;
+            const mt = this.propMetrics(obj);
+            if (!this.roadClear(p.x, p.z, mt.reach, mt.margin)) continue;
             obj.position.set(p.x, this.terrainYAt(jd, off), p.z);
             this.scene.add(obj);
             if (!SOFT_SCENERY.has(kind) && this.obstacleClear(p.x, p.z, 2.2)) this.obstacles.push({ x: p.x, z: p.z, r: 2.2 });
@@ -1629,7 +1647,8 @@ export class Game {
             const off = this.clearOffset(obj, side * (ROAD_HALF_WIDTH + 58 + rand() * 70));
             const jd = d + rand() * 5;
             const p = track.pointAt(jd, off);
-            if (!this.roadClear(p.x, p.z, this.footprintReach(obj))) continue;
+            const mt = this.propMetrics(obj);
+            if (!this.roadClear(p.x, p.z, mt.reach, mt.margin)) continue;
             obj.position.set(p.x, this.terrainYAt(jd, off), p.z);
             this.scene.add(obj);
           }
@@ -1767,10 +1786,10 @@ export class Game {
       // until their whole footprint clears the ENTIRE circuit (a twisty lap can
       // otherwise come back round straight into a pyramid).
       let lat = this.clearOffset(group, side * off, 12);
-      const reach = this.footprintReach(group);
+      const hm = this.propMetrics(group);
       for (let tries = 0; tries < 24; tries++) {
         const q = track.pointAt(d, lat);
-        if (this.roadClear(q.x, q.z, reach, 6)) break;
+        if (this.roadClear(q.x, q.z, hm.reach, Math.max(6, hm.margin))) break;
         lat += side * 14;
       }
       const p = track.pointAt(d, lat);
@@ -1921,7 +1940,8 @@ export class Game {
       const p = track.pointAt(w, off);
       // never let a realm feature sit on the racing line (the circuit can wind
       // back into a spot that looked clear at this arc distance)
-      if (!this.roadClear(p.x, p.z, this.footprintReach(obj), 2)) return;
+      const fm = this.propMetrics(obj);
+      if (!this.roadClear(p.x, p.z, fm.reach, Math.max(2, fm.margin))) return;
       obj.position.set(p.x, this.terrainYAt(w, off), p.z);
       obj.rotation.y = yaw;
       this.scene.add(obj);
