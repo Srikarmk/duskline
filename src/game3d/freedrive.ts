@@ -136,13 +136,18 @@ export class FreeDrive {
     // as you steer, is off while drifting, and only helps when you're already
     // pointing roughly down the road and on the ribbon.
     if (tuning.assist && !input.handbrake && vf > 5) {
-      const ta = track.tangentAt(track.wrap(this.dist + 14));
-      let toRoad = Math.atan2(ta.x, ta.z) - this.heading;
-      toRoad = Math.atan2(Math.sin(toRoad), Math.cos(toRoad)); // shortest way round
-      if (Math.abs(toRoad) < 0.7) {
-        const onRibbon = clampN(1 - (Math.abs(this.lateral) - ROAD_HALF_WIDTH) / 4, 0, 1);
+      // PURE PURSUIT: aim at a point down the CENTRELINE (not just along the road's
+      // tangent). Aiming at the tangent only held the car parallel to the road, so
+      // one that had run wide ground along the wall forever with no way back; an
+      // aim point pulls it in. Look further ahead the faster you go, so fast bends
+      // are picked up early instead of at the apex.
+      const look = 13 + Math.min(28, vf * 0.5);
+      const aim = track.pointAt(track.wrap(this.dist + look), 0, undefined, true);
+      let toAim = Math.atan2(aim.x - this.x, aim.z - this.z) - this.heading;
+      toAim = Math.atan2(Math.sin(toAim), Math.cos(toAim)); // shortest way round
+      if (Math.abs(toAim) < 1.4) {
         const yieldToInput = 1 - Math.min(1, Math.abs(steer)) * 0.7; // your input wins
-        this.heading += toRoad * tuning.assist * yieldToInput * onRibbon * dt;
+        this.heading += toAim * tuning.assist * yieldToInput * dt;
       }
     }
 

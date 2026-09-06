@@ -45,7 +45,7 @@ export const FREE_GRIP = 11.5;     // lateral traction (side-slip bleed / s) —
 /** gentle auto-turn into bends (rad/s per rad of heading error). Subtle on
  *  purpose — it helps the car track a corner without steering for you, and
  *  fades out the moment you touch the wheel. Raise for more assist. */
-export const FREE_STEER_ASSIST = 1.2;
+export const FREE_STEER_ASSIST = 2.4;
 /** grip while braking (weight forward → sharper turn-in) */
 export const WEIGHT_BRAKE_GRIP = 1.3;
 /** grip while on the throttle (weight back → a touch looser) */
