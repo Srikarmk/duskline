@@ -3190,13 +3190,19 @@ export class Game {
       // (then it just follows the car) and while the mech is flying.
       let targetYaw = this.freeDrive.heading;
       if (!this.transformed && this.freeDrive.speed > 2) {
-        const lookAhead = 20 + spd * 38;
+        const lookAhead = 16 + spd * 18;
         const tA = this.track.tangentAt(this.track.wrap(this.freeDrive.dist + lookAhead));
         let toRoad = Math.atan2(tA.x, tA.z) - this.freeDrive.heading;
         toRoad = Math.atan2(Math.sin(toRoad), Math.cos(toRoad)); // shortest way round
         // full strength on the ribbon, easing to 0 by ~6 m off it
         const onRibbon = clamp(1 - (Math.abs(this.freeDrive.lateral) - ROAD_HALF_WIDTH) / 6, 0, 1);
-        targetYaw = this.freeDrive.heading + toRoad * 0.92 * onRibbon; // near-fully road-aligned: the bend opens up early
+        // Only a GENTLE lead. Aligning the camera hard to the road (this was 0.92)
+        // left it a mean 16.7deg / max 53deg off the car's nose: entering a bend the
+        // view swung into the corner long before the car did, so the car appeared to
+        // slide the OPPOSITE way and correcting that apparent slide steered you
+        // wrong. The pure-pursuit steering assist keeps you on the road now, so the
+        // camera only has to open the corner up a little.
+        targetYaw = this.freeDrive.heading + toRoad * 0.26 * onRibbon;
       }
       let dyaw = targetYaw - this.camYaw;
       dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw));
