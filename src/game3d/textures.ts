@@ -4,7 +4,12 @@ import * as THREE from "three";
 // real CC0 PBR textures (Poly Haven) — loaded from /public/textures
 // ---------------------------------------------------------------------------
 
-export interface TexSet { diff: THREE.Texture; nor: THREE.Texture; }
+/** `arm` is Poly Haven's packed AO(R) / Roughness(G) / Metalness(B) map — the
+ *  glTF convention, which three.js reads straight into roughnessMap (.g). Real
+ *  per-texel roughness is the single biggest realism upgrade over a flat
+ *  constant: wet patches, worn asphalt and damp bark all catch light
+ *  differently. Optional so a missing file degrades instead of breaking. */
+export interface TexSet { diff: THREE.Texture; nor: THREE.Texture; arm?: THREE.Texture; }
 export interface PBRLib {
   ground: TexSet; road: TexSet; rock: TexSet; metal: TexSet; bark: TexSet; foliage: TexSet;
 }
@@ -18,17 +23,20 @@ async function loadSet(name: string): Promise<TexSet> {
   const cached = setCache.get(name);
   if (cached) return cached;
   const loader = new THREE.TextureLoader();
-  const [diff, nor] = await Promise.all([
+  const [diff, nor, arm] = await Promise.all([
     loader.loadAsync(`/textures/${name}_diff.jpg`),
     loader.loadAsync(`/textures/${name}_nor.jpg`),
+    loader.loadAsync(`/textures/${name}_arm.jpg`).catch(() => null),
   ]);
   diff.colorSpace = THREE.SRGBColorSpace;
   nor.colorSpace = THREE.NoColorSpace;
-  for (const t of [diff, nor]) {
+  const all = arm ? [diff, nor, arm] : [diff, nor];
+  if (arm) arm.colorSpace = THREE.NoColorSpace; // data map, never sRGB-decoded
+  for (const t of all) {
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     t.anisotropy = 8;
   }
-  const set: TexSet = { diff, nor };
+  const set: TexSet = { diff, nor, arm: arm ?? undefined };
   setCache.set(name, set);
   return set;
 }
@@ -51,13 +59,19 @@ export async function loadPBR(groundName: string): Promise<PBRLib> {
 export function tileSet(set: TexSet, ru: number, rv = ru): TexSet {
   const diff = set.diff.clone();
   const nor = set.nor.clone();
+  const arm = set.arm ? set.arm.clone() : undefined;
   diff.repeat.set(ru, rv);
   nor.repeat.set(ru, rv);
   diff.anisotropy = 8;   // crisp at grazing angles (road/ground into the distance)
   nor.anisotropy = 8;
   diff.needsUpdate = true;
   nor.needsUpdate = true;
-  return { diff, nor };
+  if (arm) {
+    arm.repeat.set(ru, rv);
+    arm.anisotropy = 8;
+    arm.needsUpdate = true;
+  }
+  return { diff, nor, arm };
 }
 
 // Procedural material maps — colour + bump — so surfaces read as textured

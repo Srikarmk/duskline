@@ -100,30 +100,64 @@ export function makeSkyDome(pal: RealmPalette): THREE.Mesh {
  * catch real reflections — the same lift the cars got from their studio env.
  */
 export function makeEnvMap(pal: RealmPalette): THREE.Texture {
-  const c = document.createElement("canvas");
-  c.width = 256;
-  c.height = 128;
-  const ctx = c.getContext("2d")!;
-  const grad = ctx.createLinearGradient(0, 0, 0, 128);
-  grad.addColorStop(0.0, pal.sky[0]);
-  grad.addColorStop(0.32, pal.sky[1]);
-  grad.addColorStop(0.5, pal.sky[2]);          // horizon band
-  grad.addColorStop(0.54, pal.sky[3]);
-  grad.addColorStop(1.0, hexStr(pal.fog));     // ground bounce = fog colour
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, 256, 128);
-  // a soft warm/bright band at the horizon for a specular glint on wet surfaces
-  const glow = ctx.createLinearGradient(0, 56, 0, 72);
-  glow.addColorStop(0, "rgba(255,255,255,0)");
-  glow.addColorStop(0.5, "rgba(255,255,255,0.4)");
-  glow.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.fillStyle = glow;
-  ctx.fillRect(0, 56, 256, 16);
-  const tex = new THREE.CanvasTexture(c);
+  // A real HDR environment probe rather than a 256x128 sRGB canvas. Two things
+  // matter for believable reflections: RESOLUTION (so PMREM has detail to blur
+  // down per roughness) and genuine values ABOVE 1.0. An LDR canvas clamps at
+  // white, so nothing could ever produce a hot specular glint — car paint, metal
+  // and wet tarmac all looked like flat plastic. Here the sun is written at ~30x
+  // white into a float buffer, which is what gives a crisp highlight that tracks
+  // across the bodywork as you drive.
+  const W = 512, H = 256;
+  const data = new Float32Array(W * H * 4);
+  const lin = (c: string | number) => new THREE.Color(c).convertSRGBToLinear();
+  const stops: { at: number; c: THREE.Color }[] = [
+    { at: 0.00, c: lin(pal.sky[0]) },
+    { at: 0.32, c: lin(pal.sky[1]) },
+    { at: 0.50, c: lin(pal.sky[2]) },   // horizon band
+    { at: 0.54, c: lin(pal.sky[3]) },
+    { at: 1.00, c: lin(pal.fog) },      // ground bounce
+  ];
+  const sample = (v: number, out: THREE.Color) => {
+    let i = 0;
+    while (i < stops.length - 2 && v > stops[i + 1].at) i++;
+    const a = stops[i], b = stops[i + 1];
+    const t = Math.max(0, Math.min(1, (v - a.at) / (b.at - a.at || 1)));
+    out.copy(a.c).lerp(b.c, t);
+  };
+
+  // Sun placed to match the scene's key light elevation, so reflected highlights
+  // agree with the direction things are actually lit + shadowed from.
+  const sunU = 0.62, sunV = 0.18, sunR = 0.018, SUN = 30;
+  const col = new THREE.Color();
+  for (let y = 0; y < H; y++) {
+    const v = y / (H - 1);
+    sample(v, col);
+    for (let x = 0; x < W; x++) {
+      let r = col.r, g = col.g, b = col.b;
+      // horizon sheen — a soft bright band for grazing specular on wet surfaces
+      const band = Math.exp(-Math.pow((v - 0.5) / 0.035, 2)) * 0.5;
+      r += band; g += band; b += band;
+      // sun disc + wide falloff glow
+      const du = Math.min(Math.abs(x / W - sunU), 1 - Math.abs(x / W - sunU));
+      const dv = v - sunV;
+      const d = Math.sqrt(du * du + dv * dv);
+      if (d < sunR) {
+        r += SUN; g += SUN * 0.97; b += SUN * 0.9;
+      } else {
+        const glow = Math.exp(-Math.pow(d / 0.11, 2)) * 1.6;
+        r += glow; g += glow * 0.95; b += glow * 0.85;
+      }
+      const o = (y * W + x) * 4;
+      data[o] = r; data[o + 1] = g; data[o + 2] = b; data[o + 3] = 1;
+    }
+  }
+  const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat, THREE.FloatType);
   tex.mapping = THREE.EquirectangularReflectionMapping;
-  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.colorSpace = THREE.NoColorSpace; // already linear HDR — must not be decoded
+  tex.needsUpdate = true;
   return tex;
 }
+
 
 function hexStr(h: number): string {
   return "#" + (h & 0xffffff).toString(16).padStart(6, "0");
@@ -336,6 +370,8 @@ export function makeGround(pal: RealmPalette): THREE.Mesh {
       metalness: 0, roughness: 1,
       color: pal.groundTint !== undefined ? new THREE.Color(pal.groundTint) : 0xffffff,
     });
+    // real per-texel roughness (ARM .g); base stays 1 so the map defines it
+    if (t.arm) { mat.roughnessMap = t.arm; mat.roughness = 1; }
   } else {
     mat = new THREE.MeshStandardMaterial({
       map: makeGroundTexture(pal), bumpMap: terrainBump(120), bumpScale: 0.6, metalness: 0, roughness: 1,
@@ -482,6 +518,7 @@ export function makeRockField(pal: RealmPalette, pts: Placement[]): THREE.Instan
       color: 0x8a8a8a, metalness: 0.12, roughness: 0.82,
       flatShading: true, vertexColors: true, envMapIntensity: 0.55,
     });
+    if (t.arm) { mat.roughnessMap = t.arm; mat.roughness = 1; }
   } else {
     const stone = stoneMaps(pal.mountainDark);
     mat = new THREE.MeshStandardMaterial({
@@ -1361,12 +1398,13 @@ export function makeTreeMaterials(pal: RealmPalette): TreeMats {
       color: pal.clutter, map: fol.diff, normalMap: fol.nor, roughness: 0.78, metalness: 0,
       flatShading: true, vertexColors: true, envMapIntensity: 0.6,
     });
+    if (fol.arm) { foliage.roughnessMap = fol.arm; foliage.roughness = 1; }
     applyFoliageWind(foliage);
     return {
-      trunk: new THREE.MeshStandardMaterial({
+      trunk: Object.assign(new THREE.MeshStandardMaterial({
         map: bark.diff, normalMap: bark.nor, normalScale: new THREE.Vector2(1.3, 1.3),
         roughness: 0.92, metalness: 0, flatShading: true, envMapIntensity: 0.5,
-      }),
+      }), bark.arm ? { roughnessMap: bark.arm, roughness: 1 } : {}),
       foliage,
     };
   }
@@ -2539,6 +2577,7 @@ export function makeCaveMouth(pal: RealmPalette): THREE.Group {
     rockMat = new THREE.MeshStandardMaterial({
       map: t.diff, normalMap: t.nor, color: 0x8a8a8a, metalness: 0.1, roughness: 0.96, flatShading: true, vertexColors: true,
     });
+    if (t.arm) { rockMat.roughnessMap = t.arm; rockMat.roughness = 1; }
   } else {
     const stone = stoneMaps(pal.mountainDark);
     rockMat = new THREE.MeshStandardMaterial({
@@ -2790,6 +2829,7 @@ export function makeRockProp(rand: () => number): THREE.Group {
       map: t.diff, normalMap: t.nor, color: 0x8a8a8a, metalness: 0.1, roughness: 0.96,
       flatShading: true, vertexColors: true,
     });
+    if (t.arm) { mat.roughnessMap = t.arm; mat.roughness = 1; }
   } else {
     const stone = stoneMaps(ROCK_PROP_COLOR);
     mat = new THREE.MeshStandardMaterial({

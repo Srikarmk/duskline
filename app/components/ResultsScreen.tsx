@@ -27,6 +27,33 @@ function ordinal(n: number) {
   return n + (s[(v - 20) % 10] ?? s[v] ?? s[0]);
 }
 
+/** Fixed confetti recipe — deterministic so it never trips hydration, and
+ *  small enough (12 composited chips, transform/opacity only) to stay cheap. */
+const CONFETTI: { left: string; x: string; delay: string; color: string }[] = [
+  { left: "6%", x: "34px", delay: "0s", color: "#fbbf24" },
+  { left: "14%", x: "-28px", delay: "0.35s", color: "#f0abfc" },
+  { left: "23%", x: "18px", delay: "0.7s", color: "#22d3ee" },
+  { left: "31%", x: "-40px", delay: "0.15s", color: "#a855f7" },
+  { left: "40%", x: "26px", delay: "0.55s", color: "#fde68a" },
+  { left: "48%", x: "-16px", delay: "0.9s", color: "#67e8f9" },
+  { left: "57%", x: "38px", delay: "0.25s", color: "#f472b6" },
+  { left: "65%", x: "-32px", delay: "0.65s", color: "#fbbf24" },
+  { left: "74%", x: "22px", delay: "0.05s", color: "#c084fc" },
+  { left: "82%", x: "-24px", delay: "0.8s", color: "#22d3ee" },
+  { left: "90%", x: "30px", delay: "0.45s", color: "#fde68a" },
+  { left: "96%", x: "-36px", delay: "1s", color: "#f0abfc" },
+];
+
+/** Playful, position-aware one-liner under the hero number. */
+function taunt(solo: boolean, pos: number, total: number) {
+  if (solo) return "clean run — now go beat it";
+  if (pos === 1) return "nobody else even saw the finish line";
+  if (pos === 2) return "so close you could taste the exhaust";
+  if (pos === 3) return "champagne is champagne";
+  if (pos === total) return "at least you finished. that counts. mostly.";
+  return "solid drive — there's more in it";
+}
+
 export default function ResultsScreen({
   result, realmName, modeLabel, isNewBest, prevBest, onRaceAgain, onMenu,
 }: Props) {
@@ -78,6 +105,22 @@ export default function ResultsScreen({
   return (
     <div className="home results-screen">
       <div className={`result-hero tier-${tier} ${podium ? "podium" : ""} ${solo ? "solo" : ""}`}>
+        {podium && (
+          <div className="confetti" aria-hidden="true">
+            {CONFETTI.map((c, i) => (
+              <i
+                key={i}
+                style={{
+                  left: c.left,
+                  ["--x" as string]: c.x,
+                  ["--d" as string]: c.delay,
+                  ["--c" as string]: c.color,
+                }}
+              />
+            ))}
+          </div>
+        )}
+
         <span className="result-badge">FINISH LINE</span>
 
         <div className="place-hero">
@@ -95,6 +138,7 @@ export default function ResultsScreen({
         </div>
 
         <p className="subtitle result-subhead">{subhead}</p>
+        <p className="result-taunt">{taunt(solo, pos, total)}</p>
       </div>
 
       <div className="result-card">
@@ -137,8 +181,10 @@ export default function ResultsScreen({
       </div>
 
       <div className="result-actions">
-        <button ref={againRef} className="start" onClick={onRaceAgain}>▸ RACE AGAIN</button>
-        <button className="result-menu" onClick={onMenu}>
+        <button type="button" ref={againRef} className="start" onClick={onRaceAgain}>
+          ▸ RACE AGAIN <kbd>Enter</kbd>
+        </button>
+        <button type="button" className="result-menu" onClick={onMenu}>
           MENU <kbd>Esc</kbd>
         </button>
       </div>

@@ -8,7 +8,12 @@ No attribution required; credited here as good practice.
   rock           -> rock_06
   metal          -> metal_plate
 
-Each set: _diff.jpg (albedo, sRGB) + _nor.jpg (OpenGL normal, linear), 1K JPG.
+Each set: _diff.jpg (albedo, sRGB) + _nor.jpg (OpenGL normal, linear)
+        + _arm.jpg (packed AO / Roughness / Metalness, linear), 1K JPG.
+
+_arm is the glTF-convention ORM packing: AO in .r, roughness in .g, metalness
+in .b. three.js reads roughness straight off .g via `roughnessMap`, which gives
+real per-texel roughness instead of one flat constant per surface.
 
   bark    -> bark_brown_02   (tree trunks)
   foliage -> forest_leaves_03 (tree canopy)

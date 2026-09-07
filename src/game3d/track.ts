@@ -242,9 +242,21 @@ export class Track {
       polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
     };
     if (lib) {
-      const nor = tileSet(lib.road, 6, 5).nor;
-      matOpts.normalMap = nor;
+      const t = tileSet(lib.road, 6, 5);
+      matOpts.normalMap = t.nor;
       matOpts.normalScale = new THREE.Vector2(0.85, 0.85);
+      // real asphalt roughness (ARM .g) — worn/polished patches now catch the
+      // light differently instead of the whole road sharing one constant, which
+      // is what made wet and icy finishes read as a flat plastic sheet.
+      if (t.arm) {
+        matOpts.roughnessMap = t.arm;
+        // roughnessMap MULTIPLIES material.roughness, and asphalt's map averages
+        // ~0.8 — so leaving the per-realm finish as-is would quietly gloss every
+        // road up by ~20% and make dry realms look wet. Pre-divide so the mean
+        // lands back on the realm's intended finish, keeping wet/dry/ice identity
+        // while still gaining real per-texel variation.
+        matOpts.roughness = Math.min(1, f.rough / 0.8);
+      }
     } else {
       const bump = asphaltBump();
       bump.repeat.set(4, 4);

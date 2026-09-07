@@ -13,6 +13,21 @@ type Screen = "home" | "race" | "intermission" | "gpresult" | "result";
 const GP_ORDER: RealmId[] = ["forest", "ember", "peaks"];
 const CHAMP_PTS = [10, 6, 3, 1];
 
+/** Fixed confetti recipe for the champion screen — deterministic (no hydration
+ *  risk) and only 10 composited chips, so it stays cheap. */
+const GP_CONFETTI: { left: string; x: string; delay: string; color: string }[] = [
+  { left: "8%", x: "30px", delay: "0s", color: "#fbbf24" },
+  { left: "18%", x: "-26px", delay: "0.4s", color: "#f0abfc" },
+  { left: "29%", x: "20px", delay: "0.75s", color: "#22d3ee" },
+  { left: "39%", x: "-36px", delay: "0.2s", color: "#a855f7" },
+  { left: "50%", x: "28px", delay: "0.6s", color: "#fde68a" },
+  { left: "61%", x: "-18px", delay: "0.95s", color: "#67e8f9" },
+  { left: "71%", x: "34px", delay: "0.3s", color: "#f472b6" },
+  { left: "81%", x: "-30px", delay: "0.7s", color: "#fbbf24" },
+  { left: "90%", x: "24px", delay: "0.1s", color: "#c084fc" },
+  { left: "96%", x: "-22px", delay: "0.85s", color: "#22d3ee" },
+];
+
 const MODE_TITLE: Record<GameMode, string> = {
   classic: "Classic Circuit", timetrial: "Time Trial", nitro: "Nitro Sprint",
   transform: "Transformer Rush", grandprix: "Grand Prix", spacewars: "Space Wars",
@@ -128,20 +143,29 @@ export default function GameApp() {
 
   if (screen === "intermission" && gp) {
     const rows = toRows(gp.champ, name);
-    const nextRealm = REALMS[GP_ORDER[gp.round]];
+    const nextRealmId = GP_ORDER[gp.round];
+    const nextRealm = REALMS[nextRealmId];
     const done = gp.round;
     const totalRounds = GP_ORDER.length;
+    const lead = rows[0]?.points ?? 0;
+    const you = rows.findIndex((r) => r.isPlayer) + 1;
     return (
       <div className="home gp-screen">
         <div className="result-hero tier-none">
           <span className="result-badge">INTERMISSION</span>
           <h1 className="title result-title">GRAND PRIX</h1>
-          <p className="subtitle">round {done} of {totalRounds} complete</p>
+          <div className="checker hero-rule" aria-hidden="true" />
+          <p className="subtitle">round {done} of {totalRounds} in the books</p>
           <div className="gp-rounds" aria-label={`Round ${done} of ${totalRounds}`}>
             {GP_ORDER.map((_, i) => (
               <span key={i} className={`gp-dot ${i < done ? "done" : i === done ? "next" : ""}`} />
             ))}
           </div>
+          {you > 0 && (
+            <p className="result-taunt">
+              {you === 1 ? "you're leading the championship — hold it" : `P${you} in the championship — ${lead - (rows[you - 1]?.points ?? 0)} pts off the lead`}
+            </p>
+          )}
         </div>
 
         <div className="result-card">
@@ -153,20 +177,35 @@ export default function GameApp() {
                   <span className={`pos rank-${i + 1 <= 3 ? i + 1 : "n"}`}>{i + 1}</span>
                   <span className="who">{r.name}</span>
                   {r.isPlayer && <span className="tag">YOU</span>}
+                  <span className="pts-track" aria-hidden="true">
+                    <span
+                      className="pts-bar"
+                      style={{ width: `${lead > 0 ? (r.points / lead) * 100 : 0}%` }}
+                    />
+                  </span>
                   <span className="pts">{r.points} pts</span>
                 </li>
               ))}
             </ol>
           </div>
-          <div className="realm-lore">
-            <em>UP NEXT · {nextRealm.name.toUpperCase()}</em>
-            <p>{nextRealm.blurb}</p>
+
+          <div className="next-realm">
+            <span
+              className="next-realm-art"
+              style={{ backgroundImage: `url(/previews/realm-${nextRealmId}.jpg)` }}
+              aria-hidden="true"
+            />
+            <span className="next-realm-txt">
+              <em>UP NEXT · ROUND {done + 1}</em>
+              <strong>{nextRealm.name}</strong>
+              <span>{nextRealm.blurb}</span>
+            </span>
           </div>
         </div>
 
         <div className="result-actions">
-          <button className="start" onClick={() => setScreen("race")}>
-            ▸ NEXT RACE
+          <button type="button" className="start" onClick={() => setScreen("race")}>
+            ▸ TO THE GRID
           </button>
         </div>
       </div>
@@ -178,9 +217,25 @@ export default function GameApp() {
     const rank = gpFinal.findIndex((r) => r.isPlayer) + 1 || 1;
     const podium = rank <= 3;
     const tier = win ? "gold" : rank === 2 ? "silver" : rank === 3 ? "bronze" : "none";
+    const lead = gpFinal[0]?.points ?? 0;
     return (
       <div className="home gp-screen results-screen">
         <div className={`result-hero tier-${tier} ${podium ? "podium" : ""}`}>
+          {podium && (
+            <div className="confetti" aria-hidden="true">
+              {GP_CONFETTI.map((c, i) => (
+                <i
+                  key={i}
+                  style={{
+                    left: c.left,
+                    ["--x" as string]: c.x,
+                    ["--d" as string]: c.delay,
+                    ["--c" as string]: c.color,
+                  }}
+                />
+              ))}
+            </div>
+          )}
           <span className="result-badge">GRAND PRIX</span>
           <div className="place-hero">
             <div className="place-ordinal" aria-label={`${rank} place overall`}>
@@ -192,6 +247,13 @@ export default function GameApp() {
             <div className="place-label">{win ? "CHAMPION" : podium ? "ON THE PODIUM" : "SEASON COMPLETE"}</div>
           </div>
           <p className="subtitle result-subhead">final championship standings</p>
+          <p className="result-taunt">
+            {win
+              ? "three realms, one winner. that trophy is yours."
+              : podium
+                ? "a season on the podium — the trophy is one push away"
+                : "the season is done. the rematch starts whenever you're ready."}
+          </p>
         </div>
 
         <div className="result-card">
@@ -203,6 +265,12 @@ export default function GameApp() {
                   <span className={`pos rank-${i + 1 <= 3 ? i + 1 : "n"}`}>{i + 1}</span>
                   <span className="who">{r.name}</span>
                   {r.isPlayer && <span className="tag">YOU</span>}
+                  <span className="pts-track" aria-hidden="true">
+                    <span
+                      className="pts-bar"
+                      style={{ width: `${lead > 0 ? (r.points / lead) * 100 : 0}%` }}
+                    />
+                  </span>
                   <span className="pts">{r.points} pts</span>
                 </li>
               ))}
@@ -212,6 +280,7 @@ export default function GameApp() {
 
         <div className="result-actions">
           <button
+            type="button"
             className="start"
             onClick={() => {
               setGpFinal(null);
