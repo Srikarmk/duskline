@@ -314,6 +314,11 @@ export class Game {
   private spin = 0; // barrel-roll revolutions
   private flip = 0; // pitch-flip revolutions
   private swingT = 0;
+  // TRANSFORMER combo: consecutive smashes/slashes inside `comboT` escalate the
+  // multiplier. Rampage scoring is what makes the mech feel like a power trip
+  // rather than a slow lap with props in the way.
+  private combo = 0;
+  private comboT = 0;
 
   private nitroCharges = 1;
   private nitroT = 0;
@@ -539,6 +544,8 @@ export class Game {
     this.freeDrive.reset(this.track, 0);
     this.lastFreeDist = 0;
     this.lapProgress = 0;
+    this.combo = 0;
+    this.comboT = 0;
     this.lastPosition = 0;
     this.overtakeCd = 0;
     this.callout = null;
@@ -1728,14 +1735,27 @@ export class Game {
 
     // (ramps + crest-jumps removed — focus is on clean driving + environments)
 
-    // transform orbs + monsters
+    // TRANSFORMER RUSH: orbs + the things the mech exists to destroy.
     if (this.cfg.orbs) {
-      for (let d = 120; d < len - 60; d += 460) {
+      // Orbs were every 460 m, so you spent most of the race NOT a mech — which
+      // is the whole appeal of the mode. Roughly double them for real uptime.
+      for (let d = 120; d < len - 60; d += 235) {
         this.addEntity("orb", d, lane(), makeOrb());
+      }
+      // Smashable boulders. The smash scoring + collision already existed but
+      // NOTHING ever spawned a "rock", so the mech had nothing to rampage
+      // through. These are the mech's fodder — paired across lanes so there's
+      // always a line through them when you're on wheels.
+      let ri = 0;
+      for (let d = 190; d < len - 60; d += 125) {
+        this.addEntity("rock", d, LANE_CENTERS[ri % 3], makeRockProp(rand));
+        ri++;
       }
     }
     if (this.cfg.monsters) {
-      for (let d = 240; d < len - 60; d += 150) {
+      // thinned out (was every 150 m): with a soft penalty they're targets, not
+      // a gauntlet that stops the race dead every few seconds
+      for (let d = 240; d < len - 60; d += 230) {
         this.addEntity("monster", d, lane(), makeMonster(rand));
       }
     }
@@ -2099,6 +2119,19 @@ export class Game {
     if (this.toasts.length > 4) this.toasts.length = 4;
   }
 
+  /** Register a mech kill: bump the combo, return the score multiplier and shout
+   *  about it once the chain is worth shouting about. */
+  private mechCombo(): number {
+    this.combo++;
+    this.comboT = 4.2;                       // keep the chain alive between targets
+    const mult = Math.min(5, 1 + Math.floor(this.combo / 3)); // x1 .. x5
+    if (this.combo >= 3 && this.combo % 3 === 0) {
+      this.announce(`${mult}x RAMPAGE`, `${this.combo} IN A ROW`, "#f0abfc", 1.2);
+      this.shake = Math.max(this.shake, 0.5);
+    }
+    return mult;
+  }
+
   /** Fire a big centre-screen callout (overtake, final lap, …). Overwrites any
    *  current one so the freshest drama always shows. */
   private announce(text: string, sub: string, color: string, life = 1.5) {
@@ -2200,6 +2233,7 @@ export class Game {
     if (this.callout) { this.callout.t -= dt; if (this.callout.t <= 0) this.callout = null; }
     this.crashFlash = Math.max(0, this.crashFlash - dt);
     this.swingT = Math.max(0, this.swingT - dt);
+    if (this.comboT > 0) { this.comboT -= dt; if (this.comboT <= 0) this.combo = 0; }
     this.slashCooldown = Math.max(0, this.slashCooldown - dt);
     this.bumpCd = Math.max(0, this.bumpCd - dt);
     this.slotFullCd = Math.max(0, this.slotFullCd - dt);
@@ -2277,6 +2311,8 @@ export class Game {
     const boosting = this.nitroT > 0 || this.driftBoostT > 0 || this.boostT > 0;
     const driveAccel = ACCEL * this.carStat.accel * (boosting ? 2 : 1) * (this.transformed ? 1.5 : 1);
     const handbrake = this.input.brake && this.speed > MAX_SPEED * 0.3 && rawSteer !== 0;
+    // the mech only gets free flight while off the ground
+    const flyingMech = this.transformed && this.alt > 1.2;
     this.freeDrive.step(
       {
         throttle: this.input.accelerate || this.transformed,
@@ -2287,9 +2323,16 @@ export class Game {
       dt, this.track,
       {
         maxSpeed: this.effectiveMaxSpeed(), accel: driveAccel, turnRate: FREE_TURN_RATE, grip: FREE_GRIP,
-        contain: !this.transformed,
-        // no auto-turn in the air (you're aiming a landing) or as the flying mech
-        assist: (this.stuntAir || this.transformed) ? 0 : FREE_STEER_ASSIST,
+        // Free flight only while the mech is ACTUALLY AIRBORNE. Gating these on
+        // `transformed` alone meant that the instant you grabbed an orb you lost
+        // the walls, the steering assist AND the off-track respawn all at once —
+        // so the mech quietly sailed off the map with no way back (measured 1.15 km
+        // off the centreline). On the ground the mech drives like a car.
+        contain: !flyingMech,
+        // The grounded mech runs ~11% faster than a car (measured 64.6 vs ~55 m/s),
+        // so corners arrive sooner and the car-tuned assist under-corrects — it was
+        // off-road 27% of the time vs 9% on wheels. Scale the help with the form.
+        assist: (this.stuntAir || flyingMech) ? 0 : FREE_STEER_ASSIST * (this.transformed ? 1.4 : 1),
       },
     );
     this.resolveObstacles(dt); // keep the car OUT of solid scenery (trees/rocks/buildings)
@@ -2471,7 +2514,7 @@ export class Game {
     // track. Never any score penalty.
     // The soft walls now hold the car within ~6.6 m of centre, so this respawn is
     // only a failsafe for the rare case something knocks it clean past the wall.
-    const offTrack = !this.transformed && Math.abs(this.freeDrive.lateral) > ROAD_HALF_WIDTH + 3;
+    const offTrack = !(this.transformed && this.alt > 1.2) && Math.abs(this.freeDrive.lateral) > ROAD_HALF_WIDTH + 3;
     if (offTrack && this.phase === "racing") {
       if (this.offTrackT <= 0) {
         this.offTrackT = OFFTRACK_GRACE;          // just left the ribbon
@@ -2771,11 +2814,14 @@ export class Game {
 
       if (this.transformed && this.slashCooldown <= 0) {
         this.collect(e);
-        this.score += SCORE_MONSTER;
+        const mult = this.mechCombo();
+        const gain = SCORE_MONSTER * mult;
+        this.score += gain;
         this.swingT = SWING_DURATION;
         this.slashCooldown = 0.45;
         this.sound.play("slash");
-        this.toast(`SLASH +${SCORE_MONSTER}`, "#67e8f9");
+        this.shake = Math.max(this.shake, 0.4);
+        this.toast(`SLASH +${gain}${mult > 1 ? ` (${mult}x)` : ""}`, "#67e8f9");
       } else if (this.transformed) {
         // caught mid-recovery — the monster lands a hit
         this.speed = Math.min(this.speed, MAX_SPEED * 0.4);
@@ -2792,7 +2838,11 @@ export class Game {
         this.toast("BLOCKED", "#67e8f9");
         e.dist = this.track.wrap(e.dist + 6);
       } else {
-        this.speed = Math.min(this.speed, MAX_SPEED * 0.12);
+        // was 0.12 — an almost dead stop, several times a lap, which is what made
+        // this mode feel like punishment instead of a rampage. A real setback,
+        // but you keep racing.
+        this.speed = Math.min(this.speed, MAX_SPEED * 0.45);
+        this.combo = 0; this.comboT = 0;
         if (this.crashFlash <= 0) {
           this.sound.play("crash");
           this.toast("MONSTER!", "#f87171");
@@ -2877,12 +2927,21 @@ export class Game {
         }
         break;
       case "orb":
-        if (this.alt < 1.2 && !this.transformed) {
+        if (this.alt < 1.2) {
           this.collect(e);
-          this.transformed = true;
-          this.transformT = TRANSFORM_DURATION;
           this.sound.play("transform");
-          this.toast("TRANSFORMED!", "#f0abfc");
+          if (this.transformed) {
+            // Driving over an orb mid-transform used to do NOTHING — the pickup
+            // was simply wasted, which felt awful. Now it tops the timer back up
+            // and pays out, so chaining orbs sustains the rampage.
+            this.transformT = Math.min(TRANSFORM_DURATION * 1.6, this.transformT + TRANSFORM_DURATION * 0.7);
+            this.score += SCORE_GEM;
+            this.toast(`ORB +${SCORE_GEM} · EXTENDED`, "#f0abfc");
+          } else {
+            this.transformed = true;
+            this.transformT = TRANSFORM_DURATION;
+            this.announce("TRANSFORMED!", "SMASH EVERYTHING", "#f0abfc", 1.2);
+          }
         }
         break;
       case "ramp":
@@ -2893,15 +2952,21 @@ export class Game {
         if (this.alt < 1.2) {
           if (this.transformed) {
             this.collect(e);
-            this.score += SCORE_SMASH;
+            const mult = this.mechCombo();
+            const gain = SCORE_SMASH * mult;
+            this.score += gain;
             this.swingT = SWING_DURATION;
             this.sound.play("smash");
-            this.toast(`SMASH +${SCORE_SMASH}`, "#f0abfc");
+            this.shake = Math.max(this.shake, 0.32);
+            this.spawnSparks(this.playerRoot.position.x, this.playerRoot.position.y + 0.7, this.playerRoot.position.z, 14);
+            this.toast(`SMASH +${gain}${mult > 1 ? ` (${mult}x)` : ""}`, "#f0abfc");
           } else if (this.shieldT > 0) {
             this.collect(e); // plow through under shield
             this.toast("BLOCKED", "#67e8f9");
           } else {
-            this.speed = Math.min(this.speed, MAX_SPEED * 0.15);
+            // rocks now actually spawn, so a 0.15 wall would gut on-wheels laps
+            this.speed = Math.min(this.speed, MAX_SPEED * 0.5);
+            this.combo = 0; this.comboT = 0;
             if (this.crashFlash <= 0) {
               this.sound.play("crash");
               this.toast("CRASH!", "#f87171");

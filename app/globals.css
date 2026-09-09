@@ -296,9 +296,9 @@ main {
   position: relative;
   display: inline-block;
   font-family: var(--font-display);
-  font-size: clamp(30px, 7.6vw, 78px);
+  font-size: clamp(24px, 7.2vw, 76px);
   line-height: 0.98;
-  letter-spacing: clamp(1px, 0.7vw, 9px);
+  letter-spacing: clamp(1px, 0.5vw, 8px);
   font-weight: 900;
   max-width: 100%;
   background: linear-gradient(180deg, #ffffff 0%, #fff0ff 26%, #f5b8ff 54%, #d086ff 78%, #a855f7 100%);
@@ -330,6 +330,7 @@ main {
 
 .hero-rule {
   width: min(420px, 80%);
+  margin-inline: auto;
 }
 
 .hero-tags {
@@ -758,7 +759,7 @@ main {
   border-radius: var(--r-md);
   overflow: hidden;
   background:
-    radial-gradient(120% 85% at 50% 14%, color-mix(in srgb, var(--livery, #22d3ee) 30%, transparent) 0%, transparent 58%),
+    radial-gradient(110% 80% at 50% 18%, color-mix(in srgb, var(--livery, #22d3ee) 22%, transparent) 0%, transparent 60%),
     radial-gradient(120% 130% at 50% 128%, #261b4a 0%, #0a0820 72%);
 }
 
@@ -1577,7 +1578,6 @@ main {
   z-index: 0;
   width: 100%;
   padding: 14px 0 4px;
-  overflow: hidden;
 }
 
 .result-hero > * { position: relative; z-index: 1; }
@@ -1704,9 +1704,10 @@ main {
   background: radial-gradient(circle, var(--glow, rgba(245, 158, 11, 0.2)) 0%, transparent 62%);
   animation: glow-in 0.7s ease both;
 }
-.tier-gold.podium::before { --glow: rgba(245, 158, 11, 0.26); }
-.tier-silver.podium::before { --glow: rgba(203, 213, 225, 0.18); }
-.tier-bronze.podium::before { --glow: rgba(199, 123, 69, 0.2); }
+/* set on the element (not the pseudo) so both ::before and ::after inherit it */
+.tier-gold.podium { --glow: rgba(245, 158, 11, 0.26); }
+.tier-silver.podium { --glow: rgba(203, 213, 225, 0.18); }
+.tier-bronze.podium { --glow: rgba(199, 123, 69, 0.2); }
 
 @keyframes glow-in { from { opacity: 0; } to { opacity: 1; } }
 

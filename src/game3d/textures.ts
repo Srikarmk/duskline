@@ -1,5 +1,13 @@
 import * as THREE from "three";
 
+/** Anisotropic filtering level. The road and ground run to the horizon at a
+ *  grazing angle, which is exactly where bilinear/trilinear smears into mush —
+ *  anisotropy is the biggest single sharpness win available. Raised 8 -> 16:
+ *  this frame is draw-call bound, not texture-bandwidth bound, so it is close to
+ *  free. three.js clamps this to the GPU's max anisotropy on upload, so a
+ *  device that only supports 8 quietly gets 8. */
+const ANISO = 16;
+
 // ---------------------------------------------------------------------------
 // real CC0 PBR textures (Poly Haven) — loaded from /public/textures
 // ---------------------------------------------------------------------------
@@ -34,7 +42,7 @@ async function loadSet(name: string): Promise<TexSet> {
   if (arm) arm.colorSpace = THREE.NoColorSpace; // data map, never sRGB-decoded
   for (const t of all) {
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.anisotropy = 8;
+    t.anisotropy = ANISO;
   }
   const set: TexSet = { diff, nor, arm: arm ?? undefined };
   setCache.set(name, set);
@@ -62,13 +70,13 @@ export function tileSet(set: TexSet, ru: number, rv = ru): TexSet {
   const arm = set.arm ? set.arm.clone() : undefined;
   diff.repeat.set(ru, rv);
   nor.repeat.set(ru, rv);
-  diff.anisotropy = 8;   // crisp at grazing angles (road/ground into the distance)
-  nor.anisotropy = 8;
+  diff.anisotropy = ANISO; // crisp at grazing angles (road/ground into the distance)
+  nor.anisotropy = ANISO;
   diff.needsUpdate = true;
   nor.needsUpdate = true;
   if (arm) {
     arm.repeat.set(ru, rv);
-    arm.anisotropy = 8;
+    arm.anisotropy = ANISO;
     arm.needsUpdate = true;
   }
   return { diff, nor, arm };
@@ -96,7 +104,7 @@ function toTex(c: HTMLCanvasElement, repeat = 1, srgb = false) {
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.repeat.set(repeat, repeat);
   t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-  t.anisotropy = 8;
+  t.anisotropy = ANISO;
   return t;
 }
 

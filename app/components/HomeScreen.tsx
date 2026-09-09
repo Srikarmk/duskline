@@ -252,8 +252,8 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
                         className="realm-preview"
                         style={{ backgroundImage: `url(/previews/realm-${id}.jpg), ${realmFallback(id)}` }}
                       />
-                      <span className="realm-index">{String(i + 1).padStart(2, "0")}</span>
-                      <span className="pick-flag">PICKED</span>
+                      <span className="realm-index" aria-hidden="true">{String(i + 1).padStart(2, "0")}</span>
+                      <span className="pick-flag" aria-hidden="true">PICKED</span>
                     </span>
                     <span className="realm-body">
                       <strong>{REALMS[id].name}</strong>
@@ -289,10 +289,11 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
                       key={id}
                       className={`car-card ${isSel ? "selected" : ""}`}
                       aria-pressed={isSel}
+                      aria-label={`${spec.name} — speed ${spec.stars.speed} of 5, acceleration ${spec.stars.accel} of 5, handling ${spec.stars.handling} of 5`}
                       onClick={() => { setCar(id); setCarPicked(true); }}
                       style={{ ["--accent" as string]: swatch }}
                     >
-                      <span className="pick-flag">PICKED</span>
+                      <span className="pick-flag" aria-hidden="true">PICKED</span>
                       <span className="car-head">
                         <span className="car-chip" style={{ background: swatch, color: swatch }} />
                         <strong>{spec.name}</strong>
@@ -330,7 +331,7 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
                       onClick={() => setMode(m.id)}
                     >
                       <span className="mode-index" aria-hidden="true">{String(i + 1).padStart(2, "0")}</span>
-                      <span className="pick-flag">PICKED</span>
+                      <span className="pick-flag" aria-hidden="true">PICKED</span>
                       <strong>{m.name}</strong>
                       <span className="mode-blurb">{m.blurb}</span>
                       <span className="mode-tags">
