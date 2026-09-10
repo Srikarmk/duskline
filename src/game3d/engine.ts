@@ -41,6 +41,7 @@ import {
 } from "./objects";
 import { makeWeather, type WeatherSystem } from "./weather";
 import { makeTunnelArch, makeTunnelPortal } from "./setpieces";
+import { makeGrandWaterfall, updateGrandWaterfall, makeStoneBridge, makeBatFlock, updateBatFlock } from "./props/grand";
 import { makeForkArrowSign, makeBlimp } from "./props/signage";
 import { BranchPath } from "./branch";
 import { FreeDrive } from "./freedrive";
@@ -251,6 +252,8 @@ export class Game {
   private resizeObs: ResizeObserver | null = null;
   private carId: CarId;
   private carStat: CarStat;
+  private grandFalls: THREE.Group[] = [];   // monumental waterfalls (scrolling water)
+  private batFlocks: THREE.Group[] = [];    // cave bats (vertex-animated)
   private weather: WeatherSystem | null = null;
   private weatherKind: WeatherKind = "none";
   private weatherT = 0;   // seconds until the next roll of the weather dice
@@ -631,6 +634,10 @@ export class Game {
   // --- world building ------------------------------------------------------
 
   private buildWorld(library: ModelLibrary) {
+    // cleared HERE, not in the race reset: that runs after buildWorld and was
+    // wiping the set-pieces placement had just registered (0 animated groups)
+    this.grandFalls.length = 0;
+    this.batFlocks.length = 0;
     const { scene, track, realm } = this;
     const pal = realm.palette;
 
@@ -1469,6 +1476,7 @@ export class Game {
   private placeTunnels() {
     const pal = this.realm.palette;
     const len = this.track.length;
+    const rand = mulberry32(5521);
     for (const t of REALM_TUNNELS[this.realm.id] ?? []) {
       const d0 = t.at * len;
       const d1 = d0 + t.len;
@@ -1487,6 +1495,19 @@ export class Game {
         this.placeOnTrack(arch, d);
         this.scene.add(arch);
       }
+      // Bats, but only in the natural (unlit) caves — a colony roosting in a
+      // lit road tunnel would read as a bug. Their flight volume floors at
+      // 1.1 m, deliberately above windscreen height, so they're atmosphere
+      // rather than something that appears to fly into you.
+      if (!lit) {
+        for (const bd of [d0 + t.len * 0.34, d0 + t.len * 0.72]) {
+          const bats = makeBatFlock(rand, 12);
+          this.placeOnTrack(bats, this.track.wrap(bd));
+          bats.position.y += 2.2;
+          this.scene.add(bats);
+          this.batFlocks.push(bats);
+        }
+      }
     }
   }
 
@@ -1495,11 +1516,30 @@ export class Game {
   private placeRivers() {
     const pal = this.realm.palette;
     const len = this.track.length;
+    const rand = mulberry32(9173);
     for (const at of REALM_RIVERS[this.realm.id] ?? []) {
       const d = at * len;
-      const bridge = makeRiverBridge(pal);
+      // A classical arched viaduct now carries the road over the gorge instead of
+      // the old flat plank bridge. Its deck sits 4 cm proud of nothing — recessed
+      // to y = -0.04 — so the road ribbon at y = 0 always wins the depth test.
+      const bridge = makeStoneBridge(rand, pal, 78);
       this.placeOnTrack(bridge, d);
       this.scene.add(bridge);
+
+      // ...and a monumental fall pouring in beside it. Its footprint is ~74 m
+      // wide by 42 m deep, so it has to be set well back or it would swallow the
+      // road; and it's built facing -Z, so it needs yawing to look at the driver.
+      const side = rand() < 0.5 ? 1 : -1;
+      const jd = this.track.wrap(d + 26);
+      const off = side * (ROAD_HALF_WIDTH + 64);
+      const p = this.track.pointAt(jd, off);
+      const wf = makeGrandWaterfall(rand, pal);
+      wf.position.set(p.x, this.terrainYAt(jd, off) - 5, p.z);
+      const tan = this.track.tangentAt(jd);
+      const rx = tan.z, rz = -tan.x;              // road "right"
+      wf.rotation.y = Math.atan2(-side * rx, -side * rz);
+      this.scene.add(wf);
+      this.grandFalls.push(wf);
     }
   }
 
@@ -3495,6 +3535,11 @@ export class Game {
       }
       // weather (snow/ash/sand/rain/…) drifts and follows the camera so it fills view
       if (this.weather) this.weather.update(this.time, this.camera.position);
+      // animate the set-pieces: scrolling water sheets + drifting mist, flapping
+      // bats. Both updaters are allocation-free and no-op on a group without
+      // their userData, so this is safe to call unconditionally.
+      for (const wf of this.grandFalls) updateGrandWaterfall(wf, this.time);
+      for (const bf of this.batFlocks) updateBatFlock(bf, this.time);
       // drive the foliage wind + shimmer/sway the god-ray shafts so they breathe
       windTime.value = this.time;
       if (this.heatHaze && this.heatHaze.enabled) this.heatHaze.uniforms.time.value = this.time;
