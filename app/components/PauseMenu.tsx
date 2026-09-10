@@ -50,6 +50,11 @@ export default function PauseMenu({ onResume, onRestart, onQuit, onApply }: Prop
                 onChange={(e) => update({ bloom: e.target.checked })} />
             </label>
             <label className="set-row">
+              <span>EXTRA AO (COSTLY)</span>
+              <input type="checkbox" checked={s.ao}
+                onChange={(e) => update({ ao: e.target.checked })} />
+            </label>
+            <label className="set-row">
               <span>CAMERA</span>
               <select value={s.camera} onChange={(e) => update({ camera: +e.target.value })}>
                 <option value={0}>Chase</option>

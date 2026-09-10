@@ -371,7 +371,7 @@ export function makeGround(pal: RealmPalette): THREE.Mesh {
       color: pal.groundTint !== undefined ? new THREE.Color(pal.groundTint) : 0xffffff,
     });
     // real per-texel roughness (ARM .g); base stays 1 so the map defines it
-    if (t.arm) { mat.roughnessMap = t.arm; mat.roughness = 1; }
+    if (t.arm) { mat.roughnessMap = t.arm; mat.roughness = 1; mat.aoMap = t.arm; mat.aoMapIntensity = 0.85; }
   } else {
     mat = new THREE.MeshStandardMaterial({
       map: makeGroundTexture(pal), bumpMap: terrainBump(120), bumpScale: 0.6, metalness: 0, roughness: 1,
@@ -518,7 +518,7 @@ export function makeRockField(pal: RealmPalette, pts: Placement[]): THREE.Instan
       color: 0x8a8a8a, metalness: 0.12, roughness: 0.82,
       flatShading: true, vertexColors: true, envMapIntensity: 0.55,
     });
-    if (t.arm) { mat.roughnessMap = t.arm; mat.roughness = 1; }
+    if (t.arm) { mat.roughnessMap = t.arm; mat.roughness = 1; mat.aoMap = t.arm; mat.aoMapIntensity = 0.85; }
   } else {
     const stone = stoneMaps(pal.mountainDark);
     mat = new THREE.MeshStandardMaterial({
@@ -1398,13 +1398,13 @@ export function makeTreeMaterials(pal: RealmPalette): TreeMats {
       color: pal.clutter, map: fol.diff, normalMap: fol.nor, roughness: 0.78, metalness: 0,
       flatShading: true, vertexColors: true, envMapIntensity: 0.6,
     });
-    if (fol.arm) { foliage.roughnessMap = fol.arm; foliage.roughness = 1; }
+    if (fol.arm) { foliage.roughnessMap = fol.arm; foliage.roughness = 1; foliage.aoMap = fol.arm; foliage.aoMapIntensity = 0.7; }
     applyFoliageWind(foliage);
     return {
       trunk: Object.assign(new THREE.MeshStandardMaterial({
         map: bark.diff, normalMap: bark.nor, normalScale: new THREE.Vector2(1.3, 1.3),
         roughness: 0.92, metalness: 0, flatShading: true, envMapIntensity: 0.5,
-      }), bark.arm ? { roughnessMap: bark.arm, roughness: 1 } : {}),
+      }), bark.arm ? { roughnessMap: bark.arm, roughness: 1, aoMap: bark.arm, aoMapIntensity: 0.8 } : {}),
       foliage,
     };
   }
@@ -2577,7 +2577,7 @@ export function makeCaveMouth(pal: RealmPalette): THREE.Group {
     rockMat = new THREE.MeshStandardMaterial({
       map: t.diff, normalMap: t.nor, color: 0x8a8a8a, metalness: 0.1, roughness: 0.96, flatShading: true, vertexColors: true,
     });
-    if (t.arm) { rockMat.roughnessMap = t.arm; rockMat.roughness = 1; }
+    if (t.arm) { rockMat.roughnessMap = t.arm; rockMat.roughness = 1; rockMat.aoMap = t.arm; rockMat.aoMapIntensity = 0.85; }
   } else {
     const stone = stoneMaps(pal.mountainDark);
     rockMat = new THREE.MeshStandardMaterial({
@@ -2829,7 +2829,7 @@ export function makeRockProp(rand: () => number): THREE.Group {
       map: t.diff, normalMap: t.nor, color: 0x8a8a8a, metalness: 0.1, roughness: 0.96,
       flatShading: true, vertexColors: true,
     });
-    if (t.arm) { mat.roughnessMap = t.arm; mat.roughness = 1; }
+    if (t.arm) { mat.roughnessMap = t.arm; mat.roughness = 1; mat.aoMap = t.arm; mat.aoMapIntensity = 0.85; }
   } else {
     const stone = stoneMaps(ROCK_PROP_COLOR);
     mat = new THREE.MeshStandardMaterial({

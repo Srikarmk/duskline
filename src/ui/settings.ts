@@ -1,12 +1,13 @@
 export interface Settings {
   bloom: boolean;
+  ao: boolean; // screen-space ambient occlusion (contact shadows)
   musicVolume: number; // 0..1
   sfxVolume: number; // 0..1
   camera: number; // default camera preset index
 }
 
 const KEY = "fantasy-racer-settings";
-const DEFAULTS: Settings = { bloom: true, musicVolume: 0.7, sfxVolume: 0.9, camera: 0 };
+const DEFAULTS: Settings = { bloom: true, ao: false, musicVolume: 0.7, sfxVolume: 0.9, camera: 0 };
 
 export function loadSettings(): Settings {
   if (typeof window === "undefined") return { ...DEFAULTS };

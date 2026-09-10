@@ -250,6 +250,11 @@ export class Track {
       // is what made wet and icy finishes read as a flat plastic sheet.
       if (t.arm) {
         matOpts.roughnessMap = t.arm;
+        // The ARM map's RED channel is baked ambient occlusion — free contact
+        // darkening in the asphalt's pits and cracks. We already pay to load it
+        // for roughness; using .r as well costs nothing at render time.
+        matOpts.aoMap = t.arm;
+        matOpts.aoMapIntensity = 0.8;
         // roughnessMap MULTIPLIES material.roughness, and asphalt's map averages
         // ~0.8 — so leaving the per-realm finish as-is would quietly gloss every
         // road up by ~20% and make dry realms look wet. Pre-divide so the mean

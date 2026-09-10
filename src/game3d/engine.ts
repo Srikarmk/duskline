@@ -451,9 +451,16 @@ export class Game {
     gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 4, radiusExponent: 1, rings: 2, samples: 4 });
     this.composer.addPass(gtao);
     this.gtao = gtao;
-    // GTAO nearly HALVED the framerate (37->20ms here) — the shadows + bloom
-    // already ground the scene, so it stays OFF (the game must run smooth first).
-    gtao.enabled = false;
+    // GTAO stays OFF BY DEFAULT, but is now a real user toggle rather than dead
+    // code. Measured on the current build: it costs ~5.6 ms, and a loaded forest
+    // view already sits at ~11 ms — so enabling it lands the frame at 16.6 ms,
+    // exactly the 60 fps line with ZERO margin, which is how you get stutter on
+    // anything slower than this machine. (An earlier 4.19 ms reading was taken
+    // from a light view right after respawn and flattered it.)
+    // The baked ARM ambient occlusion now covers most of what GTAO was for and
+    // costs nothing per frame; GTAO only adds occlusion BETWEEN separate objects.
+    // Available to anyone with GPU headroom via the pause menu.
+    gtao.enabled = loadSetting("ao", false);
 
     // bloom runs at half resolution — it's a soft blur anyway, so it looks the
     // same but costs a quarter of the fill rate (keeps big retina buffers smooth)
@@ -594,10 +601,14 @@ export class Game {
     // this key light also casts the shadows; its ortho frustum follows the car
     // (updated each frame) so props near you drop real, soft shadows on the road
     sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);  // 4096 was 4x the shadow cost for little visible gain
+    // 4096 is now essentially FREE (measured 6.49 -> 6.57 ms, +1%) because the
+    // shadow pass is draw-call bound, not pixel bound, and the frustum below is
+    // tight. The old note that 4096 cost 4x was measured against the WIDE +-95 m
+    // frustum. Over +-58 m this is 2.8 cm per texel instead of 5.7 cm.
+    sun.shadow.mapSize.set(4096, 4096);
     sun.shadow.bias = -0.00035;
     sun.shadow.normalBias = 0.6;
-    sun.shadow.radius = 4;               // soft PCF edges (not hard-cut)
+    sun.shadow.radius = 7;               // soft PCF edges; scaled with mapSize (radius is in TEXELS, so 4096 needs more to stay as soft)
     const sc = sun.shadow.camera;
     // Tight ±58m frustum (was ±95): the shadow pass is draw-call bound, and this
     // culls the thousands of distant scenery casters that cost full price for a
@@ -673,7 +684,29 @@ export class Game {
 
     this.decorate(library);
     this.buildObstacleGrid();
+    this.wireAmbientOcclusion();
     this.enableShadows();
+  }
+
+  /** three.js reads `aoMap` from the SECOND uv channel (`uv1`), which none of
+   *  our geometry has — so an aoMap assigned to a material renders as nothing at
+   *  all until the channel exists. Rather than thread a second UV set through
+   *  every builder, alias uv1 to uv wherever a material actually uses an aoMap.
+   *  The AO is baked in the ARM texture we already load for roughness, so this
+   *  buys real contact darkening in crevices for zero per-frame cost. */
+  private wireAmbientOcclusion() {
+    let wired = 0;
+    this.scene.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!(m as unknown as { isMesh?: boolean }).isMesh) return;
+      const mats = Array.isArray(m.material) ? m.material : [m.material];
+      const usesAo = mats.some((x) => (x as THREE.MeshStandardMaterial)?.aoMap);
+      if (!usesAo) return;
+      const geo = m.geometry as THREE.BufferGeometry;
+      const uv = geo.attributes.uv;
+      if (uv && !geo.attributes.uv1) { geo.setAttribute("uv1", uv); wired++; }
+    });
+    return wired;
   }
 
   /** Turn on shadow casting/receiving across the world's solid meshes (points,
@@ -2107,6 +2140,7 @@ export class Game {
 
   applySettings(s: Settings) {
     this.bloomPass.enabled = s.bloom;
+    if (this.gtao) this.gtao.enabled = s.ao;
     this.sound.setVolumes(s.musicVolume, s.sfxVolume);
     this.cameraIndex = s.camera % CAMERA_PRESETS.length;
     this.camera.fov = CAMERA_PRESETS[this.cameraIndex].fov;
