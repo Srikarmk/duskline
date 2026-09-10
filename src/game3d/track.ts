@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { ROAD_HALF_WIDTH } from "./constants";
 import { asphaltBump, pbr, tileSet } from "./textures";
+import { TRACK_SCALE } from "./constants";
 import type { RealmPalette } from "./realms";
 
 /** Per-realm road surface: roughness / metalness / env-reflection strength. */
@@ -47,7 +48,14 @@ export class Track {
 
   constructor(controlPoints: [number, number, number][], banked = true) {
     this.banked = banked;
-    const pts = controlPoints.map(([x, y, z]) => new THREE.Vector3(x, y, z));
+    // LAP LENGTH. Scaling the control points outward in X/Z stretches the whole
+    // circuit while preserving its shape, corner sequence and elevation, so every
+    // realm gets proportionally longer without any hand-retuning. Everything
+    // downstream (scenery bands, pickups, terrain samples, the minimap) is
+    // expressed per-metre of arc length, so it all follows automatically.
+    // Y is left alone: scaling height too would turn the hills into cliffs.
+    const pts = controlPoints.map(([x, y, z]) =>
+      new THREE.Vector3(x * TRACK_SCALE, y, z * TRACK_SCALE));
     this.curve = new THREE.CatmullRomCurve3(pts, true, "catmullrom", 0.5);
     this.curve.arcLengthDivisions = 2000;
     this.length = this.curve.getLength();

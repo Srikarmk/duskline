@@ -145,6 +145,52 @@ const SMK_GREY = new THREE.Color(0xd7d9e2);
 
 /** Screen-space heat-haze: wobbles the image toward the horizon band, strongest
  *  low on screen and fading up — the rising-hot-air shimmer over the ember flats. */
+/** Final filmic grade. Runs AFTER OutputPass, i.e. on tone-mapped display-space
+ *  colour, because grain and chromatic aberration are display effects — doing
+ *  them in linear HDR gives the wrong response curve entirely.
+ *  Deliberately restrained: a gentle S-curve, a cool-shadow/warm-highlight split
+ *  tone, a whisper of grain to break up flat gradients, and a touch of radial
+ *  chromatic aberration that only bites at the very edge of frame. */
+const FilmGradeShader = {
+  uniforms: {
+    tDiffuse: { value: null as THREE.Texture | null },
+    time: { value: 0 },
+    amount: { value: 1 },
+  },
+  vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform float time; uniform float amount;
+    varying vec2 vUv;
+    void main(){
+      vec2 c = vUv - 0.5;
+      float r2 = dot(c, c);
+      // chromatic aberration: zero in the middle, only noticeable at the corners
+      vec2 off = c * r2 * 0.0075 * amount;
+      vec3 col;
+      col.r = texture2D(tDiffuse, vUv + off).r;
+      col.g = texture2D(tDiffuse, vUv).g;
+      col.b = texture2D(tDiffuse, vUv - off).b;
+
+      // filmic S-curve: lifts contrast without crushing either end
+      col = mix(col, col * col * (3.0 - 2.0 * col), 0.22 * amount);
+
+      // split tone — cool the shadows, warm the highlights
+      float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
+      vec3 shadowTint = vec3(0.90, 0.97, 1.10);
+      vec3 highTint   = vec3(1.06, 1.01, 0.94);
+      col *= mix(shadowTint, highTint, smoothstep(0.15, 0.85, luma)) * amount + (1.0 - amount);
+
+      // a little saturation so the realm palettes stay punchy after the S-curve
+      col = mix(vec3(luma), col, 1.0 + 0.10 * amount);
+
+      // fine grain, animated so it never reads as a static pattern
+      float g = fract(sin(dot(vUv * vec2(1.0, 1.0) + time * 0.35, vec2(12.9898, 78.233))) * 43758.5453);
+      col += (g - 0.5) * 0.016 * amount;
+
+      gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+    }`,
+};
+
 const HeatHazeShader = {
   uniforms: { tDiffuse: { value: null as THREE.Texture | null }, time: { value: 0 }, amount: { value: 0 } },
   vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
@@ -185,6 +231,7 @@ export class Game {
   private bloomPass!: UnrealBloomPass;
   private gtao!: GTAOPass;
   private heatHaze: ShaderPass | null = null;
+  private filmGrade: ShaderPass | null = null;
   private lightShafts: THREE.Group | null = null;
   private hudCtx: CanvasRenderingContext2D;
   private hudCanvas: HTMLCanvasElement;
@@ -476,6 +523,11 @@ export class Game {
 
     // final pass applies tone mapping + sRGB so the composed image is graded
     this.composer.addPass(new OutputPass());
+
+    // …then the film grade on top, in display space (see FilmGradeShader).
+    const grade = new ShaderPass(FilmGradeShader);
+    this.composer.addPass(grade);
+    this.filmGrade = grade;
     this.bloomPass.enabled = loadSetting("bloom", true);
     this.cameraIndex = loadSetting("camera", 0) % CAMERA_PRESETS.length;
     this.camera.fov = CAMERA_PRESETS[this.cameraIndex].fov;
@@ -820,7 +872,10 @@ export class Game {
       // pole (1.0 = your top speed) down to tail (0.90): a real fight now — with
       // the strong catch-up rubber-band they stay right on you (competitive), but
       // slow when they get ahead so a clean lap still wins (no more lapping you)
-      opp.pace = 1.0 - (i / Math.max(1, gridN - 1)) * 0.10;
+      // Across a 10-car grid a 0.10 spread put the tail at 0.90 of your top
+      // speed — from P10 the back half was easy pickings. 0.06 keeps the whole
+      // field within 6% of each other, so passing all nine is a real climb.
+      opp.pace = 1.0 - (i / Math.max(1, gridN - 1)) * 0.06;
       opp.place(this.track); // snap onto the grid now so the field lines up during the countdown
       this.opponents.push(opp);
     }
@@ -1758,7 +1813,10 @@ export class Game {
     // rather than a rarity. Each site drops a PAIR in different lanes, so you no
     // longer have to be in the one exact lane to ever pick a charge up.
     let ni = 0;
-    for (let d = 130; d < len - 40; d += 145) {
+    // 145 m -> 300 m. Note the trap: 200 m looked like a 31% cut in density but
+    // the 1.55x longer lap turned it into 24 cans per lap, MORE than the 20 you
+    // had before. 300 m lands ~16 per lap — an actual trim, not a drought.
+    for (let d = 130; d < len - 40; d += 300) {
       const a = LANE_CENTERS[ni % 3];
       const b = LANE_CENTERS[(ni + 1) % 3];
       ni++;
@@ -1766,7 +1824,38 @@ export class Game {
       this.addEntity("nitro", d + 7, b, makeNitroCan());
     }
 
-    // (ramps + crest-jumps removed — focus is on clean driving + environments)
+    // RAMPS ARE BACK, but built to be OPTIONAL rather than unavoidable. They were
+    // pulled because they spanned two thirds of the road and pitched you off the
+    // map; RAMP_SPECS is now genuinely one lane wide (half-width 1.5 on a 10 m
+    // road) with the launch power dialled down. Each ramp is pinned to ONE lane
+    // and the gentler kinds dominate, so there is always a clear line past it and
+    // taking one is a choice you make for the airtime, not a trap.
+    {
+      const rampKinds: RampKind[] = ["kicker", "standard", "kicker", "wide", "standard", "mega"];
+      let rk = 0;
+      for (let d = 260; d < len - 120; d += 330) {
+        const kind = rampKinds[rk % rampKinds.length];
+        // sit it in an outer lane so the racing line through the middle stays open
+        const lane = LANE_CENTERS[rk % 2 === 0 ? 0 : 2];
+        this.addEntity("ramp", d, lane, makeRamp(kind), 0, RAMP_SPECS[kind].power);
+        // The ride-up physics reads `this.ramps`, which NOTHING was populating —
+        // so before this the ramps were pure decoration you drove straight
+        // through. Register each one so it can actually be driven up.
+        //   len:  RAMP_SPECS.l is HALF-length (makeRamp spans z from -l to +l).
+        //   lane: the ride-up compares against `playerX`, and the two differ —
+        //         addEntity places at `lateral * ROAD_HALF_WIDTH` (/5) while
+        //         playerX divides by ROAD_HALF_WIDTH * 0.9 (/4.5). Convert, or
+        //         the collision band sits off-centre from the visible ramp.
+        this.ramps.push({
+          dist: this.track.wrap(d),
+          power: RAMP_SPECS[kind].power,
+          lane: lane / 0.9,
+          len: RAMP_SPECS[kind].l * 2,
+          height: RAMP_SPECS[kind].h,
+        });
+        rk++;
+      }
+    }
 
     // TRANSFORMER RUSH: orbs + the things the mech exists to destroy.
     if (this.cfg.orbs) {
@@ -3268,6 +3357,7 @@ export class Game {
       // drive the foliage wind + shimmer/sway the god-ray shafts so they breathe
       windTime.value = this.time;
       if (this.heatHaze && this.heatHaze.enabled) this.heatHaze.uniforms.time.value = this.time;
+      if (this.filmGrade) this.filmGrade.uniforms.time.value = this.time;
       if (this.lightShafts) {
         this.lightShafts.children.forEach((h, i) => {
           h.rotation.z = Math.sin(this.time * 0.15 + i) * 0.14;

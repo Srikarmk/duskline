@@ -1190,12 +1190,15 @@ export type RampKind = "standard" | "mega" | "kicker" | "wide";
 export const RAMP_SPECS: Record<RampKind, {
   w: number; l: number; h: number; body: number; glow: number; chev: number; power: number;
 }> = {
-  // single-lane ramps — each occupies ONE lane so you choose to take it (or a
-  // clear lane past it); lengths/heights read as bold take-offs you drive up
-  standard: { w: 3.2, l: 4.6, h: 2.4, body: 0x5a2c0e, glow: 0xf59e0b, chev: 0xfbbf24, power: 1.0 },
-  mega:     { w: 3.4, l: 6.0, h: 3.6, body: 0x0e3a4a, glow: 0x22d3ee, chev: 0x67e8f9, power: 1.5 },
-  kicker:   { w: 3.0, l: 3.0, h: 1.55, body: 0x143a20, glow: 0x4ade80, chev: 0xa7f3d0, power: 0.7 },
-  wide:     { w: 3.4, l: 4.0, h: 2.1, body: 0x3b1046, glow: 0xd946ef, chev: 0xf5d0fe, power: 1.05 },
+  // GENUINELY single-lane now. These used to be w:3.2-3.4 half-width = 6.4-6.8 m
+  // on a 10 m road, i.e. two thirds of the track — you could not avoid them and
+  // they pitched you off the map. A lane is ~3.3 m, so half-width 1.5 leaves a
+  // clear line either side. Heights are down too: these are take-offs you ride
+  // over, not launch pads.
+  standard: { w: 1.5, l: 5.0, h: 1.35, body: 0x5a2c0e, glow: 0xf59e0b, chev: 0xfbbf24, power: 0.85 },
+  mega:     { w: 1.6, l: 6.2, h: 1.9, body: 0x0e3a4a, glow: 0x22d3ee, chev: 0x67e8f9, power: 1.1 },
+  kicker:   { w: 1.45, l: 3.6, h: 0.95, body: 0x143a20, glow: 0x4ade80, chev: 0xa7f3d0, power: 0.6 },
+  wide:     { w: 1.55, l: 4.4, h: 1.2, body: 0x3b1046, glow: 0xd946ef, chev: 0xf5d0fe, power: 0.9 },
 };
 
 // curved slope profiles (t: 0 at entry → 1 at lip). All start flat at 0 and

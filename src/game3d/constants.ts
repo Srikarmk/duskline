@@ -3,6 +3,13 @@ export const WIDTH = 800;
 export const HEIGHT = 600;
 export const STEP = 1 / 60;
 
+/** Multiplier on every realm's control points, so laps are longer and a race
+ *  actually takes time. 1.55 turns the ~1.5 km circuits into ~2.4 km ones: at
+ *  ~60 m/s that's ~40 s a lap, so a 3-lap race runs about two minutes instead of
+ *  well under one. Shape, corner sequence and elevation are unchanged — only the
+ *  scale — and everything downstream is per-metre so it follows automatically. */
+export const TRACK_SCALE = 1.55;
+
 export const ROAD_HALF_WIDTH = 5;
 export const LANES = 3;
 /** the road surface renders slightly above the track centerline, so lift cars
@@ -92,16 +99,21 @@ export const SCORE_FINISH = 1000;
 export const LANE_BONUS_SECONDS = 4;
 
 // AI opponents
-export const OPPONENT_COUNT = 7; // 7 rivals + you = an 8-car grid
+// 9 rivals + you = a 10-car grid, and the player always starts P10 (the grid
+// code puts the player in the backmost slot), so every race is a climb from the
+// back of an F1-style staggered grid.
+export const OPPONENT_COUNT = 9;
 export const OPPONENTS: { name: string; color: number; skill: number }[] = [
   { name: "Vex", color: 0xef4444, skill: 1.0 },
   { name: "Nyx", color: 0x22c55e, skill: 0.99 },
-  { name: "Zir", color: 0xf59e0b, skill: 0.98 },
-  { name: "Kai", color: 0x3b82f6, skill: 0.97 },
-  { name: "Rok", color: 0xec4899, skill: 0.96 },
-  { name: "Ash", color: 0xa855f7, skill: 0.95 },
-  { name: "Jet", color: 0x14b8a6, skill: 0.94 },
-  { name: "Bo", color: 0xf97316, skill: 0.93 },
+  { name: "Zir", color: 0xf59e0b, skill: 0.985 },
+  { name: "Kai", color: 0x3b82f6, skill: 0.98 },
+  { name: "Rok", color: 0xec4899, skill: 0.975 },
+  { name: "Ash", color: 0xa855f7, skill: 0.97 },
+  { name: "Jet", color: 0x14b8a6, skill: 0.965 },
+  { name: "Bo", color: 0xf97316, skill: 0.96 },
+  { name: "Kit", color: 0x84cc16, skill: 0.955 },
+  { name: "Rune", color: 0x06b6d4, skill: 0.95 },
 ];
 
 // sword swing (transformer melee)
