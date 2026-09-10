@@ -1472,14 +1472,18 @@ export class Game {
     for (const t of REALM_TUNNELS[this.realm.id] ?? []) {
       const d0 = t.at * len;
       const d1 = d0 + t.len;
-      const entry = makeTunnelPortal(pal);
+      // The forest's are natural CAVES, not engineered road tunnels: no crown
+      // strip lighting, no marker beacons. It should go dark as you enter, the
+      // way a cave actually does.
+      const lit = this.realm.id !== "forest";
+      const entry = makeTunnelPortal(pal, lit);
       this.placeOnTrack(entry, d0);
       this.scene.add(entry);
-      const exit = makeTunnelPortal(pal);
+      const exit = makeTunnelPortal(pal, lit);
       this.placeOnTrack(exit, d1, Math.PI); // flip so its face points back out
       this.scene.add(exit);
       for (let d = d0 + 3; d < d1 - 3; d += 2.6) {
-        const arch = makeTunnelArch(pal);
+        const arch = makeTunnelArch(pal, lit);
         this.placeOnTrack(arch, d);
         this.scene.add(arch);
       }
@@ -1793,7 +1797,7 @@ export class Game {
 
       // ground clutter fills the empty flats
       const centerline = track.sampleXZ(240);
-      const grass = this.scatter(centerline, rand, 4200, ROAD_HALF_WIDTH * 1.3 + 3, 150);
+      const grass = this.scatter(centerline, rand, 9000, ROAD_HALF_WIDTH * 1.3 + 3, 150);
       this.scene.add(makeGrassField(pal, grass));
       const pebbles = this.scatter(centerline, rand, 1100, ROAD_HALF_WIDTH * 1.3 + 4, 170);
       this.scene.add(makeRockField(pal, pebbles));
@@ -1802,17 +1806,27 @@ export class Game {
       // trees close to the road, so the woods read as overgrown, not a lawn.
       if (realm.id === "forest") {
         // dense ferny understory right up to the tarmac (one instanced draw call)
-        const under = this.scatter(centerline, rand, 15000, ROAD_HALF_WIDTH + 1.5, 70);
-        for (const u of under) u.s = 1.4 + rand() * 2.6; // taller, bushier than lawn grass
+        // +3.2 not +1.5: tufts have width, so starting 1.5 m off a 5 m half-width
+        // road put blades over the tarmac edge — that's the grass-on-the-road.
+        const under = this.scatter(centerline, rand, 26000, ROAD_HALF_WIDTH + 3.2, 70);
+        for (const u of under) u.s = 0.8 + rand() * 0.9; // a shade taller than the lawn, not a thicket of 4 m blades
         this.scene.add(makeGrassField(pal, under));
         // a packed wall of trees hugging the road (both sides), plus a second row
-        const kinds: ("pine" | "round" | "tall")[] = ["round", "round", "pine", "tall"];
-        for (let d = 0; d < len; d += 7.5) {
+        // "tall" removed: it's a dark, slim conifer that silhouettes as a black
+        // pillar with a knob on top rather than a tree — the "odd looking
+        // pillars". Round + pine both read correctly at speed.
+        const kinds: ("pine" | "round" | "tall")[] = ["round", "round", "pine", "round"];
+        for (let d = 0; d < len; d += 7.4) {
           for (const side of [-1, 1]) {
+            // Denser than the original 2 rows @ 0.8/0.32, but NOT the 3 rows @
+            // 0.95/0.7/0.45 I first tried: that took meshes 5,688 -> 10,518 and
+            // the frame 9.1 -> 24.3 ms (41 fps). We're draw-call bound, so tree
+            // count converts almost linearly into frame time. This is the most
+            // forest I can buy inside the 60 fps budget.
             for (const row of [0, 1]) {
-              if (rand() < (row === 0 ? 0.8 : 0.32)) {
+              if (rand() < (row === 0 ? 0.92 : 0.42)) {
                 const t = this.mergeProp(makeTree(rand, this.treeMats!, kinds[Math.floor(rand() * kinds.length)]));
-                const off = side * (ROAD_HALF_WIDTH + 4 + row * 18 + rand() * 12);
+                const off = side * (ROAD_HALF_WIDTH + 4 + row * 13 + rand() * 10);
                 const jd = d + rand() * 5;
                 const p = track.pointAt(this.track.wrap(jd), off);
                 t.position.set(p.x, this.terrainYAt(jd, off), p.z);
@@ -1883,13 +1897,17 @@ export class Game {
       // ~55 m/s a standard ramp is airborne ~1.3 s, so it lands ~72 m downrange —
       // a 70 m check let one land just past the end of the straight and off the
       // road. 110 m covers even the mega ramp with margin.
+      // Relaxed from 0.0045 to 0.007 and the window from 110 m to 95 m. The
+      // strict version only found ~3 ramps on a twisty circuit; now that air
+      // control actually works a gentle bend is recoverable, so this trades a
+      // little margin for roughly double the ramps.
       const straightAt = (at: number) => {
-        for (let o = -12; o <= 110; o += 10) {
-          if (Math.abs(this.track.curvatureAt(this.track.wrap(at + o))) > 0.0045) return false;
+        for (let o = -12; o <= 95; o += 10) {
+          if (Math.abs(this.track.curvatureAt(this.track.wrap(at + o))) > 0.007) return false;
         }
         return true;
       };
-      for (let d = 240; d < len - 200; d += 230) {
+      for (let d = 200; d < len - 170; d += 175) {
         let at = d, tries = 0;
         while (!straightAt(at) && tries++ < 30) at += 12;   // slide to the next straight
         if (!straightAt(at)) continue;                      // no straight here — skip it
@@ -2186,13 +2204,32 @@ export class Game {
         s.scale.multiplyScalar(1.8 + rand() * 1.6);
         place(s, d + rand() * 22, side * (ROAD_HALF_WIDTH + 4 + rand() * 14));
       }
+      // frozen falls close in, so the ice realm also has a feature you pass
+      for (let i = 0; i < 2; i++) {
+        const d = len * (0.24 + i * 0.42) + rand() * 30;
+        const side = i % 2 === 0 ? -1 : 1;
+        const w = makeWaterfall(rand);
+        w.scale.multiplyScalar(1.4 + rand() * 0.6);
+        place(w, d, side * (ROAD_HALF_WIDTH + 12 + rand() * 6), faceRoad(d, side));
+      }
     } else if (realm.id === "forest") {
-      // cave mouths set back in the hillsides (they replace the tunnel), facing the road
+      // cave mouths set back in the hillsides, facing the road
       for (let d = 60; d < len - 40; d += 220) {
         const side = rand() < 0.5 ? 1 : -1;
         const c = makeCaveMouth(pal);
         c.scale.multiplyScalar(1 + rand() * 0.6);
         place(c, d + rand() * 40, side * (ROAD_HALF_WIDTH + 26 + rand() * 44), faceRoad(d, side));
+      }
+      // Signature waterfalls RIGHT BESIDE the ribbon. There were already
+      // waterfalls in this realm, but only as landmarks dropped 95-100 m out,
+      // where they're scenery you never really register. At ~12 m off the verge
+      // you drive past the spray.
+      for (let i = 0; i < 3; i++) {
+        const d = len * (0.17 + i * 0.29) + rand() * 40;
+        const side = i % 2 === 0 ? 1 : -1;
+        const w = makeWaterfall(rand);
+        w.scale.multiplyScalar(1.5 + rand() * 0.7);
+        place(w, d, side * (ROAD_HALF_WIDTH + 11 + rand() * 6), faceRoad(d, side));
       }
     }
   }

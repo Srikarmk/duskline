@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { pbr } from "./textures";
 import { ROAD_HALF_WIDTH } from "./constants";
 import type { RealmPalette } from "./realms";
 
@@ -169,13 +170,17 @@ function stoneColor(pal: RealmPalette, mix: number): THREE.Color {
  * so packed rings read as continuous tunnel. Dark faceted stone with a proud
  * rib on each face and a warm/realm-tinted emissive light strip along the crown.
  */
-export function makeTunnelArch(pal: RealmPalette): THREE.Group {
+export function makeTunnelArch(pal: RealmPalette, lit = true): THREE.Group {
   const g = new THREE.Group();
   const depth = 1.2;
   const stone = stoneColor(pal, 0.5);
 
+  // An UNLIT arch is a natural cave, so give it the real rock texture rather
+  // than the palette's smooth "cement" grey — a cave should read as hewn stone.
+  const rock = lit ? null : pbr()?.rock;
   const stoneMat = new THREE.MeshStandardMaterial({
-    color: stone,
+    ...(rock ? { map: rock.diff, normalMap: rock.nor, roughnessMap: rock.arm ?? undefined } : {}),
+    color: rock ? new THREE.Color(0x9a9a94) : stone,
     metalness: 0.1,
     roughness: 0.92,
     flatShading: true,
@@ -199,16 +204,20 @@ export function makeTunnelArch(pal: RealmPalette): THREE.Group {
   ribBack.position.z = depth / 2 + 0.1;
   g.add(ribBack);
 
-  // emissive crown light strip (bloom picks this up and lights the interior)
-  const glow = new THREE.Color(pal.rumbleB);
-  const glowMat = new THREE.MeshStandardMaterial({
-    color: glow.clone().lerp(new THREE.Color(0xffffff), 0.4),
-    emissive: glow,
-    emissiveIntensity: 0.85,
-    metalness: 0,
-    roughness: 0.4,
-  });
-  g.add(new THREE.Mesh(crownLightGeometry(), glowMat));
+  // Emissive crown light strip. Skipped when `lit` is false: a NATURAL cave has
+  // no strip lighting in it, and a glowing rock roof is the kind of thing that
+  // instantly breaks the illusion. Engineered road tunnels keep theirs.
+  if (lit) {
+    const glow = new THREE.Color(pal.rumbleB);
+    const glowMat = new THREE.MeshStandardMaterial({
+      color: glow.clone().lerp(new THREE.Color(0xffffff), 0.4),
+      emissive: glow,
+      emissiveIntensity: 0.85,
+      metalness: 0,
+      roughness: 0.4,
+    });
+    g.add(new THREE.Mesh(crownLightGeometry(), glowMat));
+  }
 
   return g;
 }
@@ -220,7 +229,7 @@ export function makeTunnelArch(pal: RealmPalette): THREE.Group {
  * lip so the mouth reads as "going in", and a pair of emissive marker lights
  * framing the mouth. Built facing down +Z with the base on y = 0.
  */
-export function makeTunnelPortal(pal: RealmPalette): THREE.Group {
+export function makeTunnelPortal(pal: RealmPalette, lit = true): THREE.Group {
   const g = new THREE.Group();
   const D = 2.6; // portal depth
   const zFront = -D / 2;
@@ -279,22 +288,25 @@ export function makeTunnelPortal(pal: RealmPalette): THREE.Group {
   key.position.set(0, CROWN_Y + 0.05, zFront - 0.1);
   g.add(key);
 
-  // a couple of emissive marker lights framing the mouth (bar + beacon each side)
-  const glow = new THREE.Color(pal.rumbleB);
-  const glowMat = new THREE.MeshStandardMaterial({
-    color: glow.clone().lerp(new THREE.Color(0xffffff), 0.45),
-    emissive: glow,
-    emissiveIntensity: 0.9,
-    metalness: 0,
-    roughness: 0.4,
-  });
-  for (const sx of [-1, 1]) {
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.4, 4.2, 0.4), glowMat);
-    bar.position.set(sx * (HW_IN + 0.9), 3.0, zFront - 0.15);
-    g.add(bar);
-    const beacon = new THREE.Mesh(new THREE.IcosahedronGeometry(0.5, 0), glowMat);
-    beacon.position.set(sx * (HW_IN + 0.9), 5.4, zFront - 0.15);
-    g.add(beacon);
+  // Marker lights framing the mouth — engineered tunnels only. A cave mouth in
+  // a forest has no beacons bolted to it.
+  if (lit) {
+    const glow = new THREE.Color(pal.rumbleB);
+    const glowMat = new THREE.MeshStandardMaterial({
+      color: glow.clone().lerp(new THREE.Color(0xffffff), 0.45),
+      emissive: glow,
+      emissiveIntensity: 0.9,
+      metalness: 0,
+      roughness: 0.4,
+    });
+    for (const sx of [-1, 1]) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.4, 4.2, 0.4), glowMat);
+      bar.position.set(sx * (HW_IN + 0.9), 3.0, zFront - 0.15);
+      g.add(bar);
+      const beacon = new THREE.Mesh(new THREE.IcosahedronGeometry(0.5, 0), glowMat);
+      beacon.position.set(sx * (HW_IN + 0.9), 5.4, zFront - 0.15);
+      g.add(beacon);
+    }
   }
 
   return g;

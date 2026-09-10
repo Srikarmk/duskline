@@ -40,7 +40,7 @@ export const REALM_WEATHER: Record<RealmId, WeatherKind> = {
  *  every realm gets at least a clear/heavy pair so the sky visibly turns while
  *  you drive. The engine picks a new one from this pool at random intervals. */
 export const REALM_WEATHER_POOL: Record<RealmId, WeatherKind[]> = {
-  forest: ["spores", "mist", "rain", "none"],
+  forest: ["spores", "mist", "none"],   // rain read wrong under the canopy
   ember:  ["ember", "sand", "none"],
   peaks:  ["snow", "mist", "none"],
   void:   ["none"],                     // vacuum: nothing to fall
@@ -69,7 +69,12 @@ export const REALM_AMBIENCE: Record<RealmId, AmbienceKind> = {
  *  tunnel starts, `len` its length in metres. Ground realms only (space tubes
  *  and the open stadium get none). */
 export const REALM_TUNNELS: Record<RealmId, { at: number; len: number }[]> = {
-  forest: [], // caves replace the tunnel here (see placeRealmFeatures)
+  // Two drive-THROUGH caves. This was [] with a comment saying the roadside cave
+  // mouths replaced it — but those sit 26-70 m off the road facing you, so the
+  // forest had cave "definition" and nothing you could ever enter. Taking the
+  // palette, the portal/arch geometry reads as hewn rock here rather than
+  // concrete, so it's a cave rather than a road tunnel.
+  forest: [{ at: 0.31, len: 82 }, { at: 0.69, len: 54 }],
   ember: [{ at: 0.52, len: 68 }],
   peaks: [{ at: 0.26, len: 96 }, { at: 0.72, len: 58 }],
   void: [],
@@ -263,9 +268,8 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     },
     scenery: [
       { kind: "treeA", weight: 8 }, { kind: "treeB", weight: 8 },
-      { kind: "treeDark", weight: 6 }, { kind: "mushroom", weight: 4 },
+      { kind: "treeDark", weight: 1 }, { kind: "mushroom", weight: 4 },
       { kind: "mushroomTall", weight: 3 }, { kind: "crystal", weight: 2 },
-      { kind: "waterfall", weight: 3 },
     ],
   },
 

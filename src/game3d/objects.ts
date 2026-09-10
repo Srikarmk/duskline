@@ -643,11 +643,11 @@ export interface Placement { x: number; z: number; y: number; s: number; r: numb
  *  ONE instanced draw call. */
 function bladeTuft(): THREE.BufferGeometry {
   const pos: number[] = [];
-  const SEG = 3, BLADES = 3;
+  const SEG = 2, BLADES = 5;
   for (let b = 0; b < BLADES; b++) {
     const a = (b / BLADES) * Math.PI * 2 + 0.4;
     const ca = Math.cos(a), sa = Math.sin(a);
-    const lean = 0.20 + b * 0.06;          // each blade flops a little differently
+    const lean = 0.16 + b * 0.05;          // each blade flops a little differently
     const pt = (x: number, y: number, w: number) => [x * ca - w * sa, y, x * sa + w * ca];
     for (let sg = 0; sg < SEG; sg++) {
       const t0 = sg / SEG, t1 = (sg + 1) / SEG;
@@ -678,7 +678,10 @@ export function makeGrassField(pal: RealmPalette, pts: Placement[]): THREE.Insta
   pts.forEach((pt, i) => {
     p.set(pt.x, pt.y, pt.z);
     q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), pt.r);
-    s.set(pt.s, pt.s * (0.7 + Math.random() * 0.9), pt.s);
+    // Unit-height geometry, so this is where a tuft's real size is decided.
+    // Grass is ankle-to-knee high: anything approaching a metre reads as an
+    // alien plant. Width is pulled in too so a tuft is a clump, not a fan.
+    s.set(pt.s * 0.5, pt.s * (0.30 + Math.random() * 0.28), pt.s * 0.5);
     m.compose(p, q, s);
     mesh.setMatrixAt(i, m);
     col.copy(base).offsetHSL(0, 0, (Math.random() - 0.5) * 0.18);
@@ -1691,7 +1694,11 @@ export function makeTreeMaterials(pal: RealmPalette): TreeMats {
       color: pal.clutter, map: fol.diff, normalMap: fol.nor, roughness: 0.78, metalness: 0,
       flatShading: true, vertexColors: true, envMapIntensity: 0.6,
     });
-    if (fol.arm) { foliage.roughnessMap = fol.arm; foliage.roughness = 1; foliage.aoMap = fol.arm; foliage.aoMapIntensity = 0.7; }
+    // NO strong aoMap on foliage. The canopy is already shaded four ways over:
+    // the palette tint, the leaf albedo, and a baked dark-to-light vertex
+    // gradient (paintByHeight). Stacking texture AO on top at 0.7 crushed it to
+    // near-black, which is why the trees read as rocky blobs rather than leaves.
+    if (fol.arm) { foliage.roughnessMap = fol.arm; foliage.roughness = 1; foliage.aoMap = fol.arm; foliage.aoMapIntensity = 0.22; }
     applyFoliageWind(foliage);
     return {
       trunk: Object.assign(new THREE.MeshStandardMaterial({
@@ -1760,7 +1767,7 @@ function lumpyBlob(r: number, detail: number, dodeca: boolean, jitter: number, f
  *  the shared materials come from makeTreeMaterials. */
 export function makeTree(rand: () => number, mats: TreeMats, kind: TreeKind): THREE.Group {
   const g = new THREE.Group();
-  const h = kind === "tall" ? 4.4 + rand() * 3.4 : 2.6 + rand() * 2.4;
+  const h = kind === "tall" ? 4.0 + rand() * 2.2 : 2.6 + rand() * 2.4;
 
   // --- trunk: tapered with a slight root flare and a gentle lean -----------
   const trunkH = h * (kind === "round" ? 0.4 : 0.28);
@@ -1777,7 +1784,9 @@ export function makeTree(rand: () => number, mats: TreeMats, kind: TreeKind): TH
   // reused). Low = shaded, cool under-canopy; High = sunlit, warmer crown.
   const tj = 0.86 + rand() * 0.26;      // per-tree lightness
   const warm = (rand() - 0.5) * 0.10;   // per-tree hue skew (warm/cool)
-  const shadeLow = new THREE.Color((0.40 - warm) * tj, 0.50 * tj, (0.46 + warm) * tj);
+  // was 0.40/0.50/0.46 — the canopy underside went essentially black once the
+  // texture and AO multiplied in. Lifted so it stays readable as foliage.
+  const shadeLow = new THREE.Color((0.62 - warm) * tj, 0.76 * tj, (0.66 + warm) * tj);
   const shadeHigh = new THREE.Color((1.10 + warm) * tj, 1.12 * tj, (0.94 - warm) * tj);
 
   const foliage: THREE.BufferGeometry[] = [];
@@ -1821,7 +1830,10 @@ export function makeTree(rand: () => number, mats: TreeMats, kind: TreeKind): TH
     // as a bushy pine rather than one sharp cone. "tall" is the slim variant.
     const tall = kind === "tall";
     const L = tall ? 5 : 4;
-    const spread = h * (tall ? 0.26 : 0.44);
+    // 0.26 made a 4-8 m tree with a canopy barely 1.5 m across — a dark spire
+    // that reads as an odd little pillar rather than a tree. Still slimmer than
+    // the bushy variant, but now unmistakably a tree.
+    const spread = h * (tall ? 0.40 : 0.44);
     const cBase = trunkH * 0.6;
     const canopyH = h * (tall ? 0.82 : 0.7);
     let topApex = cBase;
