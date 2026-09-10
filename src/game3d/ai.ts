@@ -224,9 +224,11 @@ export class Opponent {
     const gripScrub = Math.min(overcook * 2.2, 0.14);
     let target = baseSpeed * (1 - cornerLift) * (1 - gripScrub) * slipMult;
     if (this.boostT > 0) target *= this.boostMult;
-    // never let a rival exceed what the player can hit on nitro — otherwise they
-    // rocket away uncatchably and the race stops feeling like a fair fight
-    target = Math.min(target, MAX_SPEED * 1.34);
+    // Cap relative to a fast kart's nitro ceiling rather than raw MAX_SPEED: the
+    // old 1.34x was measured against the base figure, so on a quick kart the
+    // player simply out-ran the ceiling and lapped the field. Still a cap, so
+    // nobody rockets away uncatchably.
+    target = Math.min(target, MAX_SPEED * 1.62);
     this.speed += (target - this.speed) * Math.min(1, dt * 1.5);
 
     this.dist += this.speed * dt;

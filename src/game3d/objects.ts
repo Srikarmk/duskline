@@ -632,10 +632,42 @@ export function makeGround(pal: RealmPalette): THREE.Mesh {
 
 export interface Placement { x: number; z: number; y: number; s: number; r: number; }
 
+/** A tuft of real grass BLADES.
+ *
+ *  The old grass was `ConeGeometry(0.16, 0.7, 4)` — a four-sided cone, i.e. a
+ *  literal little green pyramid, thousands of them. That's the "childish
+ *  pyramids" look. Actual grass reads as a cluster of thin blades that taper and
+ *  lean, so that's what this builds: three blades splayed around the base, each
+ *  a tapered strip curving over. Unit height, so the per-instance scale decides
+ *  how tall each tuft stands. 18 triangles a tuft, and the whole field is still
+ *  ONE instanced draw call. */
+function bladeTuft(): THREE.BufferGeometry {
+  const pos: number[] = [];
+  const SEG = 3, BLADES = 3;
+  for (let b = 0; b < BLADES; b++) {
+    const a = (b / BLADES) * Math.PI * 2 + 0.4;
+    const ca = Math.cos(a), sa = Math.sin(a);
+    const lean = 0.20 + b * 0.06;          // each blade flops a little differently
+    const pt = (x: number, y: number, w: number) => [x * ca - w * sa, y, x * sa + w * ca];
+    for (let sg = 0; sg < SEG; sg++) {
+      const t0 = sg / SEG, t1 = (sg + 1) / SEG;
+      const w0 = 0.075 * (1 - t0) + 0.005;  // wide at the root, a point at the tip
+      const w1 = 0.075 * (1 - t1) + 0.005;
+      const x0 = lean * t0 * t0, x1 = lean * t1 * t1; // quadratic curve = a natural droop
+      const A = pt(x0, t0, -w0), B = pt(x0, t0, w0), C = pt(x1, t1, w1), D = pt(x1, t1, -w1);
+      pos.push(...A, ...B, ...C, ...A, ...C, ...D);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.computeVertexNormals();
+  return g;
+}
+
 export function makeGrassField(pal: RealmPalette, pts: Placement[]): THREE.InstancedMesh {
-  const geo = new THREE.ConeGeometry(0.16, 0.7, 4);
-  geo.translate(0, 0.35, 0);
-  const mat = new THREE.MeshLambertMaterial({ color: pal.clutter });
+  const geo = bladeTuft();
+  // blades are thin strips, so they must be lit from both faces
+  const mat = new THREE.MeshLambertMaterial({ color: pal.clutter, side: THREE.DoubleSide });
   const mesh = new THREE.InstancedMesh(geo, mat, pts.length);
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();

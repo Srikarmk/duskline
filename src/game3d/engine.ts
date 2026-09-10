@@ -113,7 +113,10 @@ const MODE_CONFIG: Record<GameMode, ModeConfig> = {
   // NEON RUN — endless. There is no finish line: `laps` is set absurdly high so
   // the lap counter never runs out, and the point is distance + score rather
   // than a result. Best on Neon Metro, which is the Akira-flavoured city.
-  endless:   { laps: 9999, opponents: true, orbs: false, monsters: false, startNitro: 2, label: "NEON RUN", endless: true },
+  // NEON RUN — endless, and deliberately SOLO. No rivals, no finish line, no
+  // pressure: just an ethereal cruise. Racing against nine cars is the opposite
+  // of stress-free, so `opponents` is false here.
+  endless:   { laps: 9999, opponents: false, orbs: false, monsters: false, startNitro: 2, label: "NEON RUN", endless: true },
 };
 
 /** Lateral half-width for a hit, in ROAD_HALF_WIDTH units (1.0 = 5 m). Pickups are
@@ -2216,7 +2219,11 @@ export class Game {
         if (dd < near) near = dd;
       }
       if (near < minDist * minDist) continue;
-      pts.push({ x, z, y: this.groundHeightAtXZ(x, z), s: 0.6 + rand() * 1.1, r: rand() * Math.PI * 2 });
+      // +0.1: groundHeightAtXZ deliberately holds the ground a few cm BELOW the
+      // road ribbon across the corridor (so the tarmac always wins the depth
+      // test). Scatter placed on that lowered surface, which is why tufts and
+      // clutter looked half-sunk into the ground near the road.
+      pts.push({ x, z, y: this.groundHeightAtXZ(x, z) + 0.1, s: 0.6 + rand() * 1.1, r: rand() * Math.PI * 2 });
     }
     return pts;
   }
@@ -2762,7 +2769,11 @@ export class Game {
     this.sound.setEngine(this.speed / MAX_SPEED, this.nitroT > 0,
       throttling ? 1 : braking ? 0 : 0.22);
     // lift the music with speed + nitro so the track drives harder when flat out
-    this.sound.setMusicIntensity(0.32 + (this.speed / MAX_SPEED) * 0.55 + (this.nitroT > 0 ? 0.18 : 0));
+    // In NEON RUN the music should stay ambient and hypnotic however fast you go
+    // — ramping it with speed is exactly the tension the mode is meant to avoid.
+    this.sound.setMusicIntensity(this.cfg.endless
+      ? 0.26 + (this.speed / MAX_SPEED) * 0.16
+      : 0.32 + (this.speed / MAX_SPEED) * 0.55 + (this.nitroT > 0 ? 0.18 : 0));
 
     // advance & laps — `position` is the free-roam projection onto the track;
     // detect a forward crossing of the start/finish seam (guard jitter/reverse)
@@ -2821,7 +2832,13 @@ export class Game {
       // Gentle elastic only. The old -0.30 made a leading rival visibly brake to
       // wait for you (and +0.16 made a trailing one reel you in on a straight) —
       // the clearest "they're fake" tell. Now the field mostly races its own pace.
-      const base = MAX_SPEED * o.pace * (1 + clamp(gap / 320, -0.12, 0.09));
+      // The rivals' base used to be raw MAX_SPEED while YOU cruise at
+      // MAX_SPEED * your kart's speed stat — on a 5-star kart that's ~15% more,
+      // permanently, which is how you ended up nearly lapping the field. Base
+      // them on the same cruise speed you actually have, and widen the catch-up
+      // so a gap is closable rather than terminal.
+      const cruise = MAX_SPEED * this.carStat.speed;
+      const base = cruise * o.pace * (1 + clamp(gap / 300, -0.10, 0.20));
       o.update(dt, this.track, base, this.cfg.laps);
       // stamp the true finishing order the instant a rival crosses the final line
       if (o.finished && o.finishOrder === 0) o.finishOrder = ++this.finishSeq;
