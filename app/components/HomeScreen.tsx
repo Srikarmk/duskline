@@ -33,6 +33,13 @@ function Pips({ n }: { n: number }) {
 
 const MODES: { id: GameMode; name: string; blurb: string; tags: string[]; accent: string }[] = [
   {
+    id: "endless",
+    name: "NEON RUN",
+    blurb: "No finish line. Cruise a neon-drenched city forever \u2014 pick Neon Metro and just drive.",
+    tags: ["ENDLESS", "NO LAPS", "CYBERPUNK"],
+    accent: "#22d3ee",
+  },
+  {
     id: "classic",
     name: "CLASSIC CIRCUIT",
     blurb: "Seven AI rivals, gems, stunts, nitro and power-ups. The full-fat race.",
@@ -64,6 +71,7 @@ const MODES: { id: GameMode; name: string; blurb: string; tags: string[]; accent
 
 const MODE_LABEL: Record<GameMode, string> = {
   classic: "CIRCUIT", timetrial: "TRIAL", nitro: "SPRINT", transform: "RUSH", grandprix: "GP", spacewars: "WARS",
+  endless: "NEON RUN",
 };
 
 const STEPS: { n: number; label: string; hint: string }[] = [

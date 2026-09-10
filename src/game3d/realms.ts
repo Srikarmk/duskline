@@ -35,6 +35,22 @@ export const REALM_WEATHER: Record<RealmId, WeatherKind> = {
   nebula: "none",
 };
 
+/** Plausible weather each realm can cycle through mid-race. Kept per-realm on
+ *  purpose — a snowstorm in the desert would read as a bug, not as weather — but
+ *  every realm gets at least a clear/heavy pair so the sky visibly turns while
+ *  you drive. The engine picks a new one from this pool at random intervals. */
+export const REALM_WEATHER_POOL: Record<RealmId, WeatherKind[]> = {
+  forest: ["spores", "mist", "rain", "none"],
+  ember:  ["ember", "sand", "none"],
+  peaks:  ["snow", "mist", "none"],
+  void:   ["none"],                     // vacuum: nothing to fall
+  sands:  ["sand", "none", "mist"],
+  castle: ["mist", "rain", "snow", "none"],
+  circuit:["none", "rain", "mist"],
+  metro:  ["rain", "mist", "none"],
+  nebula: ["none"],
+};
+
 /** Per-realm ambient sound bed (procedural). */
 export type AmbienceKind = "none" | "wind" | "lava" | "city" | "space" | "forest" | "mist";
 export const REALM_AMBIENCE: Record<RealmId, AmbienceKind> = {

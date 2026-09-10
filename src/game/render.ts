@@ -537,6 +537,9 @@ export interface HudState {
   carName?: string;
   /** seconds left to get back on the track before a respawn (0 = on track) */
   offTrackWarn?: number;
+  /** endless mode: there is no lap target, so show distance instead */
+  endless?: boolean;
+  distanceM?: number;
 }
 
 function panel(
@@ -604,7 +607,13 @@ export function drawHud(
   ctx.fillText(`${hud.score}`, vw - 28, 38);
   ctx.fillStyle = "#cfc9e8";
   ctx.font = "14px monospace";
-  ctx.fillText(`LAP ${hud.lap}/${hud.totalLaps}   ${formatTime(hud.raceTime)}`, vw - 28, 64);
+  // Endless has no lap target — "LAP 1/9999" is meaningless, so show how far
+  // you've actually driven, which IS the score in that mode.
+  ctx.fillText(
+    hud.endless
+      ? `${((hud.distanceM ?? 0) / 1000).toFixed(2)} KM   ${formatTime(hud.raceTime)}`
+      : `LAP ${hud.lap}/${hud.totalLaps}   ${formatTime(hud.raceTime)}`,
+    vw - 28, 64);
 
   // --- race position (below score) ---
   if (hud.position && hud.totalRacers) {

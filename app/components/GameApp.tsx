@@ -31,6 +31,7 @@ const GP_CONFETTI: { left: string; x: string; delay: string; color: string }[] =
 const MODE_TITLE: Record<GameMode, string> = {
   classic: "Classic Circuit", timetrial: "Time Trial", nitro: "Nitro Sprint",
   transform: "Transformer Rush", grandprix: "Grand Prix", spacewars: "Space Wars",
+  endless: "Neon Run",
 };
 
 interface GpState {

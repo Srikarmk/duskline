@@ -46,7 +46,7 @@ import { BranchPath } from "./branch";
 import { FreeDrive } from "./freedrive";
 import { loadPBR } from "./textures";
 import { makeKart, setCarEnvTint, CAR_SPECS, CAR_IDS, type CarStat } from "./cars";
-import { REALMS, pickScenery, REALM_WEATHER, REALM_AMBIENCE, REALM_TUNNELS, REALM_RIVERS, REALM_SPLITS, type RealmSpec, type SceneryKind, type RealmPalette } from "./realms";
+import { REALMS, pickScenery, REALM_WEATHER, REALM_WEATHER_POOL, REALM_AMBIENCE, REALM_TUNNELS, REALM_RIVERS, REALM_SPLITS, type RealmSpec, type SceneryKind, type RealmPalette, type WeatherKind } from "./realms";
 import { makePyramid, makeObelisk, makeSphinx, makePalm, makeSandRock } from "./props/egyptian";
 import { makeTower, makeGatehouse, makeCastleWall, makeBanner, makeTorch } from "./props/castle";
 import { makeGrandstand, makeTyreStack, makeFloodlight, makePitBuilding, makeMarshalBoard } from "./props/circuit";
@@ -99,6 +99,8 @@ interface ModeConfig {
   label: string;
   /** combat mode: start armed, weapon-dense item boxes, trigger-happy rivals */
   combat?: boolean;
+  /** endless mode: no finish line — drive until you quit, chasing distance */
+  endless?: boolean;
 }
 
 const MODE_CONFIG: Record<GameMode, ModeConfig> = {
@@ -108,6 +110,10 @@ const MODE_CONFIG: Record<GameMode, ModeConfig> = {
   transform: { laps: 3, opponents: true,  orbs: true,  monsters: true,  startNitro: 1, label: "TRANSFORMER" },
   grandprix: { laps: 2, opponents: true,  orbs: false, monsters: false, startNitro: 1, label: "GRAND PRIX" },
   spacewars: { laps: 3, opponents: true,  orbs: false, monsters: false, startNitro: 1, label: "SPACE WARS", combat: true },
+  // NEON RUN — endless. There is no finish line: `laps` is set absurdly high so
+  // the lap counter never runs out, and the point is distance + score rather
+  // than a result. Best on Neon Metro, which is the Akira-flavoured city.
+  endless:   { laps: 9999, opponents: true, orbs: false, monsters: false, startNitro: 2, label: "NEON RUN", endless: true },
 };
 
 /** Lateral half-width for a hit, in ROAD_HALF_WIDTH units (1.0 = 5 m). Pickups are
@@ -243,6 +249,8 @@ export class Game {
   private carId: CarId;
   private carStat: CarStat;
   private weather: WeatherSystem | null = null;
+  private weatherKind: WeatherKind = "none";
+  private weatherT = 0;   // seconds until the next roll of the weather dice
   private input = new Input();
   private sound = new Sound();
   private slashCooldown = 0;
@@ -272,7 +280,7 @@ export class Game {
   private buckets = new Map<number, Entity[]>();
   private spinners: Entity[] = [];
   private monsters: Entity[] = [];
-  private ramps: { dist: number; power: number; lane: number; len: number; height: number }[] = [];
+  private ramps: { dist: number; power: number; lane: number; len: number; height: number; twist: boolean }[] = [];
   /** fork zones as main-track ranges [d0,d1] — used to keep boost pads/gates from
    *  cluttering a fork mouth. */
   private splits: { d0: number; d1: number }[] = [];
@@ -290,6 +298,8 @@ export class Game {
   private lastFreeDist = 0;  // previous frame's projected distance (for lap wrap)
   private wasOnRamp = false;
   private lastRampPower = 1;
+  private lastRampTwist = false;
+  private spinRate = 0; // revolutions/sec while corkscrewing off a twist ramp
   private lastRampT = 0;
   private treeMats: TreeMats | null = null;
   private opponents: Opponent[] = [];
@@ -402,7 +412,11 @@ export class Game {
     this.mode = options.mode;
     this.cfg = { ...MODE_CONFIG[options.mode] };
     // per-match lap override (time trial keeps its own clean-lap rule)
-    if (options.laps && options.mode !== "grandprix") this.cfg.laps = options.laps;
+    // The home screen's lap picker must NOT apply to endless — it would cap
+    // "no finish line" at 3 laps, which is exactly what testing caught.
+    if (options.laps && options.mode !== "grandprix" && !this.cfg.endless) {
+      this.cfg.laps = options.laps;
+    }
     // Space Wars is always fought in deep space — swap the realm pick for one of
     // the two battle tubes (the 2nd, "nebula", is otherwise hidden)
     if (options.mode === "spacewars") {
@@ -731,13 +745,37 @@ export class Game {
       gantry.rotation.y = Math.atan2(gtan.x, gtan.z);
       scene.add(gantry);
     }
-    this.weather = makeWeather(REALM_WEATHER[realm.id], pal);
+    this.weatherKind = REALM_WEATHER[realm.id];
+    this.weather = makeWeather(this.weatherKind, pal);
     scene.add(this.weather.object);
+    this.weatherT = 22 + Math.random() * 20;
 
     this.decorate(library);
     this.buildObstacleGrid();
     this.wireAmbientOcclusion();
     this.enableShadows();
+  }
+
+  /** Roll the weather over to a different kind from this realm's pool. The
+   *  particle systems are self-contained and disposable, so a change is just
+   *  swap-and-replace — no need to pre-build every kind up front. */
+  private rollWeather() {
+    const pool = REALM_WEATHER_POOL[this.realm.id] ?? [];
+    const options = pool.filter((k) => k !== this.weatherKind);
+    if (!options.length) { this.weatherT = 999; return; } // realms with one fixed sky (void)
+    const next = options[Math.floor(Math.random() * options.length)];
+    if (this.weather) {
+      this.scene.remove(this.weather.object);
+      this.weather.dispose();
+    }
+    this.weatherKind = next;
+    this.weather = makeWeather(next, this.realm.palette);
+    this.scene.add(this.weather.object);
+    const LABEL: Record<WeatherKind, string> = {
+      none: "SKIES CLEARING", snow: "SNOWFALL", ember: "EMBER STORM",
+      sand: "SANDSTORM", spores: "SPORE DRIFT", mist: "MIST ROLLING IN", rain: "RAIN INCOMING",
+    };
+    this.announce(LABEL[next] ?? "WEATHER SHIFT", "", "#a5b4fc", 1.4);
   }
 
   /** three.js reads `aoMap` from the SECOND uv channel (`uv1`), which none of
@@ -1831,12 +1869,36 @@ export class Game {
     // and the gentler kinds dominate, so there is always a clear line past it and
     // taking one is a choice you make for the airtime, not a trap.
     {
-      const rampKinds: RampKind[] = ["kicker", "standard", "kicker", "wide", "standard", "mega"];
+      const rampKinds: RampKind[] = ["kicker", "twist", "standard", "kicker", "twist", "standard"];
       let rk = 0;
-      for (let d = 260; d < len - 120; d += 330) {
+      // A ramp is only safe on a STRAIGHT. On a bend you launch along the
+      // tangent while the road turns away, so you land off-track however well
+      // you drive — that's what was throwing you out. Require the take-off AND
+      // the whole landing zone (~70 m downrange) to be near-straight, and walk
+      // forward until that's true rather than placing on a fixed stride.
+      // The straight has to cover the whole FLIGHT, not just the take-off. At
+      // ~55 m/s a standard ramp is airborne ~1.3 s, so it lands ~72 m downrange —
+      // a 70 m check let one land just past the end of the straight and off the
+      // road. 110 m covers even the mega ramp with margin.
+      const straightAt = (at: number) => {
+        for (let o = -12; o <= 110; o += 10) {
+          if (Math.abs(this.track.curvatureAt(this.track.wrap(at + o))) > 0.0045) return false;
+        }
+        return true;
+      };
+      for (let d = 240; d < len - 200; d += 230) {
+        let at = d, tries = 0;
+        while (!straightAt(at) && tries++ < 30) at += 12;   // slide to the next straight
+        if (!straightAt(at)) continue;                      // no straight here — skip it
+        d = at;
         const kind = rampKinds[rk % rampKinds.length];
-        // sit it in an outer lane so the racing line through the middle stays open
-        const lane = LANE_CENTERS[rk % 2 === 0 ? 0 : 2];
+        // CENTRE LANE, always. Side-lane ramps measured as almost unhittable:
+        // the pure-pursuit steering assist is constantly pulling you back to the
+        // centreline, so it actively steers you OFF a ramp parked in lane 1 or 3
+        // (2 of 4 never even launched in testing). They're gentle and one lane
+        // wide now, and they land you back on the road, so sitting on the racing
+        // line makes them a feature you get to use rather than an obstacle.
+        const lane = LANE_CENTERS[1];
         this.addEntity("ramp", d, lane, makeRamp(kind), 0, RAMP_SPECS[kind].power);
         // The ride-up physics reads `this.ramps`, which NOTHING was populating —
         // so before this the ramps were pure decoration you drove straight
@@ -1852,6 +1914,7 @@ export class Game {
           lane: lane / 0.9,
           len: RAMP_SPECS[kind].l * 2,
           height: RAMP_SPECS[kind].h,
+          twist: kind === "twist",
         });
         rk++;
       }
@@ -2307,7 +2370,7 @@ export class Game {
    *  facing down-course, after it's roamed off the terrain too long. No penalty. */
   private respawnOnTrack() {
     this.freeDrive.reset(this.track, this.offTrackExitDist); // back where you left, not wherever you wandered to
-    this.alt = 0; this.vAlt = 0; this.spin = 0; this.flip = 0;
+    this.alt = 0; this.vAlt = 0; this.spin = 0; this.flip = 0; this.spinRate = 0;
     this.carPitch = 0; this.stuntAir = false;
     this.offTrackT = 0;
     this.camSnap = true;             // re-anchor the camera at the new spot
@@ -2412,6 +2475,9 @@ export class Game {
 
     this.raceTime += dt;
     this.trackOvertakes(dt);
+    // weather turns over every ~25-45 s so a long race visibly changes mood
+    this.weatherT -= dt;
+    if (this.weatherT <= 0) { this.rollWeather(); this.weatherT = 25 + Math.random() * 20; }
     const speedPercent = Math.min(this.speed / MAX_SPEED, 1);
     const airborne = this.alt > 0.15;
     this.shake = Math.max(0, this.shake - dt * 2.2);
@@ -2455,7 +2521,15 @@ export class Game {
         // The grounded mech runs ~11% faster than a car (measured 64.6 vs ~55 m/s),
         // so corners arrive sooner and the car-tuned assist under-corrects — it was
         // off-road 27% of the time vs 9% on wheels. Scale the help with the form.
-        assist: (this.stuntAir || flyingMech) ? 0 : FREE_STEER_ASSIST * (this.transformed ? 1.4 : 1),
+        // AIR CORRECTION. This used to be a hard 0 while airborne, which is the
+        // real reason ramps threw you off the road: the car keeps its world
+        // velocity, so on any bend the road curves away underneath you and you
+        // land in the scenery with no way to influence it. Asphalt gives you air
+        // control for exactly this. A strong pull in the air aims the landing
+        // back down the road; on the ground it's the normal assist.
+        assist: flyingMech ? 0
+          : this.stuntAir ? FREE_STEER_ASSIST * 1.25
+          : FREE_STEER_ASSIST * (this.transformed ? 1.4 : 1),
       },
     );
     this.resolveObstacles(dt); // keep the car OUT of solid scenery (trees/rocks/buildings)
@@ -2541,6 +2615,7 @@ export class Game {
       this.vAlt = 0;
       this.stuntAir = true;
       this.lastRampPower = onRamp.power;
+      this.lastRampTwist = onRamp.twist;
       this.lastRampT = rampT;
       if (!this.wasOnRamp) {
         this.wasOnRamp = true;
@@ -2553,6 +2628,11 @@ export class Game {
           // rolled off the lip → arc through the air (gentle, capped by MAX_ALT)
           this.vAlt = RAMP_LAUNCH * this.lastRampPower * clamp(speedPercent, 0.4, 1);
           this.spin = 0;
+          // Twist ramps corkscrew you (Asphalt-style). The roll is imparted here
+          // rather than by steering, so it's a reliable trick you get for taking
+          // the ramp — not something you have to fight the controls for. It's
+          // snapped back to level on touchdown so you never land on your roof.
+          this.spinRate = this.lastRampTwist ? 1.25 : 0;
           this.playerVX = 0;
           // kill side-slip on take-off so the jump flies STRAIGHT down the car's
           // heading and lands predictably ahead — never carries a sideways drift
@@ -2571,6 +2651,7 @@ export class Game {
         this.vAlt -= GRAVITY * dt;
       }
       this.alt += this.vAlt * dt;
+      if (this.spinRate !== 0 && this.alt > 0) this.spin += this.spinRate * dt;
     }
     if (this.alt >= MAX_ALT) {
       this.alt = MAX_ALT;
@@ -2581,6 +2662,7 @@ export class Game {
       const impact = Math.max(0, -this.vAlt); // downward speed at touchdown
       this.vAlt = 0;
       if (this.stuntAir) this.land();
+      this.spinRate = 0;
       if (impact > 0.5) this.susp = Math.min(0.42, this.susp + impact * 0.045); // compress the springs
     }
 
@@ -3478,6 +3560,8 @@ export class Game {
       shieldActive: this.shieldT > 0,
       carName: CAR_SPECS[this.carId].name,
       offTrackWarn: this.offTrackT > 0 ? this.offTrackT : 0,
+      endless: !!this.cfg.endless,
+      distanceM: this.playerProgress(),
     }, vw, vh);
 
     // minimap bottom-right (out of the driving sightline)

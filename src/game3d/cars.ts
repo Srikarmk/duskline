@@ -36,76 +36,70 @@ function paint(
   });
 }
 
-/** Glossy automotive body paint: a clearcoat lacquer over a metallic base, so
- *  the bodywork reads as smooth reflective car paint (a bright specular sheen
- *  from the key light) rather than flat plastic. Used for the lofted shells. */
+/** The realm's sky colour, or null for a neutral finish. Read at material
+ *  BUILD time by carPaint (the engine sets it before building a race's grid). */
+let _envTint: number | null = null;
+
+/**
+ * Real two-layer automotive body paint: a coloured base coat under a separate,
+ * near-mirror CLEARCOAT lacquer. The clearcoat is what makes paint read as
+ * *paint* rather than coloured plastic — it adds a second, much tighter
+ * specular lobe and a second environment reflection on top of the base, so a
+ * panel simultaneously shows its livery colour, a hard moving highlight from
+ * the key light, and a soft reflection of the sky.
+ *
+ * Deliberately NO `envMap`: the engine installs a PMREM-filtered HDR sky probe
+ * as `scene.environment`, and three feeds that to any standard/physical
+ * material whose own `envMap` is null. That matters because the physical IBL
+ * path only handles CubeUV (PMREM) maps — a raw equirectangular canvas assigned
+ * to `envMap` contributes *literally nothing* to a MeshPhysicalMaterial while
+ * still suppressing the scene probe, which is why the bodywork used to read as
+ * flat plastic. Letting the scene probe through also means reflections are
+ * roughness-prefiltered (blurry on satin, sharp on the clearcoat) and already
+ * carry the realm's colours.
+ */
 function carPaint(
   color: number,
   o: { metal?: number; rough?: number; flat?: boolean } = {}
 ): THREE.MeshPhysicalMaterial {
-  return new THREE.MeshPhysicalMaterial({
+  const mat = new THREE.MeshPhysicalMaterial({
     color,
-    metalness: o.metal ?? 0.4,
-    roughness: o.rough ?? 0.42,
-    clearcoat: 1.0,
-    clearcoatRoughness: 0.16,
-    envMap: carEnv(),
-    envMapIntensity: 0.55,
+    // Paint is a DIELECTRIC with metal flake suspended in it, not bare metal.
+    // Low metalness keeps the livery colour saturated and leaves the gloss to
+    // the clearcoat; the old 0.4-0.55 made every car look chrome-dipped and
+    // washed the colour out (a metal's diffuse albedo is black).
+    metalness: o.metal ?? 0.18,
+    roughness: o.rough ?? 0.34,
+    clearcoat: 0.95,
+    clearcoatRoughness: 0.07,   // freshly polished lacquer — tight, not a mirror
+    // While scene.environment is set, three overwrites this uniform with the
+    // scene's environmentIntensity, so it only bites if the probe is missing.
+    // 1.0 = catch the sky at full strength but no reflectivity boost (>1 is
+    // what tips clearcoat over into looking like chrome).
+    envMapIntensity: 1.0,
     flatShading: o.flat ?? false,
   });
-}
-
-/** A tiny procedural "studio" environment (sky gradient + a bright horizon band
- *  + two soft light blobs) as an equirectangular reflection map. Cached and
- *  shared, it gives the clearcoat paint and chrome real reflections so the
- *  bodywork reads as glossy lacquered metal instead of flat shaded colour. */
-let _env: THREE.Texture | null = null;
-let _envTint: number | null = null;
-function carEnv(): THREE.Texture {
-  if (_env) return _env;
-  const c = document.createElement("canvas");
-  c.width = 256;
-  c.height = 128;
-  const ctx = c.getContext("2d")!;
-  const g = ctx.createLinearGradient(0, 0, 0, 128);
-  g.addColorStop(0.0, "#e6eeff");   // sky top
-  g.addColorStop(0.42, "#a7bce0");
-  g.addColorStop(0.5, "#ffffff");   // bright horizon band
-  g.addColorStop(0.58, "#3f4a63");
-  g.addColorStop(1.0, "#0f1119");   // ground
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 256, 128);
-  for (const [x, r] of [[64, 44], [192, 54]] as const) {
-    const rg = ctx.createRadialGradient(x, 38, 2, x, 38, r);
-    rg.addColorStop(0, "rgba(255,255,255,0.85)");
-    rg.addColorStop(1, "rgba(255,255,255,0)");
-    ctx.fillStyle = rg;
-    ctx.fillRect(0, 0, 256, 128);
-  }
-  // per-realm tint: warm the reflection toward the realm's sky so the paint
-  // reads as if it's reflecting that world (set by the engine before building)
+  // No clearcoatNormalMap on purpose: the panel/flake normal map (applied in
+  // carMaterials) perturbs only the BASE coat, so the lacquer stays a perfectly
+  // smooth layer floating over textured paint. That mismatch between the two
+  // layers' normals IS the depth cue of a real finish — and it costs nothing.
   if (_envTint !== null) {
-    ctx.globalCompositeOperation = "multiply";
-    ctx.globalAlpha = 0.5;
-    ctx.fillStyle = "#" + (_envTint & 0xffffff).toString(16).padStart(6, "0");
-    ctx.fillRect(0, 0, 256, 128);
-    ctx.globalCompositeOperation = "source-over";
-    ctx.globalAlpha = 1;
+    // Realm reflection tint. The bulk of it is already free (the scene probe is
+    // built from this same palette); this only nudges the base coat's specular
+    // F0 colour toward the realm sky. Kept at 0.3 — a full tint reads as
+    // coloured chrome instead of tinted lacquer.
+    mat.specularColor.lerp(new THREE.Color(_envTint), 0.3);
   }
-  const tex = new THREE.CanvasTexture(c);
-  tex.mapping = THREE.EquirectangularReflectionMapping;
-  tex.colorSpace = THREE.SRGBColorSpace;
-  _env = tex;
-  return tex;
+  return mat;
 }
 
-/** Tint the shared reflection environment toward a realm's sky colour (or null
- *  for the neutral studio look). Call BEFORE building cars for a race; the next
- *  car built rebuilds the cached env with the tint. */
+/** Tint newly built cars' reflections toward a realm's sky colour (or null for
+ *  a neutral finish). Call BEFORE building the cars for a race — the paint
+ *  materials read the tint at construction time. Chrome, glass and the alloys
+ *  need no tint of their own: they reflect `scene.environment`, which the engine
+ *  builds from the same realm palette. */
 export function setCarEnvTint(hex: number | null): void {
-  if (hex === _envTint) return;
   _envTint = hex;
-  if (_env) { _env.dispose(); _env = null; } // rebuilt on next carEnv()
 }
 
 /**
@@ -203,6 +197,51 @@ function box(
 let _hubMat: THREE.MeshStandardMaterial | null = null;
 function hubMat(): THREE.MeshStandardMaterial {
   return (_hubMat ??= new THREE.MeshStandardMaterial({ color: 0x0d0d13, metalness: 0.8, roughness: 0.35 }));
+}
+
+/** The car materials whose colour does NOT depend on the livery. */
+interface NeutralMats {
+  glass: THREE.MeshStandardMaterial;
+  tireMat: THREE.MeshStandardMaterial;
+  chromeMat: THREE.MeshStandardMaterial;
+  grilleMat: THREE.MeshStandardMaterial;
+  headMat: THREE.MeshStandardMaterial;
+  lensMat: THREE.MeshStandardMaterial;
+  tailMat: THREE.MeshStandardMaterial;
+}
+
+/**
+ * Glass, rubber, chrome, grille mesh and lamp lenses are the same on every car,
+ * so they are built ONCE and shared by the whole grid instead of re-created per
+ * car: seven fewer material instances on each of ten cars (~70 fewer), which
+ * means seven uniform blocks instead of seventy and no duplicate shader
+ * variants. None of them is tinted per realm — they all reflect
+ * `scene.environment`, so the realm's colour arrives for free.
+ *
+ * NONE of these gets a clearcoat. Glass is a single surface (a second lacquer
+ * layer would only buy a double highlight), and rubber/grille/lens are matte or
+ * self-lit — clearcoat there would be pure cost for a wrong look.
+ */
+let _neutral: NeutralMats | null = null;
+function neutralMats(): NeutralMats {
+  if (_neutral) return _neutral;
+  return (_neutral = {
+    // dark, very smooth dielectric glazing: the low roughness lets the sky
+    // probe mirror across the screen so windows read as glass, not grey panels
+    glass: new THREE.MeshStandardMaterial({
+      color: 0x0a1622, metalness: 0.35, roughness: 0.05,
+      emissive: 0x0a1420, emissiveIntensity: 0.22, transparent: true, opacity: 0.6,
+    }),
+    // Tyres: the LEAST reflective thing on the car by a wide margin. Near-black
+    // and very rough so the environment reflection is crushed to nothing —
+    // that contrast against the lacquered panels is what sells the paint.
+    tireMat: new THREE.MeshStandardMaterial({ color: 0x0a0a10, roughness: 0.92, metalness: 0.04, envMapIntensity: 0.35 }),
+    chromeMat: paint(0x30333d, { metal: 0.95, rough: 0.2 }),
+    grilleMat: paint(0x14141a, { metal: 0.7, rough: 0.5 }),
+    headMat: paint(0xfff6d5, { emissive: 0xffe6a0, ei: 0.7 }),
+    lensMat: paint(0xcdeeff, { emissive: 0x9fdcff, ei: 0.5, metal: 0.4, rough: 0.12 }),
+    tailMat: paint(0x2a0000, { emissive: 0xff2626, ei: 0.65 }),
+  });
 }
 
 /**
@@ -387,12 +426,18 @@ function panelBetween(
   return m;
 }
 
+let _helmetMat: THREE.MeshStandardMaterial | null = null;
+let _visorMat: THREE.MeshStandardMaterial | null = null;
+
 /** A seated racing driver: faceted helmet + dark visor + shoulders. Origin at
  *  the seat base; helmet sits ~0.5 above it. `suit` tints the shoulders. */
 function makeDriver(suit: number): THREE.Group {
   const grp = new THREE.Group();
-  const helmetMat = new THREE.MeshStandardMaterial({ color: 0xededf2, metalness: 0.3, roughness: 0.45, flatShading: true });
-  const visorMat = new THREE.MeshStandardMaterial({ color: 0x0b0f16, metalness: 0.9, roughness: 0.12, emissive: 0x0a0e14, emissiveIntensity: 0.15 });
+  // helmet + visor are the same on every driver, so they are shared across the
+  // whole grid; only the suit carries the team colour
+  _helmetMat ??= new THREE.MeshStandardMaterial({ color: 0xededf2, metalness: 0.3, roughness: 0.45, flatShading: true });
+  _visorMat ??= new THREE.MeshStandardMaterial({ color: 0x0b0f16, metalness: 0.9, roughness: 0.12, emissive: 0x0a0e14, emissiveIntensity: 0.15 });
+  const helmetMat = _helmetMat, visorMat = _visorMat;
   const suitMat = new THREE.MeshStandardMaterial({ color: suit, metalness: 0.3, roughness: 0.6 });
   const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), helmetMat);
   helmet.position.set(0, 0.5, 0);
@@ -634,31 +679,36 @@ function buildKart(color: number, p: KartParams): THREE.Group {
 // shared building blocks for the dedicated silhouette builders below
 // ---------------------------------------------------------------------------
 
-interface CarMaterials {
+interface CarMaterials extends NeutralMats {
   base: THREE.Color;
   accent: THREE.Color;
   dark: THREE.Color;
   accentHex: number;
-  bodyMat: THREE.MeshStandardMaterial;
-  bodyPlain: THREE.MeshStandardMaterial;
+  /** the lofted shell — clearcoated paint carrying the livery map */
+  bodyMat: THREE.MeshPhysicalMaterial;
+  /** body-colour panels with no livery map (scoop, pillars, roof cap, wings) */
+  bodyPlain: THREE.MeshPhysicalMaterial;
   darkMat: THREE.MeshStandardMaterial;
   trimMat: THREE.MeshStandardMaterial;
-  glass: THREE.MeshStandardMaterial;
-  tireMat: THREE.MeshStandardMaterial;
   rimMat: THREE.MeshStandardMaterial;
-  chromeMat: THREE.MeshStandardMaterial;
-  grilleMat: THREE.MeshStandardMaterial;
-  headMat: THREE.MeshStandardMaterial;
-  lensMat: THREE.MeshStandardMaterial;
-  tailMat: THREE.MeshStandardMaterial;
 }
 
 /**
- * The shared livery-derived material palette. body/dark are glossy clearcoat car
- * paint (smooth, not faceted) carrying the CC0 metal-plate normal for panel/flake
- * surface texture (now visible thanks to the lofts' UVs); trim is the emissive
- * accent; glass/tyre/rim/chrome/grille/head/lens/tail are the shared arcade
- * materials. Accent + dark shades are offset from the livery.
+ * The livery-derived material palette.
+ *
+ * Only the PAINTED PANELS are clearcoat physical materials: `bodyMat` (the
+ * lofted shell) and `bodyPlain` (body-colour panels that can't carry the livery
+ * map). That is two MeshPhysicalMaterials per car — 20 across a full grid,
+ * sharing just two shader programs — instead of one per mesh. Everything else
+ * is MeshStandardMaterial:
+ *   - `darkMat` is satin, not lacquered: it dresses splitters, diffusers, wing
+ *     blades, endplates, chassis rails and engine blocks, which on a real car
+ *     are bare carbon/plastic. Clearcoating them would have doubled the
+ *     physical-material count for a finish that would look *wrong*.
+ *   - `trimMat`/`rimMat` are the emissive accent and the bright alloy.
+ *   - glass / tyre / chrome / grille / lamps come from the shared neutral set.
+ * All of them carry the CC0 metal-plate normal for panel/flake relief (visible
+ * thanks to the lofts' UVs), and all read `scene.environment` for reflections.
  */
 function carMaterials(color: number, raceNum?: number): CarMaterials {
   const base = new THREE.Color(color);
@@ -671,9 +721,11 @@ function carMaterials(color: number, raceNum?: number): CarMaterials {
   const dark = base.clone().offsetHSL(0, -0.05, -0.24);
   const accentHex = accent.getHex();
 
-  const bodyMat = carPaint(base.getHex(), { metal: 0.5, rough: 0.3 });   // main shell (liveried)
-  const bodyPlain = carPaint(base.getHex(), { metal: 0.5, rough: 0.32 }); // body-colour trim boxes (no livery map)
-  const darkMat = carPaint(dark.getHex(), { metal: 0.55, rough: 0.4 });
+  // clearcoat paint, PAINT PANELS ONLY (see the doc comment above)
+  const bodyMat = carPaint(base.getHex(), { rough: 0.3 });    // main shell (liveried)
+  const bodyPlain = carPaint(base.getHex(), { rough: 0.33 }); // body-colour panels (no livery map)
+  // satin dark for aero/structure — no clearcoat
+  const darkMat = paint(dark.getHex(), { metal: 0.3, rough: 0.55 });
   const trimMat = paint(accentHex, { emissive: accentHex, ei: 0.45, metal: 0.6, rough: 0.28 });
   // painted racing livery (two-tone + centre stripe + roundel + panel lines);
   // the map carries the colours, so the shell material stays white and untinted.
@@ -705,30 +757,19 @@ function carMaterials(color: number, raceNum?: number): CarMaterials {
       void metalMap;
     }
   }
-  const glass = new THREE.MeshPhysicalMaterial({
-    color: 0x0a1622, metalness: 0.4, roughness: 0.06,
-    clearcoat: 1, clearcoatRoughness: 0.04,
-    emissive: 0x0a1420, emissiveIntensity: 0.22, transparent: true, opacity: 0.6,
-  });
-  const tireMat = new THREE.MeshStandardMaterial({ color: 0x0b0b12, roughness: 0.85, metalness: 0.1 });
+  // bright alloy wheel face in the livery accent (per-car colour, so not shared)
   const rimMat = paint(accentHex, { metal: 0.95, rough: 0.22 });
-  const chromeMat = paint(0x30333d, { metal: 0.95, rough: 0.22 });
-  const grilleMat = paint(0x14141a, { metal: 0.7, rough: 0.5 });
-  const headMat = paint(0xfff6d5, { emissive: 0xffe6a0, ei: 0.7 });
-  const lensMat = paint(0xcdeeff, { emissive: 0x9fdcff, ei: 0.5, metal: 0.4, rough: 0.12 });
-  const tailMat = paint(0x2a0000, { emissive: 0xff2626, ei: 0.65 });
-
-  // reflective bright metals + glass pick up the shared studio environment
-  for (const mm of [trimMat, rimMat, chromeMat]) {
-    mm.envMap = carEnv();
-    mm.envMapIntensity = 1.0;
-  }
-  glass.envMap = carEnv();
-  glass.envMapIntensity = 0.9;
+  // The accent metals want a slightly hotter reflection than the paint. NOTE:
+  // three overwrites envMapIntensity with scene.environmentIntensity while the
+  // scene probe is installed, so this is the probe-less fallback — the values
+  // are kept honest so the look survives if the engine ever hands cars their
+  // own envMap.
+  for (const mm of [trimMat, rimMat]) mm.envMapIntensity = 1.15;
 
   return {
     base, accent, dark, accentHex,
-    bodyMat, bodyPlain, darkMat, trimMat, glass, tireMat, rimMat, chromeMat, grilleMat, headMat, lensMat, tailMat,
+    bodyMat, bodyPlain, darkMat, trimMat, rimMat,
+    ...neutralMats(),
   };
 }
 

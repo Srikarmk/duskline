@@ -17,7 +17,7 @@ import {
   drawToasts, drawCenterText, type Toast,
 } from "./render";
 
-export type GameMode = "classic" | "timetrial" | "nitro" | "transform" | "grandprix" | "spacewars";
+export type GameMode = "classic" | "timetrial" | "nitro" | "transform" | "grandprix" | "spacewars" | "endless";
 export type RealmId =
   | "forest" | "ember" | "peaks" | "void"
   | "sands" | "castle" | "circuit" | "metro"

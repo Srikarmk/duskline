@@ -32,32 +32,208 @@ function applyFoliageWind(mat: THREE.Material) {
 
 // --- sky ------------------------------------------------------------------
 
+type Rgb = [number, number, number];
+
+/** sRGB byte triple from a "#rrggbb" string or a 0xrrggbb number. The sky canvas
+ *  is tagged sRGB, so all of its mixing is done in plain byte space. */
+function rgb255(c: string | number): Rgb {
+  const h = typeof c === "number" ? c : parseInt(c.slice(1), 16);
+  return [(h >> 16) & 255, (h >> 8) & 255, h & 255];
+}
+function mixRgb(a: Rgb, b: Rgb, t: number): Rgb {
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+}
+function rgbaCss(c: Rgb, a: number): string {
+  return `rgba(${Math.round(c[0])},${Math.round(c[1])},${Math.round(c[2])},${a.toFixed(3)})`;
+}
+
+/** A 64x64 wrapping value-noise lattice (power of two so the wrap is a mask).
+ *  One deterministic table shared by every octave — no dependencies, and the
+ *  wrap means cloud shapes tile seamlessly all the way around the dome. */
+const NOISE_N = 64;
+let _noiseLattice: Float32Array | null = null;
+function noiseLattice(): Float32Array {
+  if (_noiseLattice) return _noiseLattice;
+  const t = new Float32Array(NOISE_N * NOISE_N);
+  let s = 20250101;
+  for (let i = 0; i < t.length; i++) {
+    s = (s * 16807) % 2147483647;
+    t[i] = s / 2147483647;
+  }
+  return (_noiseLattice = t);
+}
+
+/** Smoothstep-interpolated value noise sampled off the shared lattice. */
+function valueNoise(t: Float32Array, x: number, y: number): number {
+  const xi = Math.floor(x), yi = Math.floor(y);
+  const fx = x - xi, fy = y - yi;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  const M = NOISE_N - 1;
+  const x0 = xi & M, x1 = (xi + 1) & M;
+  const r0 = (yi & M) * NOISE_N, r1 = ((yi + 1) & M) * NOISE_N;
+  const top = t[r0 + x0] + (t[r0 + x1] - t[r0 + x0]) * sx;
+  const bot = t[r1 + x0] + (t[r1 + x1] - t[r1 + x0]) * sx;
+  return top + (bot - top) * sy;
+}
+
+/**
+ * A procedural cloud deck for the sky dome, returned as a transparent overlay.
+ *
+ * The clouds are fBm noise living on a FLAT PLANE floating above the camera,
+ * projected into the dome's equirectangular canvas: a pixel at elevation `el`
+ * looks through the plane at ground distance `r = 1/tan(el)`, so the same cloud
+ * shapes stretch overhead and compress/converge as they near the horizon. That
+ * is real cloud perspective for the price of one sin/cos per pixel, and it is
+ * what makes the sky read as a ceiling with depth rather than a painted band.
+ *
+ * Two details that matter:
+ *  - Octaves are faded out as the projected footprint of an output row grows,
+ *    so the far deck dissolves into smooth haze instead of hash-noise speckle
+ *    (the same reason mipmaps exist).
+ *  - Drawn at a QUARTER of the dome resolution and bilinearly upscaled. Cloud
+ *    edges are soft anyway, and it cuts the one-time build cost 16x. `putImage`
+ *    premultiplies, so the upscale can't produce dark edge fringes.
+ *
+ * Colours come from the realm palette (lit tops from the horizon glow, shaded
+ * bases from the mid sky), so a green forest sky gets green clouds and a desert
+ * sky cream ones — the per-realm identity survives.
+ */
+function cloudDeck(pal: RealmPalette, W: number, H: number): HTMLCanvasElement {
+  const CW = W >> 2, CH = H >> 2;
+  const cc = document.createElement("canvas");
+  cc.width = CW;
+  cc.height = CH;
+  const cx = cc.getContext("2d")!;
+  const img = cx.createImageData(CW, CH);
+  const d = img.data;
+  const lat = noiseLattice();
+
+  // Starry realms are the night/space ones: thin, sparse wisps that let the
+  // starfield through. Daylit realms get a proper covered deck.
+  const night = pal.stars;
+  const lit = mixRgb(rgb255(pal.sky[3]), [255, 255, 255], night ? 0.26 : 0.55);
+  const shade = mixRgb(rgb255(pal.sky[1]), rgb255(pal.sky[2]), 0.55);
+  const cover = night ? 0.54 : 0.46;   // noise level above which there IS cloud
+  const peak = night ? 0.50 : 0.92;    // opacity of a fully thick core
+  // fBm of value noise clusters tightly around 0.5, so the 0..1 opacity ramp is
+  // spread over a narrow SPAN above `cover` rather than over (1 - cover) — with
+  // the full range the deck never got past a translucent smear.
+  const SPAN = 0.16;
+  const R_FADE = 40;                   // deck distance at which cloud gives way to haze
+
+  // 2.6 cycles per deck height: fine enough that even the near-zenith pixels
+  // (which look through only a tiny patch of the deck) see real structure
+  // instead of one flat noise value.
+  const F0 = 2.6, OCT = 4;
+  for (let y = 0; y < CH; y++) {
+    const v = (y + 0.5) / CH;                 // 0 = zenith, 0.5 = horizon
+    const el = (0.5 - v) * Math.PI;           // elevation above the horizon
+    if (el <= 0.012) continue;                // at/below the horizon the haze takes over
+    const sinEl = Math.sin(el);
+    const r = Math.cos(el) / sinEl;           // 1/tan(el): distance out to the deck
+    if (r > R_FADE) continue;
+    // how much of the deck one output row covers here — the anti-alias budget
+    const foot = Math.PI / (sinEl * sinEl * CH);
+    // Thins to a 32% veil directly overhead and builds to a full deck by r=3
+    // (~18 degrees up), then eases away into the haze band: "denser near the
+    // horizon, thinning over your head". The floor is deliberately not 0 — a
+    // hard-clear zenith looked like the clouds had been cropped off.
+    const dens = (0.32 + 0.68 * Math.min(1, r / 3)) * Math.min(1, (R_FADE - r) / 14);
+    for (let x = 0; x < CW; x++) {
+      const az = (x / CW) * Math.PI * 2;
+      // deck coordinates; azimuth is squashed so shapes stretch into cloud streets
+      const px = r * Math.cos(az) * 0.6, py = r * Math.sin(az);
+      let n = 0, norm = 0, amp = 0.5, f = F0;
+      for (let o = 0; o < OCT; o++) {
+        const w = Math.min(1, 1 / (f * 2 * foot)); // drop octaves finer than a row
+        if (w > 0.02) {
+          n += valueNoise(lat, px * f, py * f) * amp * w;
+          norm += amp * w;
+        }
+        amp *= 0.5;
+        f *= 2.1;
+      }
+      if (norm <= 0) continue;
+      n /= norm;
+      // one slow sine gathers the fBm into stratus BANDING instead of even mush
+      n = n * 0.78 + 0.22 * (0.5 + 0.5 * Math.sin(py * 0.5 + n * 5));
+      let a = (n - cover) / SPAN;
+      if (a <= 0) continue;
+      a = Math.min(1, a);
+      a = a * a * (3 - 2 * a) * peak * dens;   // smoothstep = soft cloud edges
+      const t = Math.min(1, a / (peak * 0.7)); // thick cores catch the light
+      const o4 = (y * CW + x) * 4;
+      d[o4] = shade[0] + (lit[0] - shade[0]) * t;
+      d[o4 + 1] = shade[1] + (lit[1] - shade[1]) * t;
+      d[o4 + 2] = shade[2] + (lit[2] - shade[2]) * t;
+      d[o4 + 3] = a * 255;
+    }
+  }
+  cx.putImageData(img, 0, 0);
+  return cc;
+}
+
+/**
+ * The realm's sky as a single equirectangular texture on a BackSide dome:
+ * palette gradient, starfield, moons, a sun-side glow, a perspective cloud deck
+ * and a horizon haze band. Everything is baked ONCE here at world-build time —
+ * nothing about the sky is regenerated per frame.
+ */
 export function makeSkyDome(pal: RealmPalette): THREE.Mesh {
+  // 2048x1024. The dome is the single largest thing on screen and 1024x512 was
+  // showing gradient banding + mushy stars; the cloud deck is generated at a
+  // quarter of this and upscaled, so the extra detail is nearly free to build.
+  const W = 2048, H = 1024;
+  const S = W / 1024;   // the palette's moon/star coords are authored for 1024px
+  const HZ = H / 2;     // the horizon: on a full sphere it is the canvas' MIDDLE row
   const c = document.createElement("canvas");
-  c.width = 1024;
-  c.height = 512;
+  c.width = W;
+  c.height = H;
   const ctx = c.getContext("2d")!;
 
-  const grad = ctx.createLinearGradient(0, 0, 0, 512);
-  grad.addColorStop(0, pal.sky[0]);
-  grad.addColorStop(0.45, pal.sky[1]);
-  grad.addColorStop(0.75, pal.sky[2]);
-  grad.addColorStop(1, pal.sky[3]);
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, 1024, 512);
+  const sky3 = rgb255(pal.sky[3]);
+  const fog = rgb255(pal.fog);
 
+  // --- base gradient --------------------------------------------------------
+  // The dome is a whole sphere, so the canvas' bottom half points at the GROUND
+  // and only the top half is sky. The palettes author sky[3] as the bright
+  // horizon glow, so it is placed at HZ where it can actually be seen (it used
+  // to land on the bottom pole, straight down, permanently hidden under the
+  // terrain, which is why the visible sky was only ever a two-stop wash).
+  // Below the horizon the dome fades into the realm's own fog colour, so the
+  // sky and the fogged-out distance meet without a seam.
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0.00, pal.sky[0]);
+  grad.addColorStop(0.30, pal.sky[1]);
+  grad.addColorStop(0.44, pal.sky[2]);
+  grad.addColorStop(0.50, pal.sky[3]);
+  grad.addColorStop(0.60, rgbaCss(mixRgb(sky3, fog, 0.7), 1));
+  grad.addColorStop(1.00, rgbaCss(mixRgb(fog, [0, 0, 0], 0.45), 1));
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // faint upper-atmosphere deepening at the zenith so the dome doesn't read as
+  // a flat wall of colour overhead (Rayleigh-ish: thinnest air is darkest)
+  const zen = ctx.createLinearGradient(0, 0, 0, HZ * 0.8);
+  zen.addColorStop(0, "rgba(0,0,0,0.16)");
+  zen.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = zen;
+  ctx.fillRect(0, 0, W, HZ * 0.8);
+
+  // --- starfield (drawn early so clouds and haze pass in FRONT of it) -------
+  let seed = 7;
+  const rand = () => {
+    seed = (seed * 16807) % 2147483647;
+    return seed / 2147483647;
+  };
   if (pal.stars) {
-    let seed = 7;
-    const rand = () => {
-      seed = (seed * 16807) % 2147483647;
-      return seed / 2147483647;
-    };
-    // soft round stars (was hard squares) — small, mostly dim, a few brighter
-    for (let i = 0; i < 220; i++) {
-      const x = rand() * 1024;
-      const y = rand() * 300;
+    // soft round stars — small, mostly dim, a few brighter. Radii scale with the
+    // canvas so they keep the same ANGULAR size as before the resolution bump.
+    for (let i = 0; i < 340; i++) {
+      const x = rand() * W;
+      const y = rand() * HZ * 0.96;   // kept above the horizon
       const bright = rand();
-      const r = bright > 0.92 ? 1.4 + rand() * 1.2 : 0.5 + rand() * 0.9;
+      const r = (bright > 0.92 ? 1.4 + rand() * 1.2 : 0.5 + rand() * 0.9) * S;
       const a = 0.18 + bright * 0.5;
       const g = ctx.createRadialGradient(x, y, 0, x, y, r * 2.2);
       g.addColorStop(0, `rgba(255,255,255,${a.toFixed(2)})`);
@@ -66,31 +242,94 @@ export function makeSkyDome(pal: RealmPalette): THREE.Mesh {
       ctx.beginPath();
       ctx.arc(x, y, r * 2.2, 0, Math.PI * 2);
       ctx.fill();
+      // the handful of brightest stars get a small cross flare, which is what
+      // separates "starfield" from "grey speckle" at a glance
+      if (bright > 0.975) {
+        const fl = r * 7;
+        const cg = ctx.createLinearGradient(x - fl, y, x + fl, y);
+        cg.addColorStop(0, "rgba(255,255,255,0)");
+        cg.addColorStop(0.5, `rgba(255,255,255,${(a * 0.7).toFixed(2)})`);
+        cg.addColorStop(1, "rgba(255,255,255,0)");
+        ctx.fillStyle = cg;
+        ctx.fillRect(x - fl, y - r * 0.35, fl * 2, r * 0.7);
+        ctx.fillRect(x - r * 0.35, y - fl, r * 0.7, fl * 2);
+      }
     }
   }
 
   for (const m of pal.moons) {
-    const halo = ctx.createRadialGradient(m.x, m.y, m.r * 0.5, m.x, m.y, m.r * 2.4);
+    const mx = m.x * S, my = m.y * S, mr = m.r * S;
+    const halo = ctx.createRadialGradient(mx, my, mr * 0.5, mx, my, mr * 2.4);
     halo.addColorStop(0, "rgba(255,255,255,0.3)");
     halo.addColorStop(1, "rgba(255,255,255,0)");
     ctx.fillStyle = halo;
     ctx.beginPath();
-    ctx.arc(m.x, m.y, m.r * 2.4, 0, Math.PI * 2);
+    ctx.arc(mx, my, mr * 2.4, 0, Math.PI * 2);
     ctx.fill();
-    const face = ctx.createRadialGradient(m.x - m.r * 0.3, m.y - m.r * 0.3, m.r * 0.2, m.x, m.y, m.r);
+    const face = ctx.createRadialGradient(mx - mr * 0.3, my - mr * 0.3, mr * 0.2, mx, my, mr);
     face.addColorStop(0, "#ffffff");
     face.addColorStop(1, m.tint);
     ctx.fillStyle = face;
     ctx.beginPath();
-    ctx.arc(m.x, m.y, m.r, 0, Math.PI * 2);
+    ctx.arc(mx, my, mr, 0, Math.PI * 2);
     ctx.fill();
   }
 
+  // --- sun-side glow --------------------------------------------------------
+  // Placed at the SAME direction the HDR probe puts its sun (makeEnvMap's
+  // sunU/sunV), so the bright side of the sky agrees with where reflections and
+  // shadows say the light comes from. Soft and disc-less on purpose: the key
+  // light's exact azimuth is engine-side tuning, and a hard disc in the wrong
+  // place would read as a mistake where a broad glow just reads as air.
+  const sun = rgb255(pal.sun);
+  for (const [gx, gy, gr, ga] of [
+    [0.62 * W, 0.18 * H, HZ * 0.62, pal.stars ? 0.16 : 0.30],  // the sun itself
+    [0.62 * W, HZ, HZ * 0.95, pal.stars ? 0.10 : 0.22],        // its haze on the horizon
+  ] as const) {
+    const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, gr);
+    g.addColorStop(0, rgbaCss(mixRgb(sun, [255, 255, 255], 0.4), ga));
+    g.addColorStop(0.45, rgbaCss(sun, ga * 0.35));
+    g.addColorStop(1, rgbaCss(sun, 0));
+    ctx.fillStyle = g;
+    ctx.fillRect(gx - gr, gy - gr, gr * 2, gr * 2);
+  }
+
+  // --- cloud deck -----------------------------------------------------------
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(cloudDeck(pal, W, H), 0, 0, W, H);
+
+  // --- horizon haze ---------------------------------------------------------
+  // The depth cue that makes the world feel like it has atmosphere: a wide glow
+  // rising off the horizon plus a tight bright core right on it, drawn LAST so
+  // it sits in front of the clouds, moons and stars the way real haze does.
+  // Night realms get a softer version so the starfield still reads.
+  // Scaled by how bright the realm's horizon colour already is: a near-white
+  // horizon (circuit, sands) has no headroom left, and pushing haze onto it
+  // just clipped the whole band to flat white and erased the cloud bases.
+  // Dark realms get the full glow, which is where it reads as depth.
+  const lum3 = (0.299 * sky3[0] + 0.587 * sky3[1] + 0.114 * sky3[2]) / 255;
+  const hazeCol = mixRgb(sky3, [255, 255, 255], (pal.stars ? 0.22 : 0.42) * (1 - lum3));
+  const hA = (pal.stars ? 0.42 : 0.62) * (1 - 0.72 * lum3);
+  const y0 = HZ - H * 0.22, y1 = HZ + H * 0.18;
+  const hg = ctx.createLinearGradient(0, y0, 0, y1);
+  hg.addColorStop(0.00, rgbaCss(hazeCol, 0));
+  hg.addColorStop(0.45, rgbaCss(hazeCol, hA * 0.32));
+  hg.addColorStop(0.55, rgbaCss(hazeCol, hA));         // the horizon line itself
+  hg.addColorStop(0.70, rgbaCss(hazeCol, hA * 0.7));
+  hg.addColorStop(1.00, rgbaCss(hazeCol, 0));
+  ctx.fillStyle = hg;
+  ctx.fillRect(0, y0, W, y1 - y0);
+
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  const geo = new THREE.SphereGeometry(900, 32, 16);
+  // 48x24 (was 32x16): still a rounding error in tri count, but it keeps the
+  // equirect UVs from visibly kinking the new horizon band near the poles.
+  const geo = new THREE.SphereGeometry(900, 48, 24);
   const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, fog: false });
-  return new THREE.Mesh(geo, mat);
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.userData.noShadow = true; // the sky must never cast or receive shadows
+  return mesh;
 }
 
 /**
@@ -130,7 +369,15 @@ export function makeEnvMap(pal: RealmPalette): THREE.Texture {
   const sunU = 0.62, sunV = 0.18, sunR = 0.018, SUN = 30;
   const col = new THREE.Color();
   for (let y = 0; y < H; y++) {
-    const v = y / (H - 1);
+    // `v` is measured from the ZENITH down (v=0 = straight up), matching the
+    // stop table above. Rows are therefore filled bottom-up: a DataTexture
+    // forces flipY=false (UNPACK_FLIP_Y_WEBGL is ignored for typed-array
+    // uploads) and three's equirect sampler puts v_texture=1 at +Y, so row 0 is
+    // straight DOWN. Indexing rows top-down here silently inverted the whole
+    // probe — the sky lit surfaces from below, the ground bounce came from
+    // above, and the sun's specular highlight sat UNDER the cars instead of
+    // tracking across their bodywork.
+    const v = 1 - y / (H - 1);
     sample(v, col);
     for (let x = 0; x < W; x++) {
       let r = col.r, g = col.g, b = col.b;
@@ -1182,7 +1429,7 @@ export function makeMine(): THREE.Group {
   return g;
 }
 
-export type RampKind = "standard" | "mega" | "kicker" | "wide";
+export type RampKind = "standard" | "mega" | "kicker" | "wide" | "twist";
 
 // each kind: size (half-width, half-length, height), body/glow colours, and
 // the launch-power multiplier the engine reads. Widths stay within the ramp
@@ -1195,10 +1442,16 @@ export const RAMP_SPECS: Record<RampKind, {
   // they pitched you off the map. A lane is ~3.3 m, so half-width 1.5 leaves a
   // clear line either side. Heights are down too: these are take-offs you ride
   // over, not launch pads.
-  standard: { w: 1.5, l: 5.0, h: 1.35, body: 0x5a2c0e, glow: 0xf59e0b, chev: 0xfbbf24, power: 0.85 },
-  mega:     { w: 1.6, l: 6.2, h: 1.9, body: 0x0e3a4a, glow: 0x22d3ee, chev: 0x67e8f9, power: 1.1 },
-  kicker:   { w: 1.45, l: 3.6, h: 0.95, body: 0x143a20, glow: 0x4ade80, chev: 0xa7f3d0, power: 0.6 },
-  wide:     { w: 1.55, l: 4.4, h: 1.2, body: 0x3b1046, glow: 0xd946ef, chev: 0xf5d0fe, power: 0.9 },
+  // One consistent RED + YELLOW metallic identity across every kind, so a ramp
+  // always reads instantly as "ramp" instead of each realm inventing its own
+  // colour. `metal` drives a polished metallic finish in makeRamp.
+  standard: { w: 1.5, l: 5.0, h: 1.35, body: 0xb91c1c, glow: 0xf59e0b, chev: 0xfde047, power: 0.85 },
+  mega:     { w: 1.6, l: 6.2, h: 1.9, body: 0xdc2626, glow: 0xf59e0b, chev: 0xfde047, power: 1.1 },
+  kicker:   { w: 1.45, l: 3.6, h: 0.95, body: 0xb91c1c, glow: 0xfbbf24, chev: 0xfde047, power: 0.6 },
+  wide:     { w: 1.55, l: 4.4, h: 1.2, body: 0xdc2626, glow: 0xfbbf24, chev: 0xfde047, power: 0.9 },
+  // twist: an Asphalt-style corkscrew take-off — the engine reads this kind and
+  // seeds a barrel roll off the lip, landing you level for a stunt bonus.
+  twist:    { w: 1.5, l: 5.6, h: 1.5, body: 0xdc2626, glow: 0xf59e0b, chev: 0xfde047, power: 0.95 },
 };
 
 // curved slope profiles (t: 0 at entry → 1 at lip). All start flat at 0 and
@@ -1208,6 +1461,7 @@ const RAMP_PROFILE: Record<RampKind, (t: number) => number> = {
   mega:     (t) => Math.pow(t, 1.5),           // concave, kicks up hard at the lip
   kicker:   (t) => Math.pow(t, 2.4),           // flat then a sharp late kick
   wide:     (t) => 1 - Math.cos((t * Math.PI) / 2), // quarter-pipe (flat start, steep end)
+  twist:    (t) => t * t * (3 - 2 * t),        // same gentle face; the roll is imparted in the air
 };
 
 export function makeRamp(kind: RampKind = "standard"): THREE.Group {
@@ -1239,8 +1493,12 @@ export function makeRamp(kind: RampKind = "standard"): THREE.Group {
   const body = new THREE.Mesh(
     geo,
     new THREE.MeshStandardMaterial({
-      color: spec.body, emissive: spec.glow, emissiveIntensity: 0.08,
-      metalness: 0.45, roughness: 0.55, flatShading: true, side: THREE.DoubleSide,
+      // Polished metal, not painted plastic: high metalness with a low roughness
+      // lets the HDR environment probe actually reflect off the ramp, which is
+      // what sells the red/yellow bodywork as machined steel.
+      color: spec.body, emissive: spec.glow, emissiveIntensity: 0.12,
+      metalness: 0.92, roughness: 0.22, envMapIntensity: 1.5,
+      flatShading: true, side: THREE.DoubleSide,
     })
   );
   group.add(body);
