@@ -2254,7 +2254,7 @@ export class Game {
         this.lastBeep = n;
         this.sound.play(n > 0 ? "beep" : "go");
       }
-      this.sound.setEngine(0.05, false);
+      this.sound.setEngine(0.05, false, 0);
       this.countdownT -= dt;
       if (this.countdownT <= 0) this.phase = "racing";
       return;
@@ -2265,7 +2265,7 @@ export class Game {
     if (this.phase === "finished") {
       this.speed = Math.max(0, this.speed + DECEL * dt);
       this.position = this.track.wrap(this.position + this.speed * dt);
-      this.sound.setEngine(this.speed / MAX_SPEED, false);
+      this.sound.setEngine(this.speed / MAX_SPEED, false, 0);
       this.updateOpponents(dt);
       this.finishT -= dt;
       if (this.finishT <= 0 && !this.finished) {
@@ -2552,7 +2552,10 @@ export class Game {
       this.updateMonsters(dt);
       if (!this.onBranch) this.collideMonsters();
     }
-    this.sound.setEngine(this.speed / MAX_SPEED, this.nitroT > 0);
+    // load = how hard you're actually on the power, so the note changes between
+    // driving, coasting and braking rather than tracking speed alone
+    this.sound.setEngine(this.speed / MAX_SPEED, this.nitroT > 0,
+      throttling ? 1 : braking ? 0 : 0.22);
     // lift the music with speed + nitro so the track drives harder when flat out
     this.sound.setMusicIntensity(0.32 + (this.speed / MAX_SPEED) * 0.55 + (this.nitroT > 0 ? 0.18 : 0));
 
