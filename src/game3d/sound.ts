@@ -57,6 +57,8 @@ export class Sound {
 
   private musicTimer: ReturnType<typeof setInterval> | null = null;
   private musicStep = 0;
+  private musicVerb: ConvolverNode | null = null;  // the space the music sits in
+  private musicSend: GainNode | null = null;       // reverb send
 
   private muted = false;
   private started = false;
@@ -231,7 +233,7 @@ export class Sound {
     this.engineB = ctx.createOscillator();
     if (wave) this.engineB.setPeriodicWave(wave); else this.engineB.type = "sawtooth";
     this.engineB.frequency.value = 60;
-    this.engineB.detune.value = -14;   // a shade flat, so it beats slowly
+    this.engineB.detune.value = -7;    // a shade flat, so it beats slowly (gently)
     const bGain = ctx.createGain();
     bGain.gain.value = 0.34;
     this.engineB.connect(bGain);
@@ -291,8 +293,8 @@ export class Sound {
 
     // --- rev wander: a small random walk. A perfectly steady pitch is the
     // giveaway of a synth; engines always hunt slightly.
-    this.engineJitter += (Math.random() - 0.5) * 0.02;
-    this.engineJitter = Math.max(-0.02, Math.min(0.02, this.engineJitter * 0.9));
+    this.engineJitter += (Math.random() - 0.5) * 0.009;
+    this.engineJitter = Math.max(-0.009, Math.min(0.009, this.engineJitter * 0.92));
     rpm = Math.max(0.05, rpm * (1 + this.engineJitter));
 
     // --- smoothed load
@@ -307,13 +309,16 @@ export class Sound {
 
     // lope: only really present down low, and only off the power
     this.engineLfo?.frequency.setTargetAtTime(8 + rpm * 22, t, smooth);
-    this.engineLfoGain?.gain.setTargetAtTime(0.18 * (1 - rpm * 0.7) * (1 - ld * 0.5), t, 0.15);
+    this.engineLfoGain?.gain.setTargetAtTime(0.09 * (1 - rpm * 0.75) * (1 - ld * 0.6), t, 0.15);
 
     // air rises with revs AND with load — you hear the engine breathe when you
     // ask it for something
     this.engineNoiseBP?.frequency.setTargetAtTime(320 + rpm * 1500 + (boosting ? 900 : 0), t, smooth);
+    // Air kept to a whisper. It's needed so the tone reads as a machine rather
+    // than an oscillator, but the previous mix was hissy — this is roughly a
+    // third of it, enough to imply moving air without the sandpaper.
     this.engineNoiseGain?.gain.setTargetAtTime(
-      0.07 + sp * 0.13 + ld * 0.16 + (boosting ? 0.18 : 0), t, smooth);
+      0.025 + sp * 0.05 + ld * 0.05 + (boosting ? 0.08 : 0), t, smooth);
 
     // formants: the upper bite only opens on the power (and hard on boost); the
     // low boom eases off as revs climb, like a real car leaving its lumpy range
@@ -323,13 +328,16 @@ export class Sound {
     // (centroid 347 Hz, only 3 audible harmonics, and on/off throttle measured
     // near-identical) — so open it up hard on the power and keep it shut when
     // coasting. That contrast is most of what makes a car sound alive.
-    this.engineFormantEdge?.gain.setTargetAtTime(-1 + ld * 9 + (boosting ? 6 : 0), t, 0.12);
-    this.engineFormantGrowl?.gain.setTargetAtTime(5 + ld * 5, t, 0.12);
+    // Edge pulled right back (was +9 on load): that upper peak is exactly what
+    // read as noisy/harsh. Growl carries the character instead — it sits low
+    // enough to be a tone rather than grit.
+    this.engineFormantEdge?.gain.setTargetAtTime(-2 + ld * 3.5 + (boosting ? 3 : 0), t, 0.12);
+    this.engineFormantGrowl?.gain.setTargetAtTime(5.5 + ld * 3.5, t, 0.12);
     this.engineFormantBody?.gain.setTargetAtTime(3.5 - rpm * 1.5, t, 0.12); // less boom
     this.engineFormantBody?.frequency.setTargetAtTime(f0 * 1.05, t, smooth);
 
     this.engineFilter.frequency.setTargetAtTime(
-      (boosting ? 1500 : 520) + rpm * 1100 + sp * 260 + ld * 900, t, smooth);
+      (boosting ? 1150 : 480) + rpm * 820 + sp * 200 + ld * 520, t, smooth);
 
     // level: dip through the shift, and back right off when you lift
     const lift = shifting ? 0.55 : 1;
@@ -428,73 +436,104 @@ export class Sound {
     }
   }
 
+  /** A synthetic reverb impulse: stereo decaying noise, slightly darker in the
+   *  tail. Reverb is the single thing that turns a set of tones into a PLACE,
+   *  which is most of what "ethereal" means. */
+  private makeReverbIR(seconds: number, decay: number): AudioBuffer | null {
+    if (!this.ctx) return null;
+    const rate = this.ctx.sampleRate;
+    const len = Math.max(1, Math.floor(rate * seconds));
+    const buf = this.ctx.createBuffer(2, len, rate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = buf.getChannelData(ch);
+      let lp = 0;
+      for (let i = 0; i < len; i++) {
+        const env = Math.pow(1 - i / len, decay);
+        const white = Math.random() * 2 - 1;
+        lp = lp * 0.72 + white * 0.28;          // roll the tail off = warmer space
+        d[i] = (white * 0.35 + lp * 0.65) * env;
+      }
+    }
+    return buf;
+  }
+
+  /** AKIRA-flavoured cyberpunk / ethereal bed.
+   *
+   *  Replaces the old four-on-the-floor Am-F-C-G dance groove, which was
+   *  energetic but generic. This is built the way Geinoh Yamashirogumi's Akira
+   *  score is: gamelan-like INHARMONIC bells, deep taiko heartbeat, breathy
+   *  choral pads and a sustained drone, all in a big reverberant space, over a
+   *  Japanese HIRAJOSHI mode (D E F A Bb) instead of functional pop harmony.
+   *  Slow and hypnotic — 200 ms per step, a 12.8 s loop.
+   *
+   *  `musicIntensity` (speed + nitro) still drives it, but it thickens the
+   *  texture — more bells, more taiko, brighter pad — rather than adding a
+   *  dance beat. */
   private startMusic() {
-    // A driving 4-bar groove over an Am–F–C–G progression: four-on-the-floor
-    // kick, backbeat snare, hats, a rolling bassline and an arpeggiated lead.
-    // Layers fade in with `musicIntensity` (fed by speed) so the track lifts as
-    // the car goes faster and settles to a calm pulse when idling/finished.
-    // An EIGHT-bar progression (Am F C G | Am F G E) rather than a 4-bar loop, so
-    // it takes twice as long to come round and the E turnaround gives the phrase a
-    // real resolution instead of chasing its own tail.
-    const bassRoots = [110, 87.31, 65.41, 98, 110, 87.31, 98, 82.41];
-    // A written MELODY (one entry per bar, sixteenth-indexed) instead of a random
-    // walk through a note pool — a hook you can actually whistle. 0 = rest.
-    const A4 = 440, C5 = 523.25, D5 = 587.33, E5 = 659.25, G5 = 783.99;
-    const F5 = 698.46, B4 = 493.88, G4 = 392, E4 = 329.63, A5 = 880;
-    const melody: number[][] = [
-      [A4, 0, C5, 0, E5, 0, D5, 0, C5, 0, 0, 0, B4, 0, 0, 0],   // Am
-      [0, 0, A4, 0, C5, 0, F5, 0, E5, 0, 0, 0, C5, 0, 0, 0],    // F
-      [G4, 0, C5, 0, E5, 0, G5, 0, E5, 0, 0, 0, D5, 0, 0, 0],   // C
-      [0, 0, B4, 0, D5, 0, G5, 0, D5, 0, B4, 0, 0, 0, 0, 0],    // G
-      [A4, 0, E5, 0, C5, 0, A5, 0, G5, 0, E5, 0, C5, 0, 0, 0],  // Am (octave lift)
-      [0, 0, F5, 0, A5, 0, G5, 0, F5, 0, 0, 0, E5, 0, 0, 0],    // F
-      [G4, 0, D5, 0, G5, 0, F5, 0, D5, 0, 0, 0, B4, 0, 0, 0],   // G
-      [E4, 0, B4, 0, E5, 0, D5, 0, B4, 0, 0, 0, 0, 0, 0, 0],    // E (turnaround)
+    if (!this.ctx || !this.musicBus) return;
+    const ctx = this.ctx;
+
+    // the space
+    this.musicVerb = ctx.createConvolver();
+    const ir = this.makeReverbIR(3.6, 2.4);
+    if (ir) this.musicVerb.buffer = ir;
+    const wetOut = ctx.createGain();
+    wetOut.gain.value = 0.9;
+    this.musicVerb.connect(wetOut);
+    wetOut.connect(this.musicBus);
+    this.musicSend = ctx.createGain();
+    this.musicSend.gain.value = 1;
+    this.musicSend.connect(this.musicVerb);
+
+    // Hirajoshi on D — the interval that gives it the eastern, slightly uneasy
+    // colour is the minor 2nd between E and F sitting over an open D-A fifth.
+    const D2 = 73.42;
+    const N = { D3: 146.83, E3: 164.81, F3: 174.61, A3: 220.0, Bb3: 233.08,
+                D4: 293.66, E4: 329.63, F4: 349.23, A4: 440.0, Bb4: 466.16,
+                D5: 587.33, F5: 698.46, A5: 880.0 };
+    // Open, quartal-ish voicings. Bar 3 leans on E against Bb (a tritone) for
+    // the cyberpunk unease; nothing here resolves like pop harmony.
+    const bars = [
+      { pad: [N.D3, N.A3, N.F4], bell: [N.D4, N.F4, N.A4, N.D5] },
+      { pad: [N.Bb3, N.F4, N.D4], bell: [N.Bb3, N.D4, N.F4, N.Bb4] },
+      { pad: [N.E3, N.Bb3, N.D4], bell: [N.E4, N.Bb4, N.D5, N.E3] },
+      { pad: [N.D3, N.A3, N.E3], bell: [N.A4, N.F4, N.D4, N.A3] },
     ];
+
     this.musicTimer = setInterval(() => {
       if (!this.ctx || !this.musicBus || this.muted) return;
-      // ease intensity toward its target so speed changes glide, not jump
       this.musicIntensity += (this.musicIntTarget - this.musicIntensity) * 0.15;
       const I = this.musicIntensity;
       const s = this.musicStep++;
-      const step = s % 16;                       // sixteenth within the bar
-      const bar = Math.floor(s / 16) % 8;        // which bar of the eight
-      const root = bassRoots[bar];
-      const line = melody[bar];
+      const step = s % 16;
+      const bar = bars[Math.floor(s / 16) % 4];
 
-      // pad: a soft root/fifth/octave swell on each downbeat for body
-      if (step === 0) this.mPad([root, root * 1.5, root * 2], 0.05 + (1 - I) * 0.035);
-
-      // kick: four-on-the-floor, with syncopation added when driving hard
-      if (step % 4 === 0) this.mKick(0.55);
-      if (I > 0.6 && step === 10) this.mKick(0.42);
-      if (I > 0.82 && step === 14) this.mKick(0.44);
-
-      // backbeat snare (enters once you're moving), with a fill into each 8-bar turn
-      if (I > 0.25 && (step === 4 || step === 12)) this.mSnare(0.2 + I * 0.12);
-      if (I > 0.5 && bar === 7 && step >= 12) this.mSnare(0.12 + (step - 12) * 0.05);
-
-      // hats: offbeats, then full sixteenths when flat out
-      if (I > 0.3 && step % 2 === 1) this.mHat(0.05 + I * 0.05);
-      if (I > 0.72 && step % 2 === 0) this.mHat(0.03);
-
-      // bass: rolling pattern, jumping to the fifth for movement
-      if (step === 0 || step === 3 || step === 6 || step === 8 || step === 11 || step === 14) {
-        const f = (step === 6 || step === 14) ? root * 1.5 : root;
-        this.mBass(f, 0.2 + I * 0.08);
+      // drone + choral pad renew each bar and hang over the whole thing
+      if (step === 0) {
+        this.mDrone(D2, 3.9, 0.075 + (1 - I) * 0.02);
+        this.mChoir(bar.pad, 3.8, 0.032 + I * 0.022);
       }
 
-      // the melody carries the tune once you're moving; a soft octave doubling
-      // and an offbeat counter-note stack on top when you're flat out
-      const note = line[step];
-      if (note && I > 0.34) this.mLead(note, 0.06 + I * 0.09);
-      if (note && I > 0.8) this.mLead(note * 2, 0.02 + I * 0.03);
-      if (I > 0.62 && !note && step % 4 === 2) this.mLead(root * 4, 0.02 + I * 0.03);
-    }, 112);
+      // taiko heartbeat — the pulse the whole bed hangs off
+      if (step === 0) this.mTaiko(0.5);
+      if (step === 8) this.mTaiko(0.4);
+      if (I > 0.5 && step === 12) this.mTaiko(0.3);
+      if (I > 0.78 && step === 6) this.mTaiko(0.26);
+
+      // gamelan bells: irregular placement so it never reads as a dance beat
+      const bellSteps = I > 0.72 ? [0, 3, 6, 10, 13] : I > 0.42 ? [0, 6, 10] : [0, 6];
+      if (bellSteps.includes(step)) {
+        this.mGamelan(bar.bell[(s >> 1) % bar.bell.length], 0.055 + I * 0.05);
+      }
+      // a high shimmer up top when you're really moving
+      if (I > 0.62 && step === 14) this.mGamelan(N.A5, 0.03 + I * 0.02);
+      // sub pulse for forward motion without a kick drum
+      if (step === 0 || step === 8) this.mTone(D2 * 0.5, 0.9, "sine", 0.1, undefined, 180);
+    }, 200);
   }
 
-  /** One musical tone routed to the music bus (optional pitch sweep + lowpass). */
-  private mTone(freq: number, dur: number, type: OscillatorType, gain: number, sweepTo?: number, filterHz?: number) {
+  /** One musical tone routed to the music bus, with an optional reverb send. */
+  private mTone(freq: number, dur: number, type: OscillatorType, gain: number, sweepTo?: number, filterHz?: number, wet = 0) {
     if (!this.ctx || !this.musicBus) return;
     const t = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
@@ -515,12 +554,18 @@ export class Sound {
       tail = filt;
     }
     tail.connect(this.musicBus);
+    if (wet > 0 && this.musicSend) {
+      const w = this.ctx.createGain();
+      w.gain.value = wet;
+      tail.connect(w);
+      w.connect(this.musicSend);
+    }
     osc.start(t);
     osc.stop(t + dur + 0.02);
   }
 
   /** One percussive noise hit routed to the music bus. */
-  private mNoise(dur: number, gain: number, filterType: BiquadFilterType, freq: number) {
+  private mNoise(dur: number, gain: number, filterType: BiquadFilterType, freq: number, wet = 0) {
     if (!this.ctx || !this.musicBus) return;
     const t = this.ctx.currentTime;
     const len = Math.floor(this.ctx.sampleRate * dur);
@@ -538,46 +583,90 @@ export class Sound {
     src.connect(filt);
     filt.connect(g);
     g.connect(this.musicBus);
+    if (wet > 0 && this.musicSend) {
+      const w = this.ctx.createGain();
+      w.gain.value = wet;
+      g.connect(w);
+      w.connect(this.musicSend);
+    }
     src.start(t);
     src.stop(t + dur);
   }
 
-  private mKick(gain: number) {
+  /** Deep taiko: a pitched thump with a skin transient over it. */
+  private mTaiko(gain: number) {
     if (!this.ctx || !this.musicBus) return;
     const t = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
     const g = this.ctx.createGain();
     osc.type = "sine";
-    osc.frequency.setValueAtTime(150, t);
-    osc.frequency.exponentialRampToValueAtTime(46, t + 0.13);
+    osc.frequency.setValueAtTime(105, t);
+    osc.frequency.exponentialRampToValueAtTime(41, t + 0.3);
     g.gain.setValueAtTime(gain, t);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.17);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.42);
     osc.connect(g);
     g.connect(this.musicBus);
+    if (this.musicSend) {
+      const w = this.ctx.createGain();
+      w.gain.value = 0.35;
+      g.connect(w);
+      w.connect(this.musicSend);
+    }
     osc.start(t);
-    osc.stop(t + 0.19);
+    osc.stop(t + 0.45);
+    this.mNoise(0.09, gain * 0.3, "lowpass", 900, 0.3); // the stick on the skin
   }
 
-  private mSnare(gain: number) {
-    this.mNoise(0.14, gain, "bandpass", 1900);
-    this.mTone(190, 0.11, "triangle", gain * 0.5, 90);
+  /** Gamelan / temple bell: INHARMONIC partials (2.76, 5.4, 8.93 — the ratios a
+   *  struck metal bowl actually rings at, not integer harmonics). This is what
+   *  makes it read as struck bronze instead of a synth lead. */
+  private mGamelan(freq: number, gain: number) {
+    const partials = [1, 2.76, 5.4, 8.93];
+    const levels = [1, 0.5, 0.28, 0.16];
+    const decays = [2.6, 1.7, 1.1, 0.7];
+    for (let i = 0; i < partials.length; i++) {
+      this.mTone(freq * partials[i], decays[i], "sine", gain * levels[i], undefined, undefined, 0.85);
+    }
   }
 
-  private mHat(gain: number) {
-    this.mNoise(0.03, gain, "highpass", 8000);
+  /** Sustained low drone with a slow filter so it breathes. */
+  private mDrone(freq: number, dur: number, gain: number) {
+    this.mTone(freq, dur, "sawtooth", gain, undefined, 240, 0.5);
+    this.mTone(freq * 2, dur, "sine", gain * 0.5, undefined, 400, 0.6);
   }
 
-  private mBass(freq: number, gain: number) {
-    this.mTone(freq, 0.17, "sawtooth", gain, undefined, 320);
+  /** Breathy choral pad: detuned voices, slow swell, drenched in the reverb. */
+  private mChoir(freqs: number[], dur: number, gain: number) {
+    if (!this.ctx || !this.musicBus) return;
+    const t = this.ctx.currentTime;
+    for (const f of freqs) {
+      for (const det of [-7, 6]) {
+        const osc = this.ctx.createOscillator();
+        const g = this.ctx.createGain();
+        const filt = this.ctx.createBiquadFilter();
+        filt.type = "lowpass";
+        filt.frequency.value = 1300;
+        osc.type = "triangle";
+        osc.frequency.value = f;
+        osc.detune.value = det;
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.linearRampToValueAtTime(gain, t + dur * 0.42);   // slow swell in
+        g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+        osc.connect(filt);
+        filt.connect(g);
+        g.connect(this.musicBus);
+        if (this.musicSend) {
+          const w = this.ctx.createGain();
+          w.gain.value = 1.1;
+          g.connect(w);
+          w.connect(this.musicSend);
+        }
+        osc.start(t);
+        osc.stop(t + dur + 0.05);
+      }
+    }
   }
 
-  private mLead(freq: number, gain: number) {
-    this.mTone(freq, 0.17, "triangle", gain);
-  }
-
-  private mPad(freqs: number[], gain: number) {
-    for (const f of freqs) this.mTone(f, 1.5, "sine", gain, undefined, 1400);
-  }
 
   /**
    * Crossfade the background ambience to a new realm atmosphere. Fades the
