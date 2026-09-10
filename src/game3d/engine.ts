@@ -35,7 +35,7 @@ import {
   makeMech, makeSlash, makeFlame, makeUnderGlow,
   makeItemBox, makeMissile, makeMine, makeShieldBubble,
   makeStartGantry, varyTint, makeSpaceBackdrop,
-  makeTree, makeTreeMaterials,
+  makeTree, makeTreeMaterials, makeTreeField,
   makeSnowman, makeVolcano, makeLavaPool, makeCaveMouth, makeMushroom, makeRockProp,
   type MechRig, type Placement, type TreeMats,
 } from "./objects";
@@ -1797,7 +1797,8 @@ export class Game {
 
       // ground clutter fills the empty flats
       const centerline = track.sampleXZ(240);
-      const grass = this.scatter(centerline, rand, 9000, ROAD_HALF_WIDTH * 1.3 + 3, 150);
+      // instanced, so one draw call no matter the count — fill the ground properly
+      const grass = this.scatter(centerline, rand, 34000, ROAD_HALF_WIDTH * 1.3 + 3, 150);
       this.scene.add(makeGrassField(pal, grass));
       const pebbles = this.scatter(centerline, rand, 1100, ROAD_HALF_WIDTH * 1.3 + 4, 170);
       this.scene.add(makeRockField(pal, pebbles));
@@ -1808,36 +1809,40 @@ export class Game {
         // dense ferny understory right up to the tarmac (one instanced draw call)
         // +3.2 not +1.5: tufts have width, so starting 1.5 m off a 5 m half-width
         // road put blades over the tarmac edge — that's the grass-on-the-road.
-        const under = this.scatter(centerline, rand, 26000, ROAD_HALF_WIDTH + 3.2, 70);
+        const under = this.scatter(centerline, rand, 60000, ROAD_HALF_WIDTH + 3.2, 70);
         for (const u of under) u.s = 0.8 + rand() * 0.9; // a shade taller than the lawn, not a thicket of 4 m blades
         this.scene.add(makeGrassField(pal, under));
-        // a packed wall of trees hugging the road (both sides), plus a second row
-        // "tall" removed: it's a dark, slim conifer that silhouettes as a black
-        // pillar with a knob on top rather than a tree — the "odd looking
-        // pillars". Round + pine both read correctly at speed.
+        // A DENSE wall of trees, now genuinely dense because it's INSTANCED.
+        // Every tree used to be its own Group of meshes, and since the renderer
+        // is draw-call bound the count converted almost linearly into frame time
+        // (3 rows measured 10,518 meshes / 24.3 ms / 41 fps, so density had to be
+        // rationed). makeTreeField draws all placements of a variant in one call
+        // per material, so the whole forest is ~36 draw calls regardless of how
+        // many thousand trees there are — density is essentially free now, and
+        // this runs 4 rows at high fill where 2 sparse rows were the old ceiling.
         const kinds: ("pine" | "round" | "tall")[] = ["round", "round", "pine", "round"];
-        for (let d = 0; d < len; d += 7.4) {
+        const spots: { kind: "pine" | "round" | "tall"; x: number; y: number; z: number; s: number; r: number }[] = [];
+        for (let d = 0; d < len; d += 3.4) {
           for (const side of [-1, 1]) {
-            // Denser than the original 2 rows @ 0.8/0.32, but NOT the 3 rows @
-            // 0.95/0.7/0.45 I first tried: that took meshes 5,688 -> 10,518 and
-            // the frame 9.1 -> 24.3 ms (41 fps). We're draw-call bound, so tree
-            // count converts almost linearly into frame time. This is the most
-            // forest I can buy inside the 60 fps budget.
-            for (const row of [0, 1]) {
-              if (rand() < (row === 0 ? 0.92 : 0.42)) {
-                const t = this.mergeProp(makeTree(rand, this.treeMats!, kinds[Math.floor(rand() * kinds.length)]));
-                const off = side * (ROAD_HALF_WIDTH + 4 + row * 13 + rand() * 10);
-                const jd = d + rand() * 5;
+            for (const row of [0, 1, 2, 3]) {
+              if (rand() < [0.95, 0.8, 0.62, 0.45][row]) {
+                const kind = kinds[Math.floor(rand() * kinds.length)];
+                const off = side * (ROAD_HALF_WIDTH + 4 + row * 11 + rand() * 9);
+                const jd = d + rand() * 3;
                 const p = track.pointAt(this.track.wrap(jd), off);
-                t.position.set(p.x, this.terrainYAt(jd, off), p.z);
-                t.rotation.y = rand() * Math.PI * 2;
-                t.scale.multiplyScalar(0.95 + rand() * 1.0);
-                this.scene.add(t);
-                if (this.obstacleClear(p.x, p.z, 1.7)) this.obstacles.push({ x: p.x, z: p.z, r: 1.7 }); // solid tree trunk
+                spots.push({
+                  kind, x: p.x, y: this.terrainYAt(jd, off), z: p.z,
+                  s: 0.95 + rand() * 1.0, r: rand() * Math.PI * 2,
+                });
+                // only the innermost row is close enough to be a real hazard
+                if (row === 0 && this.obstacleClear(p.x, p.z, 1.7)) {
+                  this.obstacles.push({ x: p.x, z: p.z, r: 1.7 });
+                }
               }
             }
           }
         }
+        this.scene.add(makeTreeField(rand, this.treeMats!, spots, 6));
       }
 
       // hero landmarks: a handful of BIG signature monuments set well back from

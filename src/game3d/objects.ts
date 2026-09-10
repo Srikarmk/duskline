@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { ROAD_HALF_WIDTH } from "./constants";
 import { terrainBump, stoneMaps, pbr, tileSet } from "./textures";
 import type { RealmPalette } from "./realms";
@@ -20,7 +21,15 @@ function applyFoliageWind(mat: THREE.Material) {
       shader.vertexShader.replace(
         "#include <begin_vertex>",
         `#include <begin_vertex>
-         vec3 wpos = (modelMatrix * vec4(transformed, 1.0)).xyz;
+         // The sway PHASE comes from world position so neighbouring trees move
+         // out of step. For an InstancedMesh modelMatrix is shared by every
+         // instance, so without folding in instanceMatrix the whole forest sways
+         // in perfect unison — which reads as one giant object breathing.
+         #ifdef USE_INSTANCING
+           vec3 wpos = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
+         #else
+           vec3 wpos = (modelMatrix * vec4(transformed, 1.0)).xyz;
+         #endif
          float sway = sin(windTime * 1.3 + wpos.x * 0.14 + wpos.z * 0.1);
          float gust = sin(windTime * 0.7 + wpos.z * 0.08) * 0.5 + 0.5;
          float amt = max(transformed.y, 0.0) * 0.045 * (0.6 + gust);
@@ -3149,4 +3158,97 @@ export function makeRockProp(rand: () => number): THREE.Group {
   group.add(mesh);
 
   return group;
+}
+
+/** Collect a built tree's geometry into one merged geometry per material.
+ *  Local transforms are baked, and the group's own random yaw is deliberately
+ *  NOT baked — yaw is applied per instance instead, so a handful of variants
+ *  still yields a forest where no two trees face the same way. */
+function treeVariantGeometry(rand: () => number, mats: TreeMats, kind: TreeKind) {
+  const g = makeTree(rand, mats, kind);
+  g.rotation.y = 0;                    // per-instance yaw supplies the variety
+  g.updateMatrixWorld(true);
+  const inv = g.matrixWorld.clone().invert();
+  const trunk: THREE.BufferGeometry[] = [];
+  const leaf: THREE.BufferGeometry[] = [];
+  g.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!(m as unknown as { isMesh?: boolean }).isMesh) return;
+    let geo = m.geometry.clone();
+    if (geo.index) geo = geo.toNonIndexed();
+    geo.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld));
+    (m.material === mats.foliage ? leaf : trunk).push(geo);
+  });
+  // A bucket can only merge if every geometry carries the same attributes, and
+  // paintByHeight adds `color` to the canopy only — so normalise per bucket.
+  const norm = (list: THREE.BufferGeometry[], wantColor: boolean) => {
+    for (const geo of list) {
+      if (wantColor && !geo.attributes.color) {
+        const n = geo.attributes.position.count;
+        const c = new Float32Array(n * 3).fill(1);
+        geo.setAttribute("color", new THREE.Float32BufferAttribute(c, 3));
+      }
+      if (!wantColor && geo.attributes.color) geo.deleteAttribute("color");
+      if (!geo.attributes.uv) {
+        const n = geo.attributes.position.count;
+        geo.setAttribute("uv", new THREE.Float32BufferAttribute(new Float32Array(n * 2), 2));
+      }
+    }
+    return list.length ? mergeGeometries(list, false) : null;
+  };
+  return { trunk: norm(trunk, false), leaf: norm(leaf, true) };
+}
+
+/** A whole forest as a handful of draw calls.
+ *
+ *  Trees were the single biggest cost in the scene: each one was its own Group of
+ *  meshes, and because the renderer is DRAW-CALL bound the tree count converted
+ *  almost linearly into frame time (10.5k meshes measured 24 ms). Grass has
+ *  always been cheap for exactly one reason — it's instanced. This does the same
+ *  for trees: build `variants` distinct trees, then draw every placement of each
+ *  variant in ONE instanced call per material. Cost becomes variants x 2 draw
+ *  calls no matter how many thousand trees are placed, so density is essentially
+ *  free and can go far past what per-mesh placement could afford. */
+export function makeTreeField(
+  rand: () => number,
+  mats: TreeMats,
+  spots: { kind: TreeKind; x: number; y: number; z: number; s: number; r: number }[],
+  variantsPerKind = 6
+): THREE.Group {
+  const out = new THREE.Group();
+  const kinds: TreeKind[] = ["pine", "round", "tall"];
+  for (const kind of kinds) {
+    const mine = spots.filter((sp) => sp.kind === kind);
+    if (!mine.length) continue;
+    const variants = [];
+    for (let v = 0; v < variantsPerKind; v++) variants.push(treeVariantGeometry(rand, mats, kind));
+    // deal the placements round-robin so variants are evenly mixed along the road
+    const buckets: typeof mine[] = variants.map(() => []);
+    mine.forEach((sp, i) => buckets[i % variants.length].push(sp));
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const up = new THREE.Vector3(0, 1, 0);
+    const pos = new THREE.Vector3();
+    const scl = new THREE.Vector3();
+    variants.forEach((varGeo, vi) => {
+      const list = buckets[vi];
+      if (!list.length) return;
+      for (const [geo, mat] of [[varGeo.trunk, mats.trunk], [varGeo.leaf, mats.foliage]] as const) {
+        if (!geo) continue;
+        const inst = new THREE.InstancedMesh(geo, mat, list.length);
+        list.forEach((sp, i) => {
+          q.setFromAxisAngle(up, sp.r);
+          pos.set(sp.x, sp.y, sp.z);
+          scl.set(sp.s, sp.s, sp.s);
+          m.compose(pos, q, scl);
+          inst.setMatrixAt(i, m);
+        });
+        inst.instanceMatrix.needsUpdate = true;
+        inst.castShadow = true;
+        inst.receiveShadow = true;
+        out.add(inst);
+      }
+    });
+  }
+  return out;
 }

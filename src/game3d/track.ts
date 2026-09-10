@@ -54,8 +54,21 @@ export class Track {
     // downstream (scenery bands, pickups, terrain samples, the minimap) is
     // expressed per-metre of arc length, so it all follows automatically.
     // Y is left alone: scaling height too would turn the hills into cliffs.
-    const pts = controlPoints.map(([x, y, z]) =>
-      new THREE.Vector3(x * TRACK_SCALE, y, z * TRACK_SCALE));
+    // HILLS. The authored control points only vary ~6 m of height across a whole
+    // lap, which is why the circuits felt dead flat. Rather than re-author every
+    // realm's elevation by hand, layer a smooth two-octave hill profile on top.
+    // It's driven by the point's fraction AROUND THE LOOP and built only from
+    // whole-number sine harmonics, so it is exactly periodic — the last point
+    // meets the first at the same height with the same slope, and the closed
+    // curve never gets a step or a kink at the seam. Amplitudes stay modest
+    // because grade, not height, is what launches a car: ~9 m over the ~50 m
+    // between control points is a drivable roll, not a ramp.
+    const N = controlPoints.length;
+    const pts = controlPoints.map(([x, y, z], i) => {
+      const u = (i / N) * Math.PI * 2;
+      const hill = Math.sin(u * 2) * 6.5 + Math.sin(u * 3 + 1.1) * 3.0;
+      return new THREE.Vector3(x * TRACK_SCALE, y + hill, z * TRACK_SCALE);
+    });
     this.curve = new THREE.CatmullRomCurve3(pts, true, "catmullrom", 0.5);
     this.curve.arcLengthDivisions = 2000;
     this.length = this.curve.getLength();
