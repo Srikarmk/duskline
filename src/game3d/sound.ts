@@ -41,6 +41,14 @@ export class Sound {
   private engineA: OscillatorNode | null = null;
   private engineB: OscillatorNode | null = null;
   private engineFilter: BiquadFilterNode | null = null;
+  private engineSub: OscillatorNode | null = null;      // low body/rumble
+  private engineNoise: AudioBufferSourceNode | null = null; // intake/exhaust air
+  private engineNoiseBP: BiquadFilterNode | null = null;
+  private engineNoiseGain: GainNode | null = null;
+  private engineAmp: GainNode | null = null;            // firing-pulse AM target
+  private engineLfo: OscillatorNode | null = null;      // the chug
+  private engineLfoGain: GainNode | null = null;
+  private engineGear = 0;
 
   private musicTimer: ReturnType<typeof setInterval> | null = null;
   private musicStep = 0;
@@ -135,37 +143,136 @@ export class Sound {
 
   private startEngine() {
     if (!this.ctx || !this.engineBus) return;
-    this.engineFilter = this.ctx.createBiquadFilter();
+    const ctx = this.ctx;
+
+    // AM stage: the firing pulse (chug) modulates this, so it sits between the
+    // tone stack and the bus. A real engine is a train of combustion pulses, not
+    // a continuous drone — without this it can only ever sound like an insect.
+    this.engineAmp = ctx.createGain();
+    this.engineAmp.gain.value = 0.72;
+    this.engineAmp.connect(this.engineBus);
+
+    this.engineFilter = ctx.createBiquadFilter();
     this.engineFilter.type = "lowpass";
     this.engineFilter.frequency.value = 400;
-    this.engineFilter.connect(this.engineBus);
+    this.engineFilter.Q.value = 0.7;
+    this.engineFilter.connect(this.engineAmp);
 
-    this.engineA = this.ctx.createOscillator();
+    // sub: sine an octave under the fundamental = weight you feel rather than hear
+    this.engineSub = ctx.createOscillator();
+    this.engineSub.type = "sine";
+    this.engineSub.frequency.value = 30;
+    const subGain = ctx.createGain();
+    subGain.gain.value = 0.9;
+    this.engineSub.connect(subGain);
+    subGain.connect(this.engineFilter);
+    this.engineSub.start();
+
+    // body: the fundamental plus an octave, lightly detuned so it beats a little
+    this.engineA = ctx.createOscillator();
     this.engineA.type = "sawtooth";
-    this.engineA.frequency.value = 48;
-    this.engineA.connect(this.engineFilter);
+    this.engineA.frequency.value = 60;
+    const aGain = ctx.createGain();
+    aGain.gain.value = 0.5;
+    this.engineA.connect(aGain);
+    aGain.connect(this.engineFilter);
     this.engineA.start();
 
-    this.engineB = this.ctx.createOscillator();
+    this.engineB = ctx.createOscillator();
     this.engineB.type = "sawtooth";
-    this.engineB.frequency.value = 72;
-    this.engineB.detune.value = 8;
-    this.engineB.connect(this.engineFilter);
+    this.engineB.frequency.value = 120;   // OCTAVE, not the old bare fifth
+    this.engineB.detune.value = 7;
+    const bGain = ctx.createGain();
+    bGain.gain.value = 0.22;
+    this.engineB.connect(bGain);
+    bGain.connect(this.engineFilter);
     this.engineB.start();
+
+    // air: looped broadband noise through a resonant bandpass that tracks revs.
+    // This is the ingredient that makes it read as a machine moving air instead
+    // of an oscillator, and it's what the old engine was missing entirely.
+    const buf = this.makeNoiseBuffer(2, true);
+    if (buf) {
+      this.engineNoise = ctx.createBufferSource();
+      this.engineNoise.buffer = buf;
+      this.engineNoise.loop = true;
+      this.engineNoiseBP = ctx.createBiquadFilter();
+      this.engineNoiseBP.type = "bandpass";
+      this.engineNoiseBP.frequency.value = 400;
+      this.engineNoiseBP.Q.value = 1.1;
+      this.engineNoiseGain = ctx.createGain();
+      this.engineNoiseGain.gain.value = 0.1;
+      this.engineNoise.connect(this.engineNoiseBP);
+      this.engineNoiseBP.connect(this.engineNoiseGain);
+      this.engineNoiseGain.connect(this.engineAmp);
+      this.engineNoise.start();
+    }
+
+    // the chug itself: an LFO at the firing rate added onto engineAmp.gain
+    this.engineLfo = ctx.createOscillator();
+    this.engineLfo.type = "sawtooth";
+    this.engineLfo.frequency.value = 12;
+    this.engineLfoGain = ctx.createGain();
+    this.engineLfoGain.gain.value = 0.28;
+    this.engineLfo.connect(this.engineLfoGain);
+    this.engineLfoGain.connect(this.engineAmp.gain);
+    this.engineLfo.start();
   }
 
-  /** Drive the engine hum from the current speed fraction (0..1). */
+
+  /** Drive the engine from the current speed fraction (0..1).
+   *
+   *  The old version swept two bare sawtooths (a fifth apart) monotonically from
+   *  46 Hz to 196 Hz. A pure tone rising forever is, quite literally, the sound a
+   *  mosquito makes. Two things fix that: a GEARBOX, so revs climb and then DROP
+   *  on each shift instead of rising without end, and a mix that is mostly moving
+   *  air rather than oscillator. */
   setEngine(speedPercent: number, boosting: boolean) {
-    if (!this.ctx || !this.engineBus || !this.engineA || !this.engineB || !this.engineFilter) return;
+    if (!this.ctx || !this.engineBus || !this.engineFilter) return;
     const t = this.ctx.currentTime;
-    const base = 46 + speedPercent * 150;
-    this.engineA.frequency.setTargetAtTime(base, t, 0.08);
-    this.engineB.frequency.setTargetAtTime(base * 1.5, t, 0.08);
+    const sp = Math.max(0, Math.min(1, speedPercent));
+
+    // --- gearbox: 6 ratios. Within a gear revs sweep idle -> redline; crossing
+    // into the next gear drops them back down. That saw-tooth rev profile is the
+    // single strongest "this is a car" cue available.
+    const GEARS = 6;
+    const span = 1 / GEARS;
+    const gear = Math.min(GEARS - 1, Math.floor(sp / span));
+    const within = span > 0 ? (sp - gear * span) / span : 0;
+    // higher gears pull taller, so each one tops out a little lower in the rev range
+    const topOut = 1 - gear * 0.06;
+    const rpm = 0.26 + within * (topOut - 0.26);
+    const shifting = this.engineGear !== gear;
+    this.engineGear = gear;
+    // a shift is a quick lift: cut the throttle body for a moment
+    const smooth = shifting ? 0.02 : 0.09;
+
+    // --- pitch: keep the fundamental LOW. The old one reached 196 Hz, well into
+    // whine territory; a real engine's fundamental sits far below that.
+    const f0 = 32 + rpm * 88;                   // ~32-120 Hz
+    this.engineSub?.frequency.setTargetAtTime(f0 * 0.5, t, smooth);
+    this.engineA?.frequency.setTargetAtTime(f0, t, smooth);
+    this.engineB?.frequency.setTargetAtTime(f0 * 2, t, smooth);
+
+    // --- chug: firing pulses speed up with revs; deep and lopey at low rpm,
+    // smoothing out as it spins up (exactly how a real engine loses its lumpiness)
+    this.engineLfo?.frequency.setTargetAtTime(7 + rpm * 30, t, smooth);
+    this.engineLfoGain?.gain.setTargetAtTime(0.3 * (1 - rpm * 0.55), t, 0.12);
+
+    // --- air: the bandpass climbs with revs and opens right up on boost
+    this.engineNoiseBP?.frequency.setTargetAtTime(320 + rpm * 1500 + (boosting ? 900 : 0), t, smooth);
+    this.engineNoiseGain?.gain.setTargetAtTime(0.09 + sp * 0.2 + (boosting ? 0.16 : 0), t, smooth);
+
+    // --- brightness: ceiling well under the old 2100 Hz so harmonics stay warm
     this.engineFilter.frequency.setTargetAtTime(
-      (boosting ? 1400 : 500) + speedPercent * 1600, t, 0.08
+      (boosting ? 900 : 380) + rpm * 780 + sp * 220, t, smooth
     );
-    this.engineBus.gain.setTargetAtTime(0.05 + speedPercent * 0.1 + (boosting ? 0.05 : 0), t, 0.08);
+
+    // --- level: dip briefly through the shift so you HEAR the gearchange
+    const lift = shifting ? 0.55 : 1;
+    this.engineBus.gain.setTargetAtTime((0.05 + sp * 0.11 + (boosting ? 0.05 : 0)) * lift, t, smooth);
   }
+
 
   private tone(freq: number, dur: number, type: OscillatorType, gain: number, sweepTo?: number) {
     if (!this.ctx || !this.sfxBus) return;
