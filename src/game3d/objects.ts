@@ -1533,8 +1533,14 @@ const RAMP_PROFILE: Record<RampKind, (t: number) => number> = {
   twist:    (t) => t * t * (3 - 2 * t),        // same gentle face; the roll is imparted in the air
 };
 
-export function makeRamp(kind: RampKind = "standard"): THREE.Group {
+export function makeRamp(kind: RampKind = "standard", neon = false): THREE.Group {
   const group = new THREE.Group();
+  // Ramps used to self-illuminate everywhere: glowing rails, glowing lip, glowing
+  // chevrons. Under a sunset sky that reads as plastic tat lit from inside — the
+  // only things in the world emitting their own light. Outside the neon realms
+  // they're now painted steel: the yellow still reads at speed because it's a
+  // bright colour catching the sun, not because it's a lamp.
+  const EM = neon ? 1 : 0.06;
   const spec = RAMP_SPECS[kind];
   const { w, l, h } = spec;
   const profile = RAMP_PROFILE[kind];
@@ -1565,15 +1571,15 @@ export function makeRamp(kind: RampKind = "standard"): THREE.Group {
       // Polished metal, not painted plastic: high metalness with a low roughness
       // lets the HDR environment probe actually reflect off the ramp, which is
       // what sells the red/yellow bodywork as machined steel.
-      color: spec.body, emissive: spec.glow, emissiveIntensity: 0.12,
+      color: spec.body, emissive: spec.glow, emissiveIntensity: 0.12 * EM,
       metalness: 0.92, roughness: 0.22, envMapIntensity: 1.5,
       flatShading: true, side: THREE.DoubleSide,
     })
   );
   group.add(body);
 
-  const glow = new THREE.MeshStandardMaterial({ color: 0xfde68a, emissive: spec.glow, emissiveIntensity: 1.0 });
-  const chevMat = new THREE.MeshStandardMaterial({ color: 0xfffbeb, emissive: spec.chev, emissiveIntensity: 1.5, flatShading: true, side: THREE.DoubleSide });
+  const glow = new THREE.MeshStandardMaterial({ color: neon ? 0xfde68a : spec.glow, emissive: spec.glow, emissiveIntensity: 1.0 * EM, metalness: neon ? 0 : 0.8, roughness: neon ? 1 : 0.3 });
+  const chevMat = new THREE.MeshStandardMaterial({ color: 0xfffbeb, emissive: spec.chev, emissiveIntensity: 1.5 * EM, flatShading: true, side: THREE.DoubleSide });
 
   // glowing edge rails as tubes that follow the curve
   const railPts = (x: number) => {

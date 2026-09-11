@@ -198,6 +198,8 @@ export interface RealmSpec {
   style?: "ground" | "void";
   /** [x, elevation, z] control points of the closed loop (meters) */
   controlPoints: [number, number, number][];
+  /** scales the global rolling-hill profile; <1 flattens (coastal causeways). */
+  hillScale?: number;
   palette: RealmPalette;
   /** weighted scenery mix for roadside props */
   scenery: { kind: SceneryKind; weight: number }[];
@@ -288,6 +290,9 @@ export const REALMS: Record<RealmId, RealmSpec> = {
 
   ember: {
     id: "ember",
+    // ARCHIVED: still fully built and loadable by id, just off the picker
+    // while the art direction is being rebuilt realm by realm.
+    hidden: true,
     name: "Ember Wastes",
     blurb: "Volcanic flats — long straights, sweeping fast bends, ash sky.",
     // Ember Wastes: a big sweeping teardrop — two very long volcanic straights
@@ -409,6 +414,9 @@ export const REALMS: Record<RealmId, RealmSpec> = {
 
   sands: {
     id: "sands",
+    // ARCHIVED: still fully built and loadable by id, just off the picker
+    // while the art direction is being rebuilt realm by realm.
+    hidden: true,
     name: "Sunspire Sands",
     blurb: "Blazing desert circuit — vast dunes, ancient monuments, long sun-baked straights.",
     // Sunspire Sands: two long sun-baked straights (bottom + top) wrapped around a
@@ -452,6 +460,9 @@ export const REALMS: Record<RealmId, RealmSpec> = {
 
   castle: {
     id: "castle",
+    // ARCHIVED: still fully built and loadable by id, just off the picker
+    // while the art direction is being rebuilt realm by realm.
+    hidden: true,
     name: "Hogwarts",
     blurb: "A twisting lap around the wizarding castle — turrets, the Express, floating candles and a Whomping Willow.",
     // Hogwarts: a tight, technical castle lap — an S-chicane cresting a rise on the
@@ -607,16 +618,17 @@ export const REALMS: Record<RealmId, RealmSpec> = {
   bay: {
     id: "bay",
     name: "Sunset Bay",
+    hillScale: 0.18,
     blurb: "A causeway between a burning sky and a flat calm sea, the city watching from across the water.",
     // Sunset Bay: a long coastal loop with sweeping, open corners — the art this
     // realm is built from is about the VIEW, so the road is deliberately fast and
     // uncluttered rather than technical, giving you time to look out to sea.
     controlPoints: [
-      [501, 14, 0], [497, 15, 83], [446, 15, 155], [366, 14, 208], [278, 12, 241],
-      [192, 10, 260], [112, 8, 270], [37, 6, 273], [-36, 5, 266], [-102, 5, 246],
-      [-159, 6, 215], [-203, 7, 177], [-242, 9, 138], [-285, 11, 99], [-339, 13, 56],
-      [-400, 14, 0], [-451, 15, -75], [-469, 15, -163], [-438, 14, -248], [-356, 12, -309],
-      [-243, 10, -329], [-127, 8, -305], [-34, 6, -254], [27, 5, -198], [66, 5, -159],
+      [501, 6, 0], [497, 6, 83], [446, 6, 155], [366, 6, 208], [278, 6, 241],
+      [192, 6, 260], [112, 6, 270], [37, 6, 273], [-36, 6, 266], [-102, 6, 246],
+      [-159, 6, 215], [-203, 6, 177], [-242, 6, 138], [-285, 6, 99], [-339, 6, 56],
+      [-400, 6, 0], [-451, 6, -75], [-469, 6, -163], [-438, 6, -248], [-356, 6, -309],
+      [-243, 6, -329], [-127, 6, -305], [-34, 6, -254], [27, 6, -198], [66, 5, -159],
       [108, 6, -146], [172, 7, -149], [263, 9, -149], [366, 11, -127], [454, 13, -75],
     ],
     palette: {

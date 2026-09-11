@@ -42,7 +42,7 @@ import {
 import { makeWeather, type WeatherSystem } from "./weather";
 import { makeTunnelArch, makeTunnelPortal } from "./setpieces";
 import { makeGrandWaterfall, updateGrandWaterfall, makeStoneBridge, makeBatFlock, updateBatFlock } from "./props/grand";
-import { makeOceanPlane, makeSkyline, makePalmSilhouette } from "./props/coast";
+import { makeOceanPlane, makeSkyline, makePalmField, makeSandTexture } from "./props/coast";
 import { makeForkArrowSign, makeBlimp } from "./props/signage";
 import { BranchPath } from "./branch";
 import { FreeDrive } from "./freedrive";
@@ -336,7 +336,8 @@ export class Game {
   private sparks: SmokePuff[] = []; // impact-spark pool (bumps/hits)
   private camPos = new THREE.Vector3();
   private camYaw = 0; // smoothed camera heading — eases toward the car so the view swings in behind you instead of snapping with every steer
-  private coast: { x: number; z: number; r: number; far: number } | null = null; // coastal realms: land inside r, sea beyond
+  private coast: { x: number; z: number; r: number; far: number } | null = null;
+  private seaY = -11; // coastal realms: land inside r, sea beyond
   private reliefAmp = 0; // per-realm amplitude of the rolling hills the ground rises into away from the road
   private sun!: THREE.DirectionalLight; // shadow-casting key light; its frustum follows the car
   private offTrackT = 0; // seconds left before an off-track respawn (0 = on track / no warning)
@@ -436,7 +437,7 @@ export class Game {
     }
     // banking OFF: the car sits at the flat centreline height, so a banked (tilted)
     // road surface would poke up through it on corners and look like the car sinks
-    this.track = new Track(this.realm.controlPoints, false);
+    this.track = new Track(this.realm.controlPoints, false, this.realm.hillScale ?? 1);
     // how dramatically the land rolls away from the road, per realm — peaks/dunes
     // heave, the speedway + city stay near-flat, the space tubes get none
     this.reliefAmp = ({
@@ -656,15 +657,20 @@ export class Game {
         cx += p.x; cz += p.z;
       }
       cx /= N; cz /= N;
-      let far = 0;
+      let far = 0, minY = Infinity;
+      for (let i = 0; i < N; i++) {
+        const p = this.track.pointAt((i / N) * len, 0, undefined, true);
+        if (p.y < minY) minY = p.y;
+      }
       for (const p of pts) far = Math.max(far, Math.hypot(p.x - cx, p.z - cz));
+      this.seaY = minY - 2.2;   // waterline just under the lowest part of the road
       // r  = how far LAND extends either side of the tarmac before the beach
       //      drops to the sea (this is what makes it a causeway)
       // far = the circuit's own radius, used to push the far-shore skyline out
       // These are different quantities and must not share a field: they did,
       // and the skyline ended up at 34*2.15 = 73 m from the centre — i.e. towers
       // standing ON the racing line, which is the giant flat wall on the road.
-      this.coast = { x: cx, z: cz, r: 34, far };
+      this.coast = { x: cx, z: cz, r: 11, far };   // land only a few m past the kerb
     }
     const { scene, track, realm } = this;
     const pal = realm.palette;
@@ -732,7 +738,12 @@ export class Game {
     fill.position.set(-70, 45, -90);
     scene.add(fill);
 
-    if (!isVoid) scene.add(track.buildVergeMesh(makeGrassTexture(pal)));
+    // On a causeway the verge mesh is wrong: it lays a FLAT apron out to 24 m
+    // either side at y=0, which sits on top of the carved beach and is exactly
+    // the wide brown plain hiding the water. Coastal realms get a shore apron
+    // instead — same job, but it follows the ground down under the waterline.
+    if (this.coast) scene.add(this.buildCoastApron(makeSandTexture(pal)));
+    else if (!isVoid) scene.add(track.buildVergeMesh(makeGrassTexture(pal)));
     scene.add(track.buildRoadMesh(makeRoadTexture(pal), pal.roadFinish));
     this.buildPuddles(pal); // reflective puddles on wet/icy tracks
     if (!isVoid) scene.add(track.buildEdgePosts(pal.rumbleB, pal.edgeLine));
@@ -2121,11 +2132,60 @@ export class Game {
       // already the distance to the centreline, so this costs nothing.
       const over = dist - this.coast.r;
       if (over > 0) {
-        const t = Math.min(1, over / 55);         // narrow beach, then straight to water
-        h -= (t * t) * 40;
+        // Steep and immediate. The previous 55 m ramp meant water only actually
+        // appeared ~77 m from the centreline, which from a low camera is a wide
+        // brown plain with a distant pink strip — not a causeway. This puts the
+        // waterline a few metres past the kerb.
+        const t = Math.min(1, over / 9);
+        h -= (t * t) * 46;
       }
     }
     return h;
+  }
+
+  /**
+   * Shore apron for coastal realms: a high-resolution strip that runs from
+   * under the road edge, across the sand, and down past the waterline.
+   *
+   * The world terrain is a 12 m grid — far too coarse to render a shoreline
+   * that happens between 13 m and 26 m of the centreline, and coarse enough
+   * that it chords straight across the drop. This strip samples the same
+   * height field at 3 m along and ~3 m across, so the beach and the water's
+   * edge are actually shaped. The coarse mesh chords BELOW the true curve
+   * through the drop (it is concave down), so it stays hidden underneath.
+   */
+  private buildCoastApron(tex: THREE.Texture): THREE.Mesh {
+    const c = this.coast!;
+    const inner = ROAD_HALF_WIDTH * 1.25 - 0.8; // tucks under the road edge
+    const lats = [inner, c.r * 0.5, c.r * 0.8, c.r, c.r + 3, c.r + 6, c.r + 10, c.r + 16, c.r + 28];
+    const step = 3;
+    const count = Math.ceil(this.track.length / step);
+    const cols = lats.length;
+    const pos: number[] = [], uv: number[] = [], idx: number[] = [];
+    const p = new THREE.Vector3();
+    let base = 0;
+    for (const side of [1, -1]) {
+      for (let i = 0; i <= count; i++) {
+        const d = (i / count) * this.track.length;
+        for (let k = 0; k < cols; k++) {
+          this.track.pointAt(d, side * lats[k], p, true);
+          pos.push(p.x, this.groundHeightAtXZ(p.x, p.z) + 0.02, p.z);
+          uv.push(k / (cols - 1), d / 12);
+        }
+      }
+      for (let i = 0; i < count; i++) for (let k = 0; k < cols - 1; k++) {
+        const a = base + i * cols + k, b = a + cols;
+        idx.push(a, b, a + 1, a + 1, b, b + 1);
+      }
+      base += (count + 1) * cols;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    const m = new THREE.MeshLambertMaterial({ map: tex, side: THREE.DoubleSide });
+    return new THREE.Mesh(geo, m);
   }
 
   private buildGroundTerrain(mat: THREE.Material): THREE.Mesh {
@@ -2384,7 +2444,7 @@ export class Game {
         // wide now, and they land you back on the road, so sitting on the racing
         // line makes them a feature you get to use rather than an obstacle.
         const lane = LANE_CENTERS[1];
-        this.addEntity("ramp", d, lane, makeRamp(kind), 0, RAMP_SPECS[kind].power);
+        this.addEntity("ramp", d, lane, makeRamp(kind, this.realm.style === "void"), 0, RAMP_SPECS[kind].power);
         // The ride-up physics reads `this.ramps`, which NOTHING was populating —
         // so before this the ramps were pure decoration you drove straight
         // through. Register each one so it can actually be driven up.
@@ -2688,36 +2748,35 @@ export class Game {
       const c = this.coast ?? { x: 0, z: 0, r: 34, far: 600 };
       const sea = makeOceanPlane(pal, Math.max(12000, c.far * 8));
       // just under the beach ramp, centred on the island so it surrounds it
-      sea.position.set(c.x, -11, c.z);
+      sea.position.set(c.x, this.seaY, c.z);
       this.scene.add(sea);
 
       // the city, across the water: a flat cut-out band on the far shore
       for (const [ang, span, dist] of [[0.6, 2400, 2.15], [2.4, 1700, 2.45], [4.3, 1500, 2.3]] as const) {
         const sk = makeSkyline(rand, pal, span);
         const R = c.far * dist;   // c.far, NOT c.r — see the coast comment above
-        sk.position.set(c.x + Math.cos(ang) * R, -10, c.z + Math.sin(ang) * R);
+        sk.position.set(c.x + Math.cos(ang) * R, this.seaY + 1, c.z + Math.sin(ang) * R);
         sk.rotation.y = -ang + Math.PI / 2;   // face the island across the water
         this.scene.add(sk);
       }
 
-      // palms along the verge, as silhouettes
-      for (let d = 0; d < len; d += 34) {
+      // palms all the way down both sides of the causeway, instanced
+      const palmSpots: { x: number; y: number; z: number; s: number; r: number }[] = [];
+      for (let d = 0; d < len; d += 15) {
         for (const side of [-1, 1]) {
-          if (rand() < 0.5) continue;
-          // well clear of the verge: a palm trunk at +5 m was close enough to
-          // overhang the tarmac on a bend, which is why they read as standing
+          if (rand() < 0.28) continue;
+          // clear of the tarmac: a palm trunk at +5 m was close enough to
+          // overhang the road on a bend, which is why they read as standing
           // "on the road"
-          const off = side * (ROAD_HALF_WIDTH + 12 + rand() * 12);
-          const jd = d + rand() * 12;
+          const off = side * (ROAD_HALF_WIDTH + 1.6 + rand() * 3.0);
+          const jd = d + rand() * 11;
           const p = track.pointAt(this.track.wrap(jd), off);
-          const pm = makePalmSilhouette(rand);
-          pm.position.set(p.x, this.terrainYAt(jd, off), p.z);
-          pm.rotation.y = rand() * Math.PI * 2;
-          this.scene.add(pm);
+          palmSpots.push({ x: p.x, y: this.terrainYAt(jd, off), z: p.z, s: 0.8 + rand() * 0.5, r: rand() * Math.PI * 2 });
           // and SOLID — scenery you can drive straight through breaks the world
-          if (this.obstacleClear(p.x, p.z, 1.1)) this.obstacles.push({ x: p.x, z: p.z, r: 1.1 });
+          if (this.obstacleClear(p.x, p.z, 1.0)) this.obstacles.push({ x: p.x, z: p.z, r: 1.0 });
         }
       }
+      this.scene.add(makePalmField(rand, palmSpots));
     } else if (realm.id === "forest") {
       // cave mouths set back in the hillsides, facing the road
       for (let d = 60; d < len - 40; d += 220) {

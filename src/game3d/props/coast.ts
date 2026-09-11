@@ -27,9 +27,17 @@ export function makeOceanPlane(pal: RealmPalette, size = 4200): THREE.Mesh {
   // base: sky colour at the horizon fading to a deeper tone close in, because
   // water mirrors the sky above it
   const g = ctx.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, far);
-  g.addColorStop(0.45, near);
-  g.addColorStop(1, pal.sky[1]);
+  // NOTE: this plane is ~12 km across and centred on the circuit, so everything
+  // you actually see from the car sits in a narrow band around v = 0.5. Running
+  // the gradient all the way to the zenith colour therefore painted the water
+  // beside the road solid magenta. The middle has to HOLD the near-water tone
+  // and only the outer edges climb to the horizon.
+  g.addColorStop(0.00, far);
+  g.addColorStop(0.22, near);
+  g.addColorStop(0.44, near);
+  g.addColorStop(0.56, near);
+  g.addColorStop(0.78, near);
+  g.addColorStop(1.00, far);
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, W, H);
 
@@ -112,36 +120,191 @@ export function makeSkyline(rand: () => number, pal: RealmPalette, width = 1500)
  * near-black, because in this art style roadside planting is a shape against the
  * sky, not a lit object.
  */
-export function makePalmSilhouette(rand: () => number): THREE.Group {
-  const g = new THREE.Group();
-  const dark = new THREE.MeshBasicMaterial({ color: 0x140d1c, fog: true });
-  const h = 7 + rand() * 6;
-  const lean = (rand() - 0.5) * 0.5;
+/**
+ * Beach cross-section texture. The apron's U runs 0..1 straight ACROSS the
+ * shore, so one column of pixels can describe the whole strip: dry sand at the
+ * kerb, a darker wet band right at the waterline, then seabed. That's why the
+ * beach reads as a beach instead of a tiled field.
+ */
+export function makeSandTexture(pal: RealmPalette): THREE.Texture {
+  const W = 96, H = 256;
+  const c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const ctx = c.getContext("2d")!;
+  const g = ctx.createLinearGradient(0, 0, W, 0);
+  g.addColorStop(0.00, "#c2a184");   // dry sand against the kerb
+  g.addColorStop(0.30, "#bb9878");
+  g.addColorStop(0.42, "#a8805f");
+  g.addColorStop(0.49, "#7c5a45");   // wet band at the water's edge
+  g.addColorStop(0.53, "#4a3a3c");
+  g.addColorStop(0.70, "#2a2130");   // seabed, under the water anyway
+  g.addColorStop(1.00, "#1d1826");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  let sd = 77;
+  const rand = () => { sd = (sd * 1664525 + 1013904223) >>> 0; return sd / 4294967296; };
+  for (let i = 0; i < 2600; i++) {
+    const x = rand() * W, y = rand() * H;
+    const light = rand() < 0.5;
+    ctx.fillStyle = light ? `rgba(255,232,200,${(0.05 + rand() * 0.10).toFixed(2)})`
+                          : `rgba(60,38,30,${(0.05 + rand() * 0.10).toFixed(2)})`;
+    ctx.fillRect(x, y, 1 + rand() * 2, 1 + rand() * 2);
+  }
+  // foam: a broken white line exactly at the waterline (u = 0.5), which is what
+  // actually tells you where the land stops and the sea starts
+  for (let i = 0; i < 900; i++) {
+    const x = W * (0.478 + rand() * 0.05);
+    const y = rand() * H;
+    ctx.fillStyle = `rgba(255,246,236,${(0.18 + rand() * 0.5).toFixed(2)})`;
+    ctx.fillRect(x, y, 1 + rand() * 3, 1 + rand() * 2);
+  }
+  // tide lines: faint darker streaks running ALONG the shore near the water
+  for (let i = 0; i < 14; i++) {
+    const x = W * (0.34 + rand() * 0.14);
+    ctx.strokeStyle = `rgba(70,46,38,${(0.08 + rand() * 0.10).toFixed(2)})`;
+    ctx.lineWidth = 1 + rand() * 2;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    for (let y = 12; y <= H; y += 12) ctx.lineTo(x + (rand() - 0.5) * 3, y);
+    ctx.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = THREE.ClampToEdgeWrapping;   // U spans the strip once, never tiles
+  t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  void pal;
+  return t;
+}
 
-  const seg = 6;
-  const trunkParts: THREE.BufferGeometry[] = [];
+/**
+ * One palm frond, built as a central rachis with leaflets combed off both
+ * sides. The old version was a 4-sided cone per frond, which in silhouette is
+ * a spike — a ring of them reads as a broken umbrella, not a tree. A frond's
+ * whole character is that it arcs up then falls away, and that its edge is
+ * feathered; both are geometry, so both have to be built.
+ */
+function frondGeometry(rand: () => number, len: number): THREE.BufferGeometry {
+  const pos: number[] = [];
+  const tri = (a: number[], b: number[], c: number[]) => pos.push(...a, ...b, ...c);
+  const quad = (a: number[], b: number[], c: number[], d: number[]) => { tri(a, b, c); tri(a, c, d); };
+  const M = 26;   // leaflet stations: few + long reads as a sawtooth, not a frond
+  const lift = len * 0.30, droop = len * 1.20;
+  const at = (t: number): [number, number] => [len * t, lift * t - droop * t * t * t];
+
+  for (let i = 0; i < M; i++) {
+    const t0 = i / M, t1 = (i + 1) / M;
+    const [x0, y0] = at(t0), [x1, y1] = at(t1);
+    const w0 = 0.06 * (1 - t0 * 0.8), w1 = 0.06 * (1 - t1 * 0.8);
+    quad([x0, y0, -w0], [x0, y0, w0], [x1, y1, w1], [x1, y1, -w1]);
+  }
+  for (let i = 1; i < M; i++) {
+    const t = i / M;
+    const [x, y] = at(t);
+    const [x2, y2] = at(Math.min(1, t + 1 / M));
+    // leaflets are longest around the middle of the frond and shrink to the tip
+    const ll = 0.21 * len * Math.pow(Math.sin(Math.PI * Math.min(1, t * 1.02)), 0.5) * (0.85 + rand() * 0.3);
+    const back = 0.9 * ll;                  // combed back sharply toward the trunk
+    const drop = 0.5 * ll * (0.3 + t);      // and hanging more toward the tip
+    for (const s of [-1, 1]) tri([x, y, 0], [x - back, y - drop, s * ll], [x2, y2, 0]);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.computeVertexNormals();
+  return g;
+}
+
+/** A single palm's merged geometry, with a warm-to-dark vertical vertex tint. */
+function palmVariantGeometry(rand: () => number): THREE.BufferGeometry {
+  const h = 7.5 + rand() * 6.5;
+  const lean = (rand() - 0.5) * 0.62;
+  const parts: THREE.BufferGeometry[] = [];
+
+  const seg = 7;
   for (let i = 0; i < seg; i++) {
     const t0 = i / seg, t1 = (i + 1) / seg;
-    const r0 = 0.32 * (1 - t0 * 0.55), r1 = 0.32 * (1 - t1 * 0.55);
-    const s = new THREE.CylinderGeometry(r1, r0, h / seg, 6);
-    // quadratic lean gives the classic palm curve instead of a straight pole
-    s.translate(lean * t0 * t0 * h, h * (t0 + t1) / 2, 0);
-    trunkParts.push(s.toNonIndexed());
+    const r0 = 0.30 * (1 - t0 * 0.5), r1 = 0.30 * (1 - t1 * 0.5);
+    const s = new THREE.CylinderGeometry(r1, r0, h / seg, 7);
+    s.translate(lean * t0 * t0 * h, (h * (t0 + t1)) / 2, 0);
+    // fronds carry no UVs (they're vertex-coloured, not mapped), and
+    // mergeGeometries refuses a mixed attribute set
+    const sn = s.toNonIndexed(); sn.deleteAttribute("uv");
+    parts.push(sn);
   }
-  const fronds: THREE.BufferGeometry[] = [];
-  const n = 7 + Math.floor(rand() * 3);
+  // ring of old frond scars where the crown meets the trunk
+  const crown = new THREE.SphereGeometry(0.42, 7, 5);
+  crown.translate(lean * h, h, 0);
+  const cn = crown.toNonIndexed(); cn.deleteAttribute("uv");
+  parts.push(cn);
+
+  const n = 9 + Math.floor(rand() * 4);
   for (let i = 0; i < n; i++) {
-    const a = (i / n) * Math.PI * 2 + rand() * 0.3;
-    const len = 2.6 + rand() * 1.9;
-    const f = new THREE.ConeGeometry(0.42, len, 4);
-    f.rotateZ(Math.PI / 2);                      // lie it outward
-    f.translate(len / 2, 0, 0);
-    f.rotateZ(-0.5 - rand() * 0.5);              // droop
+    const a = (i / n) * Math.PI * 2 + rand() * 0.35;
+    const len = 3.1 + rand() * 2.2;
+    const f = frondGeometry(rand, len);
+    // outer fronds sit lower, inner ones stand up — a crown, not a wheel
+    f.rotateZ(0.42 - (i / n) * 0.1 - rand() * 0.55);
     f.rotateY(a);
-    f.translate(lean * h, h, 0);
-    fronds.push(f.toNonIndexed());
+    f.translate(lean * h, h - 0.1, 0);
+    parts.push(f);
   }
-  const all = mergeGeometries([...trunkParts, ...fronds], false);
-  if (all) g.add(new THREE.Mesh(all, dark));
-  return g;
+  // a couple of dead fronds hanging straight down under the crown
+  for (let i = 0; i < 2; i++) {
+    const f = frondGeometry(rand, 2.0 + rand() * 1.1);
+    f.rotateZ(-1.25 - rand() * 0.3);
+    f.rotateY(rand() * Math.PI * 2);
+    f.translate(lean * h, h - 0.2, 0);
+    parts.push(f);
+  }
+
+  const merged = mergeGeometries(parts, false)!;
+  // Vertical tint: warm plum at the base lifting off the sand, near-black in the
+  // crown against the sky. Pure black everywhere is what made these read as
+  // cut-out spiders rather than trees.
+  const p = merged.getAttribute("position");
+  const col = new Float32Array(p.count * 3);
+  for (let i = 0; i < p.count; i++) {
+    const t = Math.min(1, Math.max(0, p.getY(i) / h));
+    const e = t * t;
+    col[i * 3 + 0] = 0.29 - 0.21 * e;
+    col[i * 3 + 1] = 0.20 - 0.14 * e;
+    col[i * 3 + 2] = 0.30 - 0.20 * e;
+  }
+  merged.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  return merged;
+}
+
+/**
+ * Instanced palm grove. These line both sides of the causeway for the whole
+ * lap, so one mesh each would be hundreds of draw calls on the one realm that
+ * can least afford them.
+ */
+export function makePalmField(
+  rand: () => number,
+  spots: { x: number; y: number; z: number; s: number; r: number }[],
+  variants = 8
+): THREE.Group {
+  const out = new THREE.Group();
+  if (!spots.length) return out;
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  const geos = [];
+  for (let v = 0; v < variants; v++) geos.push(palmVariantGeometry(rand));
+  const buckets: (typeof spots)[] = geos.map(() => []);
+  spots.forEach((sp, i) => buckets[i % geos.length].push(sp));
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion();
+  const up = new THREE.Vector3(0, 1, 0), pos = new THREE.Vector3(), scl = new THREE.Vector3();
+  geos.forEach((geo, vi) => {
+    const list = buckets[vi];
+    if (!list.length) return;
+    const inst = new THREE.InstancedMesh(geo, mat, list.length);
+    list.forEach((sp, i) => {
+      q.setFromAxisAngle(up, sp.r);
+      pos.set(sp.x, sp.y, sp.z);
+      scl.set(sp.s, sp.s, sp.s);
+      inst.setMatrixAt(i, m.compose(pos, q, scl));
+    });
+    inst.instanceMatrix.needsUpdate = true;
+    inst.castShadow = true;
+    out.add(inst);
+  });
+  return out;
 }

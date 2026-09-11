@@ -46,7 +46,7 @@ export class Track {
   private cz: number[] = [];
   private cd: number[] = [];
 
-  constructor(controlPoints: [number, number, number][], banked = true) {
+  constructor(controlPoints: [number, number, number][], banked = true, hillScale = 1) {
     this.banked = banked;
     // LAP LENGTH. Scaling the control points outward in X/Z stretches the whole
     // circuit while preserving its shape, corner sequence and elevation, so every
@@ -66,7 +66,10 @@ export class Track {
     const N = controlPoints.length;
     const pts = controlPoints.map(([x, y, z], i) => {
       const u = (i / N) * Math.PI * 2;
-      const hill = Math.sin(u * 2) * 6.5 + Math.sin(u * 3 + 1.1) * 3.0;
+      // hillScale lets a realm opt out: a causeway has to stay near sea level,
+      // because the ocean is one flat plane — a road that climbs 17 m over a lap
+      // is a clifftop for half of it, and the water stops reading as adjacent.
+      const hill = (Math.sin(u * 2) * 6.5 + Math.sin(u * 3 + 1.1) * 3.0) * hillScale;
       return new THREE.Vector3(x * TRACK_SCALE, y + hill, z * TRACK_SCALE);
     });
     this.curve = new THREE.CatmullRomCurve3(pts, true, "catmullrom", 0.5);

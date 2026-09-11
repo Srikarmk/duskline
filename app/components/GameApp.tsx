@@ -10,7 +10,9 @@ import ResultsScreen from "./ResultsScreen";
 
 type Screen = "home" | "race" | "intermission" | "gpresult" | "result";
 
-const GP_ORDER: RealmId[] = ["forest", "ember", "peaks"];
+// Championship rounds only draw from realms that are live in the picker —
+// Ember Wastes is archived while its art is rebuilt.
+const GP_ORDER: RealmId[] = ["forest", "bay", "peaks"];
 const CHAMP_PTS = [10, 6, 3, 1];
 
 /** Fixed confetti recipe for the champion screen — deterministic (no hydration

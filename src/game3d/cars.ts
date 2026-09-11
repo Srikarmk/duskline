@@ -450,20 +450,27 @@ let _visorMat: THREE.MeshStandardMaterial | null = null;
 
 /** A seated racing driver: faceted helmet + dark visor + shoulders. Origin at
  *  the seat base; helmet sits ~0.5 above it. `suit` tints the shoulders. */
-function makeDriver(suit: number): THREE.Group {
+function makeDriver(suit: number, open = true): THREE.Group {
   const grp = new THREE.Group();
+  // Closed-roof cars get NO helmet. A 0.16 m white sphere seated 0.5 m up
+  // pokes through the roofline of anything with a low cabin and reads as a
+  // golf ball floating over the car — you never see a head in a road car from
+  // behind anyway, the glass is tinted. Shoulders stay so the cabin isn't
+  // hollow when you look through the screen.
   // helmet + visor are the same on every driver, so they are shared across the
   // whole grid; only the suit carries the team colour
   _helmetMat ??= new THREE.MeshStandardMaterial({ color: 0xededf2, metalness: 0.3, roughness: 0.45, flatShading: true });
   _visorMat ??= new THREE.MeshStandardMaterial({ color: 0x0b0f16, metalness: 0.9, roughness: 0.12, emissive: 0x0a0e14, emissiveIntensity: 0.15 });
   const helmetMat = _helmetMat, visorMat = _visorMat;
   const suitMat = new THREE.MeshStandardMaterial({ color: suit, metalness: 0.3, roughness: 0.6 });
-  const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), helmetMat);
-  helmet.position.set(0, 0.5, 0);
-  const visor = box(0.2, 0.07, 0.03, visorMat, 0, 0.5, 0.14);
   const shoulders = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.26, 0.36), suitMat);
   shoulders.position.set(0, 0.24, -0.02);
-  grp.add(helmet, visor, shoulders);
+  grp.add(shoulders);
+  if (open) {
+    const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), helmetMat);
+    helmet.position.set(0, 0.5, 0);
+    grp.add(helmet, box(0.2, 0.07, 0.03, visorMat, 0, 0.5, 0.14));
+  }
   return grp;
 }
 
@@ -580,7 +587,7 @@ function buildKart(color: number, p: KartParams): THREE.Group {
     [w * 0.58, yTop],
     [0, yTop],
   ];
-  const drv = makeDriver(dark.getHex());
+  const drv = makeDriver(dark.getHex(), !!p.open);
 
   if (p.open) {
     // open cockpit: a low wraparound windscreen + a roll hoop + exposed driver
@@ -1010,7 +1017,7 @@ function buildMonsterTruck(color: number, num?: number): THREE.Group {
   }
 
   // --- driver in the cab ---
-  const drv = makeDriver(m.dark.getHex());
+  const drv = makeDriver(m.dark.getHex(), false);
   drv.position.set(0, beltY - 0.16, hl * 0.02);
   g.add(drv);
 
@@ -1443,7 +1450,7 @@ function buildSuper(color: number, num?: number): THREE.Group {
     { z: -hl * 0.68, half: canopyHalf(cw * 0.72, deckY,        deckY * 1.02) },
   ];
   g.add(loftBody(canopy, glass, 5));
-  const drv = makeDriver(0x14121c);
+  const drv = makeDriver(0x14121c, false);
   drv.position.set(0, deckY - 0.16, hl * 0.02);
   drv.scale.setScalar(0.86);
   g.add(drv);
