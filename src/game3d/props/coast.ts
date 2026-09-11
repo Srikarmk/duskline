@@ -279,6 +279,21 @@ function palmVariantGeometry(rand: () => number, lit: boolean): THREE.BufferGeom
 }
 
 /**
+ * A single palm as a scenery prop, sharing the same frond geometry as the
+ * grove. Exported because the desert palm this replaces built its crown from
+ * flat trapezoids in dusty green — under a sunset palette that comes back as
+ * an orange starfish on a stick, and there is no reason for the game to have
+ * two different ideas of what a palm looks like.
+ */
+export function makePalmProp(rand: () => number, pal: RealmPalette): THREE.Group {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  g.add(new THREE.Mesh(palmVariantGeometry(rand, pal.hemiInt >= 0.6), mat));
+  g.rotation.y = rand() * Math.PI * 2;
+  return g;
+}
+
+/**
  * Instanced palm grove. These line both sides of the causeway for the whole
  * lap, so one mesh each would be hundreds of draw calls on the one realm that
  * can least afford them.

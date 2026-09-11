@@ -42,7 +42,7 @@ import {
 import { makeWeather, type WeatherSystem } from "./weather";
 import { makeTunnelArch, makeTunnelPortal } from "./setpieces";
 import { makeGrandWaterfall, updateGrandWaterfall, makeStoneBridge, makeBatFlock, updateBatFlock } from "./props/grand";
-import { makeOceanPlane, makeSkyline, makePalmField, makeSandTexture } from "./props/coast";
+import { makeOceanPlane, makeSkyline, makePalmField, makePalmProp, makeSandTexture } from "./props/coast";
 import { makeForkArrowSign, makeBlimp } from "./props/signage";
 import { BranchPath } from "./branch";
 import { FreeDrive } from "./freedrive";
@@ -692,6 +692,12 @@ export class Game {
       const flatGround = makeGround(pal);
       const groundMat = flatGround.material as THREE.MeshStandardMaterial;
       groundMat.normalMap = null; // terrain fills the screen — drop the per-pixel normal cost
+      // FLAT SHADE THE TERRAIN on poster realms. Smooth vertex normals turn a
+      // heightfield into a soft rolling wash — the hills have no edges, so they
+      // read as blurred layers rather than as land. Faceting each triangle
+      // gives every slope its own flat tone and a hard crease where slopes
+      // meet, which is what makes a hill look like a hill in this art style.
+      if (pal.posterSun) groundMat.flatShading = true;
       groundMat.needsUpdate = true;
       flatGround.geometry.dispose();
       scene.add(this.buildGroundTerrain(groundMat));
@@ -1538,7 +1544,8 @@ export class Game {
       case "pyramid": return makePyramid(rand);
       case "obelisk": return makeObelisk(rand);
       case "sphinx": return makeSphinx(rand);
-      case "palm": return makePalm(rand);
+      // one palm in the game, not two — see makePalmProp
+      case "palm": return makePalmProp(rand, this.realm.palette);
       case "sandRock": return makeSandRock(rand);
       case "tower": return makeTower(rand);
       case "gatehouse": return makeGatehouse(rand);
@@ -2189,12 +2196,15 @@ export class Game {
     geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
     geo.setIndex(idx);
     geo.computeVertexNormals();
-    const m = new THREE.MeshLambertMaterial({ map: tex, side: THREE.DoubleSide });
+    const m = new THREE.MeshLambertMaterial({ map: tex, side: THREE.DoubleSide, flatShading: true });
     return new THREE.Mesh(geo, m);
   }
 
   private buildGroundTerrain(mat: THREE.Material): THREE.Mesh {
-    const b = this.track.bounds, margin = 470, cell = 12;
+    // 9 m cells on poster realms: the facets are the look, so they have to be
+    // hill-sized. 12 m was tuned for smooth shading, where cell size only
+    // affected accuracy.
+    const b = this.track.bounds, margin = 470, cell = this.realm.palette.posterSun ? 9 : 12;
     const minX = b.minX - margin, minZ = b.minZ - margin;
     const cols = Math.ceil((b.maxX + margin - minX) / cell) + 1;
     const rows = Math.ceil((b.maxZ + margin - minZ) / cell) + 1;

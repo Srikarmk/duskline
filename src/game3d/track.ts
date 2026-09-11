@@ -343,7 +343,9 @@ export class Track {
     geo.setIndex(indices);
     geo.computeVertexNormals();
 
-    const mat = new THREE.MeshLambertMaterial({ map: texture, side: THREE.DoubleSide });
+    // faceted to match the terrain it meets — a smooth-shaded verge against a
+    // flat-shaded hillside shows up as a soft seam along the whole road
+    const mat = new THREE.MeshLambertMaterial({ map: texture, side: THREE.DoubleSide, flatShading: true });
     return new THREE.Mesh(geo, mat);
   }
 
