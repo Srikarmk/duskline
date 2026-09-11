@@ -61,7 +61,7 @@ export default function GameApp() {
   const [screen, setScreen] = useState<Screen>("home");
   const [mode, setMode] = useState<GameMode>("classic");
   const [realm, setRealm] = useState<RealmId>("forest");
-  const [car, setCar] = useState<CarId>("comet");
+  const [car, setCar] = useState<CarId>("f40");
   const [laps, setLaps] = useState(3);
   const [name, setName] = useState("");
   const [lastResult, setLastResult] = useState<GameResult | null>(null);

@@ -24,8 +24,8 @@ export type RealmId =
   | "nebula"
   | "bay";
 export type CarId =
-  | "comet" | "bolt" | "titan" | "wisp" | "apex" | "goliath"
-  | "wraith" | "nitro" | "dune" | "blaze";
+  | "f40" | "tauro" | "meridian" | "veloce" | "testa"
+  | "fairlady" | "firehawk" | "iroc" | "imprez" | "zanza";
 
 export interface RaceStanding {
   name: string;

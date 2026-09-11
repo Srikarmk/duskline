@@ -108,7 +108,7 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
   const [name, setName] = useState("");
   const [mode, setMode] = useState<GameMode>("classic");
   const [realm, setRealm] = useState<RealmId>("forest");
-  const [car, setCar] = useState<CarId>("comet");
+  const [car, setCar] = useState<CarId>("f40");
   const [laps, setLaps] = useState(3);
   const [step, setStep] = useState(1);
   const [realmPicked, setRealmPicked] = useState(false);

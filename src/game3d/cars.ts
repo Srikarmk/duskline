@@ -259,7 +259,7 @@ function neutralMats(): NeutralMats {
     grilleMat: paint(0x14141a, { metal: 0.7, rough: 0.5 }),
     headMat: paint(0xfff6d5, { emissive: 0xffe6a0, ei: 0.7 }),
     lensMat: paint(0xcdeeff, { emissive: 0x9fdcff, ei: 0.5, metal: 0.4, rough: 0.12 }),
-    tailMat: paint(0x2a0000, { emissive: 0xff2626, ei: 0.65 }),
+    tailMat: paint(0x3a0202, { emissive: 0xff2626, ei: 1.25 }),
   });
 }
 
@@ -1352,8 +1352,8 @@ function buildJet(color: number, num?: number): THREE.Group {
 
 /** Distinct racing number per car type, painted into the door roundel. */
 const RACE_NUM: Record<CarId, number> = {
-  comet: 3, bolt: 7, titan: 4, wisp: 9, apex: 1,
-  goliath: 8, wraith: 5, nitro: 6, dune: 2, blaze: 0,
+  f40: 40, meridian: 1, veloce: 16, tauro: 25, testa: 12,
+  zanza: 30, imprez: 22, firehawk: 77, iroc: 8, fairlady: 240,
 };
 
 /** Build the drivable mesh for a car type in a given livery color. */
@@ -1369,145 +1369,374 @@ const RACE_NUM: Record<CarId, number> = {
  * so this rib set holds the body at full width right up to the shoulder, then
  * turns in sharply, giving a crisp edge instead of a curve.
  */
-function buildSuper(color: number, num?: number): THREE.Group {
+
+// ---------------------------------------------------------------------------
+// THE ROAD-CAR CATALOGUE
+// ---------------------------------------------------------------------------
+//
+// Every car on the grid is now built by one parameterised builder instead of
+// ten hand-written ones. The reason is that all ten are the same *kind* of
+// object — a lofted monocoque with wheels, glass, lamps and a tail — and what
+// actually distinguishes an F40 from a 240Z is proportion plus five or six
+// appendages. Sharing the body means a fix to the shoulder line or the tail
+// bar lands on the whole grid at once, which is why the old per-car builders
+// drifted apart in quality.
+//
+// A car is authored as: overall box (L/W/R), four height landmarks, a rib
+// table for the section profile, a cabin footprint, and a set of flags for the
+// bits you actually recognise a car by (a straked wing, side strakes, pop-up
+// lamps, a shaker scoop, four round lamps, chrome bumpers).
+
+type WingKind = "none" | "straked" | "basket" | "whale" | "duck" | "blade";
+type LampKind = "popup" | "round4" | "round2" | "slim" | "wide";
+type TailKind = "bar" | "quad" | "twin" | "slats";
+type ScoopKind = "none" | "shaker" | "rally" | "bulge" | "roof";
+
+/** zFrac, floorLift, wFloor, wMax, shoulderFrac, wDeck, deckFrac — all the
+ *  width terms are fractions of the half-width, the height terms fractions of
+ *  the named landmark, so one table works at any size. */
+type RibRow = [number, number, number, number, number, number, number];
+
+interface RoadCarParams {
+  L: number; W: number; R: number;
+  rearR?: number;              // rear tyre radius multiplier (staggered fitment)
+  clr?: number;                // ride height
+  sillY: number; shoulderY: number; deckY: number; roofY: number;
+  ribs: RibRow[];
+  cabF: number; cabR: number; cabW: number;   // cabin footprint, z-fracs + width frac
+  whF: number; whR: number;                   // wheel centres, z-fracs
+  wing?: WingKind;
+  lamps?: LampKind;
+  tail?: TailKind;
+  louvres?: number;            // engine-lid slats
+  strakes?: number;            // flank fins
+  naca?: boolean;              // flank intake scallops
+  scoop?: ScoopKind;
+  twoTone?: boolean;           // dark lower body
+  chrome?: boolean;            // chrome bumpers (classics)
+  fogLamps?: boolean;
+  pipes?: number;              // exhaust tip count
+}
+
+// --- section profiles, shared between cars of the same architecture ---------
+// A wedge and a long-bonnet classic differ mostly HERE: the wedge's front deck
+// sits far below its rear deck, the classic's bonnet runs flat for half the car.
+const RIBS_MID_WEDGE: RibRow[] = [
+  [ 1.00, 0.05, 0.14, 0.36, 0.40, 0.26, 0.44],
+  [ 0.88, 0.00, 0.50, 0.76, 0.48, 0.54, 0.52],
+  [ 0.62, 0.00, 0.64, 0.96, 0.60, 0.82, 0.62],
+  [ 0.32, 0.00, 0.70, 0.93, 0.72, 0.74, 0.74],
+  [-0.02, 0.00, 0.72, 0.94, 1.00, 0.70, 1.00],
+  [-0.40, 0.00, 0.74, 1.00, 1.00, 0.80, 1.00],
+  [-0.74, 0.02, 0.70, 0.99, 1.00, 0.88, 1.00],
+  [-1.00, 0.04, 0.60, 0.95, 0.98, 0.92, 0.99],
+];
+const RIBS_MID_CURVE: RibRow[] = [
+  [ 1.00, 0.05, 0.18, 0.42, 0.44, 0.30, 0.50],
+  [ 0.86, 0.00, 0.54, 0.80, 0.54, 0.58, 0.62],
+  [ 0.60, 0.00, 0.68, 0.96, 0.66, 0.70, 0.72],
+  [ 0.30, 0.00, 0.72, 0.94, 0.80, 0.60, 0.84],
+  [-0.02, 0.00, 0.74, 0.96, 0.96, 0.58, 1.00],
+  [-0.38, 0.00, 0.74, 1.00, 1.00, 0.66, 1.00],
+  [-0.72, 0.02, 0.70, 0.97, 0.98, 0.74, 0.98],
+  [-1.00, 0.04, 0.58, 0.90, 0.92, 0.78, 0.94],
+];
+const RIBS_FRONT_LONG: RibRow[] = [
+  [ 1.00, 0.06, 0.20, 0.44, 0.46, 0.34, 0.52],
+  [ 0.84, 0.00, 0.56, 0.82, 0.58, 0.72, 0.64],
+  [ 0.54, 0.00, 0.66, 0.94, 0.66, 0.84, 0.70],
+  [ 0.22, 0.00, 0.70, 0.94, 0.74, 0.86, 0.76],
+  [-0.10, 0.00, 0.72, 0.96, 0.94, 0.78, 0.98],
+  [-0.46, 0.00, 0.72, 0.98, 1.00, 0.82, 1.00],
+  [-0.78, 0.02, 0.66, 0.92, 0.98, 0.84, 0.98],
+  [-1.00, 0.05, 0.54, 0.82, 0.90, 0.76, 0.90],
+];
+const RIBS_MUSCLE: RibRow[] = [
+  [ 1.00, 0.05, 0.26, 0.54, 0.48, 0.44, 0.54],
+  [ 0.86, 0.00, 0.62, 0.88, 0.58, 0.82, 0.64],
+  [ 0.56, 0.00, 0.72, 0.96, 0.68, 0.92, 0.70],
+  [ 0.24, 0.00, 0.74, 0.97, 0.78, 0.92, 0.80],
+  [-0.08, 0.00, 0.76, 0.98, 0.96, 0.86, 0.98],
+  [-0.44, 0.00, 0.76, 1.00, 1.00, 0.90, 1.00],
+  [-0.76, 0.02, 0.74, 0.98, 1.00, 0.94, 1.00],
+  [-1.00, 0.04, 0.68, 0.94, 0.98, 0.94, 0.99],
+];
+const RIBS_SEDAN: RibRow[] = [
+  [ 1.00, 0.05, 0.28, 0.56, 0.50, 0.48, 0.58],
+  [ 0.86, 0.00, 0.64, 0.88, 0.62, 0.84, 0.70],
+  [ 0.58, 0.00, 0.74, 0.96, 0.72, 0.92, 0.78],
+  [ 0.28, 0.00, 0.78, 0.98, 0.86, 0.90, 0.90],
+  [-0.06, 0.00, 0.78, 0.99, 1.00, 0.88, 1.00],
+  [-0.40, 0.00, 0.78, 1.00, 1.00, 0.92, 1.00],
+  [-0.74, 0.02, 0.74, 0.97, 1.00, 0.94, 1.00],
+  [-1.00, 0.04, 0.68, 0.92, 0.98, 0.92, 0.99],
+];
+
+const ROAD_CARS: Record<CarId, RoadCarParams> = {
+  f40: {
+    L: 4.43, W: 1.98, R: 0.33, rearR: 1.08, clr: 0.12,
+    sillY: 0.40, shoulderY: 0.78, deckY: 0.90, roofY: 1.14,
+    ribs: RIBS_MID_WEDGE, cabF: 0.34, cabR: -0.50, cabW: 0.68, whF: 0.62, whR: 0.60,
+    wing: "straked", lamps: "popup", tail: "quad", louvres: 6, naca: true, pipes: 3,
+  },
+  tauro: {
+    L: 4.16, W: 2.02, R: 0.33, rearR: 1.12, clr: 0.11,
+    sillY: 0.38, shoulderY: 0.74, deckY: 0.86, roofY: 1.08,
+    ribs: RIBS_MID_WEDGE, cabF: 0.40, cabR: -0.36, cabW: 0.60, whF: 0.60, whR: 0.62,
+    wing: "basket", lamps: "popup", tail: "quad", louvres: 5, naca: true, pipes: 4,
+  },
+  meridian: {
+    L: 4.29, W: 1.84, R: 0.32, rearR: 1.06, clr: 0.12,
+    sillY: 0.42, shoulderY: 0.80, deckY: 0.94, roofY: 1.16,
+    ribs: RIBS_MID_CURVE, cabF: 0.36, cabR: -0.48, cabW: 0.72, whF: 0.62, whR: 0.60,
+    wing: "duck", lamps: "slim", tail: "bar", louvres: 7, scoop: "roof", pipes: 2,
+  },
+  veloce: {
+    L: 4.46, W: 2.00, R: 0.34, rearR: 1.04, clr: 0.13,
+    sillY: 0.44, shoulderY: 0.84, deckY: 0.98, roofY: 1.24,
+    ribs: RIBS_MID_CURVE, cabF: 0.30, cabR: -0.50, cabW: 0.74, whF: 0.62, whR: 0.60,
+    wing: "duck", lamps: "round2", tail: "bar", twoTone: true, scoop: "roof", pipes: 2,
+  },
+  testa: {
+    L: 4.49, W: 1.98, R: 0.33, rearR: 1.10, clr: 0.12,
+    sillY: 0.40, shoulderY: 0.76, deckY: 0.88, roofY: 1.12,
+    ribs: RIBS_MID_WEDGE, cabF: 0.34, cabR: -0.42, cabW: 0.66, whF: 0.62, whR: 0.60,
+    wing: "none", lamps: "popup", tail: "slats", strakes: 5, pipes: 2,
+  },
+  zanza: {
+    L: 4.43, W: 1.81, R: 0.32, rearR: 1.05, clr: 0.12,
+    sillY: 0.40, shoulderY: 0.78, deckY: 0.90, roofY: 1.15,
+    ribs: RIBS_MID_CURVE, cabF: 0.34, cabR: -0.50, cabW: 0.76, whF: 0.62, whR: 0.60,
+    wing: "duck", lamps: "slim", tail: "bar", louvres: 4, pipes: 2,
+  },
+  imprez: {
+    L: 4.34, W: 1.75, R: 0.32, clr: 0.20,
+    sillY: 0.46, shoulderY: 0.88, deckY: 1.02, roofY: 1.38,
+    ribs: RIBS_SEDAN, cabF: 0.22, cabR: -0.46, cabW: 0.82, whF: 0.64, whR: 0.62,
+    wing: "blade", lamps: "slim", tail: "twin", scoop: "rally", fogLamps: true, pipes: 2,
+  },
+  firehawk: {
+    L: 4.98, W: 1.86, R: 0.35, rearR: 1.06, clr: 0.17,
+    sillY: 0.44, shoulderY: 0.84, deckY: 0.96, roofY: 1.30,
+    ribs: RIBS_MUSCLE, cabF: 0.12, cabR: -0.60, cabW: 0.80, whF: 0.66, whR: 0.62,
+    wing: "whale", lamps: "slim", tail: "twin", scoop: "shaker", pipes: 2,
+  },
+  iroc: {
+    L: 4.87, W: 1.85, R: 0.34, rearR: 1.06, clr: 0.16,
+    sillY: 0.42, shoulderY: 0.82, deckY: 0.94, roofY: 1.28,
+    ribs: RIBS_MUSCLE, cabF: 0.14, cabR: -0.58, cabW: 0.80, whF: 0.66, whR: 0.62,
+    wing: "duck", lamps: "round4", tail: "quad", twoTone: true, scoop: "bulge", pipes: 2,
+  },
+  fairlady: {
+    L: 4.14, W: 1.63, R: 0.31, clr: 0.16,
+    sillY: 0.40, shoulderY: 0.78, deckY: 0.90, roofY: 1.22,
+    ribs: RIBS_FRONT_LONG, cabF: 0.10, cabR: -0.64, cabW: 0.74, whF: 0.64, whR: 0.62,
+    wing: "none", lamps: "round2", tail: "twin", chrome: true, pipes: 1,
+  },
+};
+
+function buildRoadCar(color: number, p: RoadCarParams, num?: number): THREE.Group {
   const g = new THREE.Group();
   const m = carMaterials(color, num);
   const { bodyMat, bodyPlain, darkMat, glass, tireMat, rimMat, chromeMat, grilleMat, lensMat, tailMat } = m;
 
-  const L = 4.75, W = 2.08, R = 0.34;
+  const { L, W, R, sillY, shoulderY, deckY, roofY } = p;
   const hl = L / 2, hw = W / 2;
-  const clr = 0.13;                 // supercar ride height: almost on the deck
-  const sillY = 0.42;               // low flank
-  const shoulderY = 0.80;           // the hard horizontal crease
-  const deckY = 0.92;               // flat rear deck
-  const roofY = 1.19;               // low roofline
+  const clr = p.clr ?? 0.13;
+  const rearR = R * (p.rearR ?? 1);
 
-  // half-section, x >= 0, bottom-centre -> out -> shoulder -> deck centre.
-  // `wMax` is held all the way to the shoulder so the flank is a FLAT wall that
-  // ends in an edge, rather than tumbling home into a dome.
-  const hs = (
-    floorY: number, wFloor: number, wMax: number, shY: number, wDeck: number, dY: number
-  ): [number, number][] => [
-    [0, floorY],
-    [hw * wFloor, floorY],
-    [hw * wMax, sillY],
-    [hw * wMax, shY],          // full width held right up to the crease
-    [hw * wDeck, dY],          // then a sharp turn in across the deck
-    [0, dY],
-  ];
-
-  const ribs: Rib[] = [
-    { z: hl,          half: hs(clr + 0.06, 0.16, 0.40, 0.52, 0.30, 0.60) }, // nose blade
-    { z: hl * 0.88,   half: hs(clr,        0.52, 0.74, 0.62, 0.56, 0.72) }, // splitter / intake mouth
-    { z: hl * 0.60,   half: hs(clr,        0.66, 0.94, shoulderY * 0.92, 0.74, 0.86) }, // front arch
-    { z: hl * 0.26,   half: hs(clr,        0.70, 0.90, shoulderY * 0.94, 0.66, 0.88) }, // low scuttle
-    { z: -hl * 0.04,  half: hs(clr,        0.72, 0.93, shoulderY,        0.68, deckY) }, // cabin base
-    { z: -hl * 0.40,  half: hs(clr,        0.74, 1.00, shoulderY,        0.76, deckY) }, // haunch — widest
-    { z: -hl * 0.74,  half: hs(clr + 0.02, 0.70, 0.98, shoulderY,        0.82, deckY) }, // engine deck
-    { z: -hl,         half: hs(clr + 0.04, 0.62, 0.94, shoulderY * 0.98, 0.88, deckY * 0.99) }, // kamm cut
-  ];
+  // --- body: lofted from the rib table --------------------------------------
+  // wMax is held from the sill all the way to the shoulder so the flank is a
+  // flat wall ending in an EDGE. Rounding it home there is what made the old
+  // bodies read as bathtubs from the chase camera.
+  const ribs: Rib[] = p.ribs.map(([zf, lift, wFloor, wMax, shF, wDeck, dF]) => ({
+    z: hl * zf,
+    half: [
+      [0, clr + lift],
+      [hw * wFloor, clr + lift],
+      [hw * wMax, sillY],
+      [hw * wMax, shoulderY * shF],
+      [hw * wDeck, deckY * dF],
+      [0, deckY * dF],
+    ] as [number, number][],
+  }));
   g.add(loftBody(ribs, bodyMat, 6));
 
-  // the shoulder crease itself, run as a hard dark line the length of the flank
-  for (const sx of [-1, 1])
-    g.add(box(0.035, 0.035, L * 0.82, darkMat, sx * hw * 0.985, shoulderY, -L * 0.02));
-  // deep side sill / rocker, which is what makes it sit low
-  for (const sx of [-1, 1])
-    g.add(box(0.09, 0.16, L * 0.5, darkMat, sx * hw * 0.97, sillY * 0.55, -L * 0.02));
-
-  // --- front -----------------------------------------------------------------
-  g.add(box(W * 0.78, 0.05, L * 0.06, darkMat, 0, clr - 0.02, hl * 0.9));
-  g.add(box(W * 0.34, 0.16, 0.06, grilleMat, 0, 0.42, hl * 0.95));
+  // shoulder crease down the whole flank + a deep rocker so it sits low
   for (const sx of [-1, 1]) {
-    const lens = new THREE.Mesh(new THREE.BoxGeometry(W * 0.2, 0.07, 0.05), lensMat);
-    lens.position.set(sx * hw * 0.62, 0.70, hl * 0.86);
-    g.add(lens);
+    g.add(box(0.035, 0.035, L * 0.8, darkMat, sx * hw * 0.985, shoulderY, -L * 0.02));
+    g.add(box(0.09, 0.16, L * 0.5, darkMat, sx * hw * 0.97, sillY * 0.55, -L * 0.02));
+  }
+  if (p.twoTone) {
+    // lower body in the dark colour: valances front and rear plus a flank band,
+    // which is how the two-tone reads from behind without a second body shell
+    g.add(box(W * 0.94, 0.22, L * 0.1, darkMat, 0, clr + 0.14, hl * 0.9));
+    g.add(box(W * 0.94, 0.22, L * 0.1, darkMat, 0, clr + 0.14, -hl * 0.9));
+    for (const sx of [-1, 1]) g.add(box(0.045, 0.3, L * 0.62, darkMat, sx * hw * 0.98, sillY * 0.72, -L * 0.02));
   }
 
-  // --- TAIL: the money shot --------------------------------------------------
-  // A single full-width light bar is the signature of this art. Bright, clean,
-  // and unbroken across the whole tail rather than a scatter of small lamps.
-  g.add(box(W * 0.86, 0.085, 0.05, tailMat, 0, deckY * 0.82, -hl * 0.985));
-  // a thin dark blade above it so the bar reads as inset into the panel
-  g.add(box(W * 0.88, 0.03, 0.05, darkMat, 0, deckY * 0.9, -hl * 0.99));
-  // diffuser + quad pipes
-  g.add(box(W * 0.66, 0.2, L * 0.05, grilleMat, 0, clr + 0.1, -hl * 0.95));
-  for (const sx of [-1.5, -0.5, 0.5, 1.5])
-    g.add(box(0.075, 0.075, 0.1, chromeMat, sx * W * 0.1, clr + 0.22, -hl * 0.99));
-  // low ducktail lip, not a wing — the references never have a big rear wing
-  g.add(box(W * 0.9, 0.05, L * 0.07, bodyPlain, 0, deckY + 0.05, -hl * 0.86));
+  // --- front ----------------------------------------------------------------
+  const noseY = deckY * p.ribs[2][6];       // bonnet height at the front arch
+  g.add(box(W * 0.78, 0.05, L * 0.06, darkMat, 0, clr - 0.02, hl * 0.9));   // splitter
+  g.add(box(W * (p.twoTone ? 0.42 : 0.34), 0.16, 0.06, grilleMat, 0, sillY, hl * 0.95));
+  if (p.chrome) {
+    g.add(box(W * 0.9, 0.09, 0.07, chromeMat, 0, sillY + 0.06, hl * 0.97));
+    g.add(box(W * 0.9, 0.09, 0.07, chromeMat, 0, sillY + 0.06, -hl * 0.97));
+  }
+  if (p.fogLamps) for (const sx of [-1, 1])
+    g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.05, 12), lensMat).translateX(0).translateY(0)),
+      g.add(box(0.14, 0.1, 0.05, lensMat, sx * hw * 0.52, clr + 0.16, hl * 0.96));
 
-  // --- glass: a low, dark, cab-forward canopy --------------------------------
-  const cw = hw * 0.68;
+  const lamps = p.lamps ?? "slim";
+  for (const sx of [-1, 1]) {
+    if (lamps === "popup") {
+      // closed pop-ups: a dark flush panel let into the bonnet, which is what
+      // you actually see on one of these with the lights down
+      g.add(box(W * 0.24, 0.03, L * 0.08, darkMat, sx * hw * 0.54, noseY + 0.015, hl * 0.62));
+    } else if (lamps === "round4") {
+      for (const d of [0.42, 0.66]) {
+        const lg = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.05, 12), lensMat);
+        lg.rotation.x = Math.PI / 2;
+        lg.position.set(sx * hw * d, noseY - 0.06, hl * 0.94);
+        g.add(lg);
+      }
+    } else if (lamps === "round2") {
+      const lg = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.05, 14), lensMat);
+      lg.rotation.x = Math.PI / 2;
+      lg.position.set(sx * hw * 0.58, noseY - 0.04, hl * 0.93);
+      g.add(lg);
+      if (p.chrome) {
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.022, 5, 14), chromeMat);
+        ring.position.set(sx * hw * 0.58, noseY - 0.04, hl * 0.94);
+        g.add(ring);
+      }
+    } else if (lamps === "slim") {
+      g.add(box(W * 0.24, 0.07, 0.05, lensMat, sx * hw * 0.6, noseY - 0.05, hl * 0.92));
+    } else {
+      g.add(box(W * 0.84, 0.07, 0.05, lensMat, 0, noseY - 0.05, hl * 0.92));
+      break;
+    }
+  }
+
+  // --- tail: the view that fills the screen ---------------------------------
+  const tail = p.tail ?? "bar";
+  // just PROUD of the kamm face. At 0.985 the lamps sat a few cm inside the
+  // bodywork and were half-swallowed by it, which is why the tail read as an
+  // unlit slab from the chase camera.
+  const ty = deckY * 0.82, tz = -hl - 0.012;
+  // dark panel the lamps are let into, so they read as inset rather than stuck on
+  g.add(box(W * 0.92, 0.3, 0.03, darkMat, 0, ty, -hl * 0.998));
+  if (tail === "bar") {
+    g.add(box(W * 0.86, 0.085, 0.05, tailMat, 0, ty, tz));
+    g.add(box(W * 0.88, 0.03, 0.05, darkMat, 0, deckY * 0.9, -hl * 0.99));
+  } else if (tail === "quad") {
+    for (const sx of [-1.55, -0.55, 0.55, 1.55]) {
+      const l = new THREE.Mesh(new THREE.CylinderGeometry(0.095, 0.095, 0.05, 12), tailMat);
+      l.rotation.x = Math.PI / 2;
+      l.position.set(sx * W * 0.21, ty, tz);
+      g.add(l);
+    }
+  } else if (tail === "twin") {
+    for (const sx of [-1, 1]) g.add(box(W * 0.3, 0.12, 0.05, tailMat, sx * hw * 0.6, ty, tz));
+  } else {
+    // slats: a full-width lamp panel behind horizontal body-colour fins
+    g.add(box(W * 0.9, 0.2, 0.04, tailMat, 0, ty, tz));
+    for (let i = 0; i < 5; i++)
+      g.add(box(W * 0.92, 0.022, 0.05, bodyPlain, 0, ty - 0.08 + i * 0.04, -hl * 0.995));
+  }
+  g.add(box(W * 0.66, 0.2, L * 0.05, grilleMat, 0, clr + 0.1, -hl * 0.95));   // diffuser
+  const np = p.pipes ?? 2;
+  for (let i = 0; i < np; i++) {
+    const off = np === 1 ? 0 : (i / (np - 1) - 0.5) * W * 0.34;
+    const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.1, 10), chromeMat);
+    pipe.rotation.x = Math.PI / 2;
+    pipe.position.set(off, clr + 0.2, -hl * 0.99);
+    g.add(pipe);
+  }
+
+  // --- rear wing ------------------------------------------------------------
+  const wing = p.wing ?? "none";
+  if (wing === "duck") {
+    g.add(box(W * 0.9, 0.05, L * 0.07, bodyPlain, 0, deckY + 0.05, -hl * 0.86));
+  } else if (wing === "straked") {
+    // the 80s straked wing: one plane carried on two fences that run forward
+    // into the engine cover, endplates squared off
+    const wy = deckY + 0.3, wz = -hl * 0.84;
+    g.add(box(W * 0.96, 0.055, L * 0.11, bodyPlain, 0, wy, wz));
+    for (const sx of [-1, 1]) {
+      g.add(box(0.05, 0.3, L * 0.2, bodyPlain, sx * hw * 0.95, wy - 0.15, wz + L * 0.03));
+      g.add(box(0.06, 0.26, L * 0.09, darkMat, sx * hw * 0.5, wy - 0.14, wz));
+    }
+  } else if (wing === "basket") {
+    const wy = deckY + 0.44, wz = -hl * 0.7;
+    g.add(box(W * 0.72, 0.05, L * 0.1, bodyPlain, 0, wy, wz));
+    for (const sx of [-1, 1]) g.add(box(0.07, 0.44, 0.1, bodyPlain, sx * hw * 0.58, wy - 0.22, wz));
+  } else if (wing === "whale") {
+    g.add(box(W * 0.98, 0.06, L * 0.14, bodyPlain, 0, deckY + 0.06, -hl * 0.78));
+    for (const sx of [-1, 1]) g.add(box(0.06, 0.13, L * 0.14, bodyPlain, sx * hw * 0.96, deckY + 0.12, -hl * 0.78));
+  } else if (wing === "blade") {
+    const wy = deckY + 0.28, wz = -hl * 0.82;
+    g.add(box(W * 0.88, 0.05, L * 0.09, bodyPlain, 0, wy, wz));
+    for (const sx of [-1, 1]) g.add(box(0.06, 0.28, 0.1, darkMat, sx * hw * 0.55, wy - 0.14, wz));
+  }
+
+  // --- engine lid, flanks, bonnet -------------------------------------------
+  if (p.louvres) for (let i = 0; i < p.louvres; i++)
+    g.add(box(W * 0.6, 0.022, 0.05, darkMat, 0, deckY + 0.015, -hl * (0.42 + i * 0.06)));
+  if (p.strakes) for (const sx of [-1, 1]) for (let i = 0; i < p.strakes; i++)
+    g.add(box(0.05, 0.04, L * 0.3, darkMat, sx * hw * 0.99, sillY + 0.08 + i * 0.075, -L * 0.04));
+  if (p.naca) for (const sx of [-1, 1])
+    g.add(box(0.04, 0.14, L * 0.16, darkMat, sx * hw * 0.995, sillY + 0.2, -L * 0.1));
+  const scoop = p.scoop ?? "none";
+  if (scoop === "shaker") g.add(box(W * 0.3, 0.11, L * 0.13, darkMat, 0, noseY + 0.05, hl * 0.5));
+  else if (scoop === "rally") {
+    g.add(box(W * 0.4, 0.07, L * 0.11, bodyPlain, 0, noseY + 0.03, hl * 0.52));
+    g.add(box(W * 0.34, 0.05, 0.04, darkMat, 0, noseY + 0.05, hl * 0.58));
+  } else if (scoop === "bulge") g.add(box(W * 0.44, 0.05, L * 0.24, bodyPlain, 0, noseY + 0.02, hl * 0.5));
+  else if (scoop === "roof") g.add(box(W * 0.16, 0.1, L * 0.12, darkMat, 0, roofY - 0.02, -hl * 0.2));
+
+  // --- glass ----------------------------------------------------------------
+  const cw = hw * p.cabW;
   const canopyHalf = (w: number, yB: number, yT: number): [number, number][] => [
     [0, yB], [w, yB], [w * 0.95, (yB + yT) / 2], [w * 0.5, yT], [0, yT],
   ];
+  const span = p.cabF - p.cabR;
   const canopy: Rib[] = [
-    { z: hl * 0.30,  half: canopyHalf(cw * 0.80, deckY * 0.94, deckY * 0.99) },
-    { z: hl * 0.06,  half: canopyHalf(cw * 0.95, deckY,        roofY * 0.96) },
-    { z: -hl * 0.26, half: canopyHalf(cw,        deckY,        roofY) },
-    { z: -hl * 0.52, half: canopyHalf(cw * 0.9,  deckY,        roofY * 0.93) },
-    { z: -hl * 0.68, half: canopyHalf(cw * 0.72, deckY,        deckY * 1.02) },
+    { z: hl * p.cabF,                  half: canopyHalf(cw * 0.8,  deckY * 0.94, deckY * 0.99) },
+    { z: hl * (p.cabF - span * 0.22),  half: canopyHalf(cw * 0.95, deckY,        roofY * 0.96) },
+    { z: hl * (p.cabF - span * 0.52),  half: canopyHalf(cw,        deckY,        roofY) },
+    { z: hl * (p.cabF - span * 0.8),   half: canopyHalf(cw * 0.9,  deckY,        roofY * 0.93) },
+    { z: hl * p.cabR,                  half: canopyHalf(cw * 0.72, deckY,        deckY * 1.02) },
   ];
   g.add(loftBody(canopy, glass, 5));
   const drv = makeDriver(0x14121c, false);
-  drv.position.set(0, deckY - 0.16, hl * 0.02);
+  drv.position.set(0, deckY - 0.16, hl * (p.cabF - span * 0.45));
   drv.scale.setScalar(0.86);
   g.add(drv);
 
-  // --- wheels: tucked well under the arches so only the lower half shows -----
-  const wx = hw * 0.80, wzF = hl * 0.62, wzR = hl * 0.60;
+  // --- wheels + arches ------------------------------------------------------
+  // 0.80 of the half-width buried the tyres INSIDE the bodywork: the flank is a
+  // flat wall held at full width up to the shoulder, so a wheel whose outer
+  // face sits inboard of that wall is simply invisible. The tyre has to stand
+  // very slightly proud of the flank, the way a real wide-body car's does.
+  const wx = hw * 0.9;
   for (const [x, z, r] of [
-    [-wx, wzF, R], [wx, wzF, R], [-wx, -wzR, R * 1.08], [wx, -wzR, R * 1.08],
+    [-wx, hl * p.whF, R], [wx, hl * p.whF, R],
+    [-wx, -hl * p.whR, rearR], [wx, -hl * p.whR, rearR],
   ] as const) {
-    g.add(makeWheel(x, z, r, 0.30, tireMat, rimMat, Math.sign(x)));
+    g.add(makeWheel(x, z, r, 0.3, tireMat, rimMat, Math.sign(x)));
+    // arch: a dark liner behind the tyre so the flank reads as cut away, and a
+    // body-colour eyebrow over the top so there's a lip instead of a slab
+    g.add(box(0.1, r * 1.5, r * 2.1, darkMat, x - Math.sign(x) * 0.16, clr + r * 0.7, z));
+    const eyebrow = new THREE.Mesh(new THREE.TorusGeometry(r * 1.02, 0.045, 4, 10, Math.PI), bodyPlain);
+    eyebrow.rotation.y = Math.PI / 2;
+    eyebrow.position.set(x - Math.sign(x) * 0.02, clr + r, z);
+    g.add(eyebrow);
   }
   return g;
 }
 
+/** Build the drivable mesh for a car type in a given livery color. */
 export function makeKart(id: CarId, color: number): THREE.Group {
-  const num = RACE_NUM[id];
-  switch (id) {
-    case "bolt":
-      // long, low, sleek top-speed racer — laid-back cabin, tall swan-neck wing
-      return buildKart(color, {
-        length: 4.6, width: 1.92, ride: 0.82, wheelR: 0.34,
-        wing: "swan", cabin: 0.3, mirrors: true, num,
-      });
-    case "titan":
-      // wide muscle / stock car — chunky, hood scoop, roll cage, twin exhausts
-      return buildKart(color, {
-        length: 4.3, width: 2.16, ride: 1.05, wheelR: 0.42,
-        wing: "low", cabin: 0.4, cage: true, scoop: true, bulky: true, num,
-      });
-    case "wisp":
-      // tiny nimble kart — open cockpit, tall exposed driver, compact wing
-      return buildKart(color, {
-        length: 3.7, width: 1.78, ride: 0.78, wheelR: 0.36,
-        wing: "kart", cabin: 0.34, open: true, num,
-      });
-    case "apex":
-      // open-wheel F1 — pointed nose, exposed slicks, front/rear wings, halo
-      return buildFormula(color, num);
-    case "goliath":
-      // monster truck — boxy cab lifted sky-high on enormous knobbly tyres
-      return buildMonsterTruck(color, num);
-    case "wraith":
-      // anti-grav hover speeder — wheel-less pod, glowing nacelles, bubble canopy
-      return buildHover(color, num);
-    case "nitro":
-      // top-fuel dragster — long rail, blown engine, huge rear slicks, tall wing
-      return buildDragster(color, num);
-    case "dune":
-      // off-road buggy — tube roll cage, exposed driver, big knobbly tyres
-      return buildBuggy(color, num);
-    case "blaze":
-      // jet rocket car — needle fuselage, delta wings, turbine afterburner
-      return buildJet(color, num);
-    case "comet":
-    default:
-      // purpose-built supercar silhouette (see buildSuper) rather than kart
-      // proportions dressed up — the rear view is what fills the screen
-      return buildSuper(color, num);
-  }
+  return buildRoadCar(color, ROAD_CARS[id], RACE_NUM[id]);
 }

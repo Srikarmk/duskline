@@ -108,7 +108,11 @@ function valueNoise(t: Float32Array, x: number, y: number): number {
  * sky cream ones — the per-realm identity survives.
  */
 function cloudDeck(pal: RealmPalette, W: number, H: number): HTMLCanvasElement {
-  const CW = W >> 2, CH = H >> 2;
+  // HALF the dome resolution, not a quarter. At a quarter the deck was 512x256
+  // upscaled 4x with smoothing onto the biggest surface on screen, which is
+  // precisely why the sky read as blurry — every cloud edge was 4 px of
+  // interpolation. Half costs 4x the noise work once, at build time.
+  const CW = W >> 1, CH = H >> 1;
   const cc = document.createElement("canvas");
   cc.width = CW;
   cc.height = CH;
@@ -120,6 +124,7 @@ function cloudDeck(pal: RealmPalette, W: number, H: number): HTMLCanvasElement {
   // Starry realms are the night/space ones: thin, sparse wisps that let the
   // starfield through. Daylit realms get a proper covered deck.
   const night = pal.stars;
+  const poster = !!pal.posterSun;
   const lit = mixRgb(rgb255(pal.sky[3]), [255, 255, 255], night ? 0.26 : 0.55);
   const shade = mixRgb(rgb255(pal.sky[1]), rgb255(pal.sky[2]), 0.55);
   const cover = night ? 0.54 : 0.46;   // noise level above which there IS cloud
@@ -169,8 +174,15 @@ function cloudDeck(pal: RealmPalette, W: number, H: number): HTMLCanvasElement {
       let a = (n - cover) / SPAN;
       if (a <= 0) continue;
       a = Math.min(1, a);
-      a = a * a * (3 - 2 * a) * peak * dens;   // smoothstep = soft cloud edges
-      const t = Math.min(1, a / (peak * 0.7)); // thick cores catch the light
+      // Poster realms get HARD edges: the 80s city-pop reference paints clouds
+      // as flat cut shapes with two or three tone steps, so the alpha ramp is
+      // quantised instead of smoothstepped. A soft gradient is what makes a
+      // stylised sky look like a low-res photograph of nothing.
+      a = poster
+        ? Math.ceil(Math.min(1, a * 1.25) * 3) / 3 * peak * dens
+        : a * a * (3 - 2 * a) * peak * dens;
+      let t = Math.min(1, a / (peak * 0.7)); // thick cores catch the light
+      if (poster) t = Math.round(t * 2) / 2;  // two flat tones: lit top, shaded base
       const o4 = (y * CW + x) * 4;
       d[o4] = shade[0] + (lit[0] - shade[0]) * t;
       d[o4 + 1] = shade[1] + (lit[1] - shade[1]) * t;
@@ -328,10 +340,10 @@ export function makeSkyDome(pal: RealmPalette): THREE.Mesh {
     ctx.fillRect(gx - gr, gy - gr, gr * 2, gr * 2);
   }
 
-  // --- cloud deck -----------------------------------------------------------
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(cloudDeck(pal, W, H), 0, 0, W, H);
+  // NOTE: the cloud deck is NOT baked in here any more — see makeCloudLayer.
+  // Baked into the same texture as the sun and the gradient, the clouds could
+  // never move, and a sky that never moves is a painted backdrop. They now
+  // live on their own dome that rotates.
 
   // --- horizon haze ---------------------------------------------------------
   // The depth cue that makes the world feel like it has atmosphere: a wide glow
@@ -363,6 +375,38 @@ export function makeSkyDome(pal: RealmPalette): THREE.Mesh {
   const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, fog: false });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.userData.noShadow = true; // the sky must never cast or receive shadows
+  return mesh;
+}
+
+/**
+ * The cloud deck, on its own slightly smaller BackSide dome so the engine can
+ * rotate it. Separating it from the sky is the whole point: rotating the sky
+ * dome would drag the sun and the horizon haze round with it, and baking the
+ * clouds into the sky texture meant they could never move at all.
+ */
+export function makeCloudLayer(pal: RealmPalette): THREE.Mesh {
+  const W = 2048, H = 1024;
+  const c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const ctx = c.getContext("2d")!;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(cloudDeck(pal, W, H), 0, 0, W, H);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  // depthTest MUST stay on. A transparent mesh is drawn in the transparent
+  // pass, i.e. after every opaque object, and renderOrder only sorts it within
+  // that pass — so with depthTest off this dome painted its blurry cloud
+  // texture straight over the cars, the palms and the gantry. That is what
+  // "why is the sky so blurry" actually was: the sky was on top of everything.
+  const mat = new THREE.MeshBasicMaterial({
+    map: tex, side: THREE.BackSide, fog: false,
+    transparent: true, depthWrite: false,
+  });
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(880, 48, 24), mat);
+  mesh.userData.noShadow = true;
+  mesh.renderOrder = -9;      // straight after the sky dome, before the world
   return mesh;
 }
 
@@ -2027,16 +2071,16 @@ interface MechSpec {
 // One identity per car — proportions + weapon + wings that echo its character
 // (goliath = brute tank, wisp = nimble flyer, apex = jet-mech, baron-heavy, …).
 const MECH_SPECS: Record<CarId, MechSpec> = {
-  comet:   { scale: 1.00, torsoW: 1.50, torsoH: 1.40, legStyle: "walker", legH: 1.20, build: 1.00, shoulder: 1.00, head: "visor",  weapon: "sword",   wings: "delta" },
-  bolt:    { scale: 1.02, torsoW: 1.16, torsoH: 1.55, legStyle: "walker", legH: 1.55, build: 0.82, shoulder: 0.85, head: "crest",  weapon: "rapier",  wings: "streamer", lean: 0.12 },
-  titan:   { scale: 1.12, torsoW: 1.95, torsoH: 1.35, legStyle: "walker", legH: 0.95, build: 1.45, shoulder: 1.60, head: "sunk",   weapon: "hammer",  wings: "stub" },
-  wisp:    { scale: 0.86, torsoW: 1.05, torsoH: 1.10, legStyle: "hover",  legH: 0.95, build: 0.62, shoulder: 0.70, head: "insect", weapon: "daggers", wings: "dragonfly" },
-  apex:    { scale: 0.98, torsoW: 1.28, torsoH: 1.40, legStyle: "walker", legH: 1.28, build: 0.84, shoulder: 0.95, head: "canopy", weapon: "saber",   wings: "jet", lean: 0.18 },
-  goliath: { scale: 1.28, torsoW: 2.10, torsoH: 1.50, legStyle: "tank",   legH: 0.92, build: 1.70, shoulder: 1.85, head: "dome",   weapon: "wrecker", wings: "industrial", exhaust: true },
-  wraith:  { scale: 1.02, torsoW: 1.24, torsoH: 1.45, legStyle: "hover",  legH: 1.15, build: 0.80, shoulder: 0.95, head: "dome",   weapon: "scythe",  wings: "ghost" },
-  nitro:   { scale: 1.05, torsoW: 1.62, torsoH: 1.28, legStyle: "walker", legH: 1.00, build: 1.28, shoulder: 1.22, head: "stack",  weapon: "drill",   wings: "header", exhaust: true },
-  dune:    { scale: 1.00, torsoW: 1.54, torsoH: 1.34, legStyle: "walker", legH: 1.14, build: 1.16, shoulder: 1.12, head: "visor",  weapon: "machete", wings: "rollbar" },
-  blaze:   { scale: 1.03, torsoW: 1.24, torsoH: 1.45, legStyle: "walker", legH: 1.32, build: 0.85, shoulder: 1.00, head: "canopy", weapon: "lance",   wings: "rocket", lean: 0.14, exhaust: true },
+  f40:      { scale: 1.00, torsoW: 1.50, torsoH: 1.40, legStyle: "walker", legH: 1.20, build: 1.00, shoulder: 1.00, head: "visor",  weapon: "sword",   wings: "delta" },
+  meridian: { scale: 0.98, torsoW: 1.28, torsoH: 1.40, legStyle: "walker", legH: 1.28, build: 0.84, shoulder: 0.95, head: "canopy", weapon: "saber",   wings: "jet", lean: 0.18 },
+  veloce:   { scale: 1.12, torsoW: 1.95, torsoH: 1.35, legStyle: "walker", legH: 0.95, build: 1.45, shoulder: 1.60, head: "sunk",   weapon: "hammer",  wings: "stub", exhaust: true },
+  tauro:    { scale: 1.02, torsoW: 1.16, torsoH: 1.55, legStyle: "walker", legH: 1.55, build: 0.82, shoulder: 0.85, head: "crest",  weapon: "rapier",  wings: "streamer", lean: 0.12 },
+  testa:    { scale: 1.03, torsoW: 1.24, torsoH: 1.45, legStyle: "walker", legH: 1.32, build: 0.85, shoulder: 1.00, head: "canopy", weapon: "lance",   wings: "rocket", lean: 0.14 },
+  zanza:    { scale: 0.96, torsoW: 1.20, torsoH: 1.38, legStyle: "hover",  legH: 1.15, build: 0.80, shoulder: 0.95, head: "dome",   weapon: "scythe",  wings: "ghost" },
+  imprez:   { scale: 1.00, torsoW: 1.54, torsoH: 1.34, legStyle: "walker", legH: 1.14, build: 1.16, shoulder: 1.12, head: "visor",  weapon: "machete", wings: "rollbar" },
+  firehawk: { scale: 1.08, torsoW: 1.62, torsoH: 1.28, legStyle: "walker", legH: 1.00, build: 1.28, shoulder: 1.22, head: "stack",  weapon: "drill",   wings: "header", exhaust: true },
+  iroc:     { scale: 1.10, torsoW: 1.90, torsoH: 1.36, legStyle: "tank",   legH: 0.92, build: 1.55, shoulder: 1.70, head: "dome",   weapon: "wrecker", wings: "industrial", exhaust: true },
+  fairlady: { scale: 0.86, torsoW: 1.05, torsoH: 1.10, legStyle: "hover",  legH: 0.95, build: 0.62, shoulder: 0.70, head: "insect", weapon: "daggers", wings: "dragonfly" },
 };
 
 interface MechMats {
@@ -2387,9 +2431,9 @@ export function makeMech(carId: CarId): MechRig {
     group.add(mBox(1.7 * B, 0.6, 1.0 * B, m.steel, 0, legTop + 0.32, 0));                      // massive waist
     group.add(mBox(1.9 * B, 0.28, 1.1 * B, m.body, 0, legTop + 0.04, 0.1));                    // armour skirt
   } else {
-    // hover: no ground contact. wraith = a spectral tapered tail; wisp = a small
-    // pod on thin dangling legs. Both ride a glowing under-thruster.
-    if (carId === "wraith") {
+    // hover: no ground contact. zanza = a spectral tapered tail; fairlady = a
+    // small pod on thin dangling legs. Both ride a glowing under-thruster.
+    if (carId === "zanza") {
       const skirtH = legTop + 1.3;
       const skirtMat = m.body.clone();
       skirtMat.transparent = true;

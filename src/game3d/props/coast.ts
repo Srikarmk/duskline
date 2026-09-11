@@ -215,7 +215,7 @@ function frondGeometry(rand: () => number, len: number): THREE.BufferGeometry {
 
 /** A single palm's merged geometry, with a warm-to-dark vertical vertex tint. */
 function palmVariantGeometry(rand: () => number): THREE.BufferGeometry {
-  const h = 7.5 + rand() * 6.5;
+  const h = 6.0 + rand() * 3.4;   // 6-9.4 m: a palm, not a radio mast
   const lean = (rand() - 0.5) * 0.62;
   const parts: THREE.BufferGeometry[] = [];
 
@@ -265,9 +265,12 @@ function palmVariantGeometry(rand: () => number): THREE.BufferGeometry {
   for (let i = 0; i < p.count; i++) {
     const t = Math.min(1, Math.max(0, p.getY(i) / h));
     const e = t * t;
-    col[i * 3 + 0] = 0.29 - 0.21 * e;
-    col[i * 3 + 1] = 0.20 - 0.14 * e;
-    col[i * 3 + 2] = 0.30 - 0.20 * e;
+    // Much darker than it looks like it should be: these are lit by a warm
+    // 0xffb27a hemisphere and a 0xffd9a0 sun, so anything above ~0.15 comes
+    // back off the screen as salmon pink rather than as a backlit silhouette.
+    col[i * 3 + 0] = 0.135 - 0.10 * e;
+    col[i * 3 + 1] = 0.100 - 0.075 * e;
+    col[i * 3 + 2] = 0.150 - 0.105 * e;
   }
   merged.setAttribute("color", new THREE.BufferAttribute(col, 3));
   return merged;

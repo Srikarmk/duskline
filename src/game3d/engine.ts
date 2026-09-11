@@ -28,7 +28,7 @@ import {
 import { Track, makeRoadTexture, makeCheckerTexture } from "./track";
 import { loadModels, instantiate, type ModelLibrary } from "./assets";
 import {
-  makeSkyDome, makeEnvMap, makeLightShafts, windTime, makeGround, makeGrassTexture,
+  makeSkyDome, makeCloudLayer, makeEnvMap, makeLightShafts, windTime, makeGround, makeGrassTexture,
   makeGrassField, makeRockField, makeMountainRing,
   makeGem, makeNitroCan, makeOrb, makeRamp, RAMP_SPECS, type RampKind,
   makeCrystalCluster, makeMonster,
@@ -337,6 +337,7 @@ export class Game {
   private camPos = new THREE.Vector3();
   private camYaw = 0; // smoothed camera heading — eases toward the car so the view swings in behind you instead of snapping with every steer
   private coast: { x: number; z: number; r: number; far: number } | null = null;
+  private clouds: THREE.Mesh | null = null;
   private seaY = -11; // coastal realms: land inside r, sea beyond
   private reliefAmp = 0; // per-realm amplitude of the rolling hills the ground rises into away from the road
   private sun!: THREE.DirectionalLight; // shadow-casting key light; its frustum follows the car
@@ -451,7 +452,7 @@ export class Game {
     this.playerFinishOrder = 0;
     this.nitroCharges = this.cfg.startNitro;
     if (this.cfg.combat) this.heldItems = ["missile", "missile"]; // start armed
-    this.carId = options.car ?? "comet";
+    this.carId = options.car ?? "f40";
     this.carStat = CAR_SPECS[this.carId].stat;
 
     // fill the container at its true aspect ratio (full-width, no letterbox)
@@ -679,6 +680,9 @@ export class Game {
     const sky = makeSkyDome(pal);
     sky.userData.noShadow = true; // the sky must never cast/receive shadows
     scene.add(sky);
+    // the cloud deck rides its own dome so it can drift (see makeCloudLayer)
+    this.clouds = makeCloudLayer(pal);
+    scene.add(this.clouds);
 
     if (!isVoid) {
       // terrain that RISES with the road near the track (roads sit grounded in
@@ -2316,11 +2320,18 @@ export class Game {
 
       // ground clutter fills the empty flats
       const centerline = track.sampleXZ(240);
-      // instanced, so one draw call no matter the count — fill the ground properly
-      const grass = this.scatter(centerline, rand, 34000, ROAD_HALF_WIDTH * 1.3 + 3, 150);
+      // On a causeway there are only ~6 m of sand either side before the water,
+      // so scattering 34k tufts out to 150 m just buries the beach (and drops
+      // most of them under the sea). Coastal realms get sparse dune grass on
+      // the strip and nothing beyond it.
+      const grass = this.coast
+        ? this.scatter(centerline, rand, 3600, ROAD_HALF_WIDTH + 2.4, this.coast.r - 1)
+        : this.scatter(centerline, rand, 34000, ROAD_HALF_WIDTH * 1.3 + 3, 150);
       this.scene.add(makeGrassField(pal, grass));
-      const pebbles = this.scatter(centerline, rand, 1100, ROAD_HALF_WIDTH * 1.3 + 4, 170);
-      this.scene.add(makeRockField(pal, pebbles));
+      if (!this.coast) {
+        const pebbles = this.scatter(centerline, rand, 1100, ROAD_HALF_WIDTH * 1.3 + 4, 170);
+        this.scene.add(makeRockField(pal, pebbles));
+      }
 
       // LUSH forest: a thick understory crowding the verge + a dense wall of
       // trees close to the road, so the woods read as overgrown, not a lawn.
@@ -2768,10 +2779,10 @@ export class Game {
           // clear of the tarmac: a palm trunk at +5 m was close enough to
           // overhang the road on a bend, which is why they read as standing
           // "on the road"
-          const off = side * (ROAD_HALF_WIDTH + 1.6 + rand() * 3.0);
+          const off = side * (ROAD_HALF_WIDTH + 2.4 + rand() * 3.2);
           const jd = d + rand() * 11;
           const p = track.pointAt(this.track.wrap(jd), off);
-          palmSpots.push({ x: p.x, y: this.terrainYAt(jd, off), z: p.z, s: 0.8 + rand() * 0.5, r: rand() * Math.PI * 2 });
+          palmSpots.push({ x: p.x, y: this.terrainYAt(jd, off), z: p.z, s: 0.85 + rand() * 0.3, r: rand() * Math.PI * 2 });
           // and SOLID — scenery you can drive straight through breaks the world
           if (this.obstacleClear(p.x, p.z, 1.0)) this.obstacles.push({ x: p.x, z: p.z, r: 1.0 });
         }
@@ -3036,6 +3047,12 @@ export class Game {
   }
 
   private update(dt: number) {
+    // Drift the cloud deck. A full revolution takes ~12 minutes, which at the
+    // dome radius is a few metres a second of apparent motion — enough that the
+    // sky is alive when you look at it, slow enough that it never pulls the eye
+    // off the road.
+    if (this.clouds) this.clouds.rotation.y += 0.0085 * dt;
+
     this.time += dt;
     for (const t of this.toasts) t.t -= dt;
     this.toasts = this.toasts.filter((t) => t.t > 0);

@@ -649,7 +649,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       road: "#2a2230", roadDark: "#1d1825", rumbleA: "#ffffff", rumbleB: "#e8555f",
       laneLine: "#fff3d6", edgeLine: "#ffe6b0", roadFinish: "gloss",
       crystalColors: [0xffae5c, 0xe8555f, 0xffd9a0],
-      mountain: 0x3a2440, mountainDark: 0x241528, clutter: 0x2a1c30, gem: 0xffae5c,
+      mountain: 0x3a2440, mountainDark: 0x241528, clutter: 0xb09068, gem: 0xffae5c,
     },
     // only palms — everything else in the art is either sea, sky or skyline
     scenery: [{ kind: "palm", weight: 1 }],

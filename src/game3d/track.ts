@@ -412,7 +412,7 @@ export class Track {
     const stemMat = new THREE.MeshStandardMaterial({ color: 0xc9c6d6, metalness: 0.25, roughness: 0.55 });
     const stems = new THREE.InstancedMesh(stemGeo, stemMat, count * 2);
 
-    const capGeo = new THREE.SphereGeometry(0.17, 10, 8);
+    const capGeo = new THREE.SphereGeometry(0.115, 9, 7);
     capGeo.translate(0, 1.02, 0);
     const capMat = new THREE.MeshBasicMaterial({ vertexColors: true });
     const caps = new THREE.InstancedMesh(capGeo, capMat, count * 2);
@@ -421,9 +421,12 @@ export class Track {
     const q = new THREE.Quaternion();
     const s = new THREE.Vector3(1, 1, 1);
     const p = new THREE.Vector3();
-    // dimmed so the markers read as gentle dots rather than blinding glow
-    const cA = new THREE.Color(colorA).multiplyScalar(0.42);
-    const cB = new THREE.Color(colorB).multiplyScalar(0.42);
+    // These are UNLIT, so a 0.42 multiplier isn't "dimmed" — it bakes the
+    // reflector permanently dark, and against a bright sunset sky a dark
+    // unlit sphere on a pale post reads as a black ball. Reflectors are the
+    // one bit of roadside furniture that is supposed to be bright.
+    const cA = new THREE.Color(colorA).multiplyScalar(0.95);
+    const cB = new THREE.Color(colorB).multiplyScalar(0.95);
     let idx = 0;
     for (let i = 0; i < count; i++) {
       const d = (i / count) * this.length;
