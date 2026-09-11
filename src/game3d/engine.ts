@@ -28,7 +28,7 @@ import {
 import { Track, makeRoadTexture, makeCheckerTexture } from "./track";
 import { loadModels, instantiate, type ModelLibrary } from "./assets";
 import {
-  makeSkyDome, makeCloudLayer, makeEnvMap, makeLightShafts, windTime, makeGround, makeGrassTexture,
+  makeSkyDome, makePosterSky, makeCloudLayer, makeEnvMap, makeLightShafts, windTime, makeGround, makeGrassTexture,
   makeGrassField, makeRockField, makeMountainRing,
   makeGem, makeNitroCan, makeOrb, makeRamp, RAMP_SPECS, type RampKind,
   makeCrystalCluster, makeMonster,
@@ -694,7 +694,13 @@ export class Game {
     const pal = realm.palette;
 
     const isVoid = realm.style === "void";
-    const sky = makeSkyDome(pal);
+    // Poster realms get the analytic dome (see makePosterSky): a painted
+    // equirect can never be sharp here, because 72 degrees of a 2048-wide
+    // texture is 410 texels stretched over a 2560-pixel buffer. Realms with
+    // stars or moons still need the canvas, which is where those are drawn.
+    const sky = pal.posterSun && !pal.stars && pal.moons.length === 0
+      ? makePosterSky(pal)
+      : makeSkyDome(pal);
     sky.userData.noShadow = true; // the sky must never cast/receive shadows
     scene.add(sky);
     // the cloud deck rides its own dome so it can drift (see makeCloudLayer)

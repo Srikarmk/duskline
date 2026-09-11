@@ -519,11 +519,119 @@ export function makeSkyDome(pal: RealmPalette): THREE.Mesh {
  * dome would drag the sun and the horizon haze round with it, and baking the
  * clouds into the sky texture meant they could never move at all.
  */
+/**
+ * The poster sky, COMPUTED rather than painted.
+ *
+ * This is why it kept coming back blurry however the canvas art was drawn. The
+ * dome is a 2048-wide equirect; the camera sees 72 degrees of it, i.e. 20% =
+ * 410 texels — and it stretches those across a 2560-pixel device buffer. A 6x
+ * magnification. Mipmaps were on with anisotropy 1 on top of that, so near the
+ * horizon the GPU picked its LOD from the long axis of a stretched footprint
+ * and blurred the sharp axis as well. Matching the screen with texels would
+ * need a dome about 12,000 px wide, which is 500 MB of texture.
+ *
+ * Everything in this sky is analytic, so there is no resolution at all: the
+ * gradient, the band steps and the sun's edge are evaluated per fragment and
+ * are exactly as crisp as the display. The clouds stay a texture (see
+ * makeCloudLayer) because shapes that irregular are not worth an SDF, but they
+ * get 4096 and no mip chain.
+ */
+export function makePosterSky(pal: RealmPalette): THREE.Mesh {
+  const lin = (c: string | number) => new THREE.Color(c).convertSRGBToLinear();
+  const fog = lin(pal.fog);
+  const c0 = lin(pal.sky[0]), c1 = lin(pal.sky[1]), c2 = lin(pal.sky[2]), c3 = lin(pal.sky[3]);
+  const c4 = c3.clone().lerp(fog, 0.7);
+  const c5 = fog.clone().lerp(new THREE.Color(0, 0, 0), 0.45);
+
+  // Matches where the canvas version put it — 13.5 degrees up, and the azimuth
+  // SphereGeometry's UV mapping puts at u = 0.62, so the light and the disc
+  // still agree. Its uv is x = -cos(phi)sin(theta), z = sin(phi)sin(theta).
+  const el = (13.5 * Math.PI) / 180, az = 0.62 * Math.PI * 2;
+  const sunDir = new THREE.Vector3(
+    -Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el)
+  ).normalize();
+  const SUN_DEG = 9, HALO_DEG = 22;
+
+  const mat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    fog: false,
+    uniforms: {
+      c0: { value: c0 }, c1: { value: c1 }, c2: { value: c2 },
+      c3: { value: c3 }, c4: { value: c4 }, c5: { value: c5 },
+      sunCol: { value: lin(pal.sun) },
+      sunDir: { value: sunDir },
+      cosSun: { value: Math.cos((SUN_DEG * Math.PI) / 180) },
+      cosHalo: { value: Math.cos((HALO_DEG * Math.PI) / 180) },
+      bands: { value: 26 },
+    },
+    vertexShader: `
+      varying vec3 vDir;
+      void main() {
+        vDir = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      precision highp float;
+      varying vec3 vDir;
+      uniform vec3 c0, c1, c2, c3, c4, c5;
+      uniform vec3 sunCol, sunDir;
+      uniform float cosSun, cosHalo, bands;
+
+      // the same stops the canvas gradient used, re-expressed against
+      // t = 1 at the zenith, 0 at the horizon, -1 straight down
+      vec3 grad(float t) {
+        if (t >= 0.4)  return mix(c1, c0, (t - 0.4) / 0.6);
+        if (t >= 0.12) return mix(c2, c1, (t - 0.12) / 0.28);
+        if (t >= 0.0)  return mix(c3, c2, t / 0.12);
+        if (t >= -0.2) return mix(c4, c3, (t + 0.2) / 0.2);
+        return mix(c5, c4, (t + 1.0) / 0.8);
+      }
+
+      void main() {
+        vec3 d = normalize(vDir);
+        float t = asin(clamp(d.y, -1.0, 1.0)) / 1.5707963;
+
+        // Flat bands above the horizon. The top fifth stays smooth: an
+        // equirect's latitude lines converge at the pole, and a hard edge up
+        // there reads as concentric rings around a target.
+        float q = t;
+        if (t > 0.0) {
+          float stepped = (floor(t * bands) + 0.5) / bands;
+          q = mix(stepped, t, smoothstep(0.80, 1.0, t));
+        }
+        vec3 col = grad(q);
+
+        // hard-edged disc, anti-aliased across exactly one pixel via the
+        // screen-space derivative, so it is crisp without stair-stepping
+        float c = dot(d, sunDir);
+        float aa = max(fwidth(c) * 1.2, 1e-5);
+        col = mix(col, sunCol, smoothstep(cosSun - aa, cosSun + aa, c));
+        col += sunCol * smoothstep(cosHalo, cosSun, c) * 0.26;
+
+        gl_FragColor = vec4(col, 1.0);
+        // A raw ShaderMaterial does NOT get three's output stages for free the
+        // way a built-in material does, so writing linear colour straight out
+        // lands it on screen un-encoded — 0.023 linear displayed as if it were
+        // sRGB is black, which is what the zenith turned into. These two
+        // chunks are exactly what every built-in material appends.
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }
+    `,
+  });
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(900, 48, 24), mat);
+  mesh.userData.noShadow = true;
+  mesh.renderOrder = -10;
+  return mesh;
+}
+
 export function makeCloudLayer(pal: RealmPalette): THREE.Mesh {
   // Poster realms get 3072 wide and vector clouds drawn straight onto it at
   // full size — no generate-small-then-upscale step at all, which is where the
   // softness came from.
-  const W = pal.posterSun ? 3072 : 2048, H = W / 2;
+  const W = pal.posterSun ? 4096 : 2048, H = W / 2;
   let c: HTMLCanvasElement;
   if (pal.posterSun) {
     c = posterClouds(pal, W, H);
@@ -538,6 +646,15 @@ export function makeCloudLayer(pal: RealmPalette): THREE.Mesh {
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = THREE.RepeatWrapping;
+  // No mip chain. Near the horizon this dome's texel footprint is very
+  // stretched, and with anisotropy 1 the GPU picks its LOD from the long axis
+  // and blurs the short one to match — a second, independent source of the
+  // soft sky on top of the magnification. There is nothing to alias here
+  // anyway: the dome is always magnified, never minified.
+  tex.generateMipmaps = false;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.anisotropy = 16;
   // depthTest MUST stay on. A transparent mesh is drawn in the transparent
   // pass, i.e. after every opaque object, and renderOrder only sorts it within
   // that pass — so with depthTest off this dome painted its blurry cloud
