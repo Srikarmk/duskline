@@ -1350,6 +1350,114 @@ const RACE_NUM: Record<CarId, number> = {
 };
 
 /** Build the drivable mesh for a car type in a given livery color. */
+/**
+ * A mid-engine SUPERCAR, authored for the one view that actually matters here:
+ * dead astern, low camera, filling the centre of the screen.
+ *
+ * Everything about the section profile is chosen for that read. The reference
+ * art (Veyron, McLaren F1, IROC-Z) shares a specific rear silhouette: a FLAT
+ * deck, a hard horizontal shoulder line, haunches that are the widest thing on
+ * the car, and a tail cut off vertically. The existing GT profile rounds its
+ * shoulder into the deck, which is what made it read as a bathtub from behind —
+ * so this rib set holds the body at full width right up to the shoulder, then
+ * turns in sharply, giving a crisp edge instead of a curve.
+ */
+function buildSuper(color: number, num?: number): THREE.Group {
+  const g = new THREE.Group();
+  const m = carMaterials(color, num);
+  const { bodyMat, bodyPlain, darkMat, glass, tireMat, rimMat, chromeMat, grilleMat, lensMat, tailMat } = m;
+
+  const L = 4.75, W = 2.08, R = 0.34;
+  const hl = L / 2, hw = W / 2;
+  const clr = 0.13;                 // supercar ride height: almost on the deck
+  const sillY = 0.42;               // low flank
+  const shoulderY = 0.80;           // the hard horizontal crease
+  const deckY = 0.92;               // flat rear deck
+  const roofY = 1.19;               // low roofline
+
+  // half-section, x >= 0, bottom-centre -> out -> shoulder -> deck centre.
+  // `wMax` is held all the way to the shoulder so the flank is a FLAT wall that
+  // ends in an edge, rather than tumbling home into a dome.
+  const hs = (
+    floorY: number, wFloor: number, wMax: number, shY: number, wDeck: number, dY: number
+  ): [number, number][] => [
+    [0, floorY],
+    [hw * wFloor, floorY],
+    [hw * wMax, sillY],
+    [hw * wMax, shY],          // full width held right up to the crease
+    [hw * wDeck, dY],          // then a sharp turn in across the deck
+    [0, dY],
+  ];
+
+  const ribs: Rib[] = [
+    { z: hl,          half: hs(clr + 0.06, 0.16, 0.40, 0.52, 0.30, 0.60) }, // nose blade
+    { z: hl * 0.88,   half: hs(clr,        0.52, 0.74, 0.62, 0.56, 0.72) }, // splitter / intake mouth
+    { z: hl * 0.60,   half: hs(clr,        0.66, 0.94, shoulderY * 0.92, 0.74, 0.86) }, // front arch
+    { z: hl * 0.26,   half: hs(clr,        0.70, 0.90, shoulderY * 0.94, 0.66, 0.88) }, // low scuttle
+    { z: -hl * 0.04,  half: hs(clr,        0.72, 0.93, shoulderY,        0.68, deckY) }, // cabin base
+    { z: -hl * 0.40,  half: hs(clr,        0.74, 1.00, shoulderY,        0.76, deckY) }, // haunch — widest
+    { z: -hl * 0.74,  half: hs(clr + 0.02, 0.70, 0.98, shoulderY,        0.82, deckY) }, // engine deck
+    { z: -hl,         half: hs(clr + 0.04, 0.62, 0.94, shoulderY * 0.98, 0.88, deckY * 0.99) }, // kamm cut
+  ];
+  g.add(loftBody(ribs, bodyMat, 6));
+
+  // the shoulder crease itself, run as a hard dark line the length of the flank
+  for (const sx of [-1, 1])
+    g.add(box(0.035, 0.035, L * 0.82, darkMat, sx * hw * 0.985, shoulderY, -L * 0.02));
+  // deep side sill / rocker, which is what makes it sit low
+  for (const sx of [-1, 1])
+    g.add(box(0.09, 0.16, L * 0.5, darkMat, sx * hw * 0.97, sillY * 0.55, -L * 0.02));
+
+  // --- front -----------------------------------------------------------------
+  g.add(box(W * 0.78, 0.05, L * 0.06, darkMat, 0, clr - 0.02, hl * 0.9));
+  g.add(box(W * 0.34, 0.16, 0.06, grilleMat, 0, 0.42, hl * 0.95));
+  for (const sx of [-1, 1]) {
+    const lens = new THREE.Mesh(new THREE.BoxGeometry(W * 0.2, 0.07, 0.05), lensMat);
+    lens.position.set(sx * hw * 0.62, 0.70, hl * 0.86);
+    g.add(lens);
+  }
+
+  // --- TAIL: the money shot --------------------------------------------------
+  // A single full-width light bar is the signature of this art. Bright, clean,
+  // and unbroken across the whole tail rather than a scatter of small lamps.
+  g.add(box(W * 0.86, 0.085, 0.05, tailMat, 0, deckY * 0.82, -hl * 0.985));
+  // a thin dark blade above it so the bar reads as inset into the panel
+  g.add(box(W * 0.88, 0.03, 0.05, darkMat, 0, deckY * 0.9, -hl * 0.99));
+  // diffuser + quad pipes
+  g.add(box(W * 0.66, 0.2, L * 0.05, grilleMat, 0, clr + 0.1, -hl * 0.95));
+  for (const sx of [-1.5, -0.5, 0.5, 1.5])
+    g.add(box(0.075, 0.075, 0.1, chromeMat, sx * W * 0.1, clr + 0.22, -hl * 0.99));
+  // low ducktail lip, not a wing — the references never have a big rear wing
+  g.add(box(W * 0.9, 0.05, L * 0.07, bodyPlain, 0, deckY + 0.05, -hl * 0.86));
+
+  // --- glass: a low, dark, cab-forward canopy --------------------------------
+  const cw = hw * 0.68;
+  const canopyHalf = (w: number, yB: number, yT: number): [number, number][] => [
+    [0, yB], [w, yB], [w * 0.95, (yB + yT) / 2], [w * 0.5, yT], [0, yT],
+  ];
+  const canopy: Rib[] = [
+    { z: hl * 0.30,  half: canopyHalf(cw * 0.80, deckY * 0.94, deckY * 0.99) },
+    { z: hl * 0.06,  half: canopyHalf(cw * 0.95, deckY,        roofY * 0.96) },
+    { z: -hl * 0.26, half: canopyHalf(cw,        deckY,        roofY) },
+    { z: -hl * 0.52, half: canopyHalf(cw * 0.9,  deckY,        roofY * 0.93) },
+    { z: -hl * 0.68, half: canopyHalf(cw * 0.72, deckY,        deckY * 1.02) },
+  ];
+  g.add(loftBody(canopy, glass, 5));
+  const drv = makeDriver(0x14121c);
+  drv.position.set(0, deckY - 0.16, hl * 0.02);
+  drv.scale.setScalar(0.86);
+  g.add(drv);
+
+  // --- wheels: tucked well under the arches so only the lower half shows -----
+  const wx = hw * 0.80, wzF = hl * 0.62, wzR = hl * 0.60;
+  for (const [x, z, r] of [
+    [-wx, wzF, R], [wx, wzF, R], [-wx, -wzR, R * 1.08], [wx, -wzR, R * 1.08],
+  ] as const) {
+    g.add(makeWheel(x, z, r, 0.30, tireMat, rimMat, Math.sign(x)));
+  }
+  return g;
+}
+
 export function makeKart(id: CarId, color: number): THREE.Group {
   const num = RACE_NUM[id];
   switch (id) {
@@ -1391,12 +1499,8 @@ export function makeKart(id: CarId, color: number): THREE.Group {
       return buildJet(color, num);
     case "comet":
     default:
-      // Low, wide, cab-rearward supercar — the silhouette the reference art is
-      // built on. Longer and markedly lower than the old GT proportions, with a
-      // shallower canopy, so from behind it reads as a wedge rather than a kart.
-      return buildKart(color, {
-        length: 4.72, width: 2.06, ride: 0.62, wheelR: 0.34,
-        wing: "duck", cabin: 0.26, mirrors: true, num,
-      });
+      // purpose-built supercar silhouette (see buildSuper) rather than kart
+      // proportions dressed up — the rear view is what fills the screen
+      return buildSuper(color, num);
   }
 }
