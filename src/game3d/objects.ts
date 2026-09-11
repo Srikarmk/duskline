@@ -442,13 +442,20 @@ export function makeSkyDome(pal: RealmPalette): THREE.Mesh {
   // Naturalistic realms want them. A screen-printed sunset does not: there the
   // sun is a shape with a tight ring, and the sky around it is flat colour.
   if (pal.posterSun) {
+    // A TIGHT falloff, not stacked hard rings. Three flat discs at 1.55x, 2.2x
+    // and 3.1x the sun's radius drew three visible circular edges in the sky —
+    // on Mirage Mile it read as a giant ring hanging over the desert. Crispness
+    // has to come from the sun's own edge and from the band steps; the glow
+    // immediately around it is the one place a gradient belongs.
     const sx = 0.62 * W, sy = HZ - H * 0.075, sr = W * 0.052;
-    for (const [k, a] of [[1.55, 0.3], [2.2, 0.16], [3.1, 0.07]] as const) {
-      ctx.fillStyle = rgbaCss(sun, a);
-      ctx.beginPath();
-      ctx.arc(sx, sy, sr * k, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    const halo = ctx.createRadialGradient(sx, sy, sr * 0.95, sx, sy, sr * 2.6);
+    halo.addColorStop(0, rgbaCss(sun, 0.34));
+    halo.addColorStop(0.45, rgbaCss(sun, 0.12));
+    halo.addColorStop(1, rgbaCss(sun, 0));
+    ctx.fillStyle = halo;
+    ctx.beginPath();
+    ctx.arc(sx, sy, sr * 2.6, 0, Math.PI * 2);
+    ctx.fill();
   } else for (const [gx, gy, gr, ga] of [
     [0.62 * W, 0.18 * H, HZ * 0.62, pal.stars ? 0.16 : 0.30],  // the sun itself
     [0.62 * W, HZ, HZ * 0.95, pal.stars ? 0.10 : 0.22],        // its haze on the horizon
