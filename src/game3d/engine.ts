@@ -252,6 +252,7 @@ export class Game {
   private resizeObs: ResizeObserver | null = null;
   private carId: CarId;
   private carStat: CarStat;
+  private waterCurtains: THREE.Group[] = []; // road-spanning water sheets (scrolling)
   private grandFalls: THREE.Group[] = [];   // monumental waterfalls (scrolling water)
   private batFlocks: THREE.Group[] = [];    // cave bats (vertex-animated)
   private weather: WeatherSystem | null = null;
@@ -638,6 +639,7 @@ export class Game {
     // cleared HERE, not in the race reset: that runs after buildWorld and was
     // wiping the set-pieces placement had just registered (0 animated groups)
     this.grandFalls.length = 0;
+    this.waterCurtains.length = 0;
     this.batFlocks.length = 0;
     // before anything samples the terrain — the ground mesh, scenery and grass
     // all read groundHeightAtXZ, and the gorge has to already be in it
@@ -1841,31 +1843,62 @@ export class Game {
       this.scene.add(wf);
       this.grandFalls.push(wf);
 
-      // A curtain of water falling ACROSS the road, so you actually drive through
-      // it. Deliberately NOT makeGrandWaterfall scaled down: that builder brings a
-      // 60 m cliff and plunge pool with it, and shrinking the whole thing just put
-      // a rock face on the carriageway and blotted out the screen. This is only
-      // what's needed — a few translucent sheets spanning the width, no collision,
-      // no shadow, so you punch straight through.
+      // A curtain of water falling ACROSS the road, so you drive through it.
+      //
+      // Two earlier attempts failed for instructive reasons. Scaling down
+      // makeGrandWaterfall dragged its 60 m cliff onto the carriageway. Then
+      // untextured planes with an unlit white material composited into a solid
+      // white billboard — a flat rectangle cannot read as water no matter how
+      // transparent it is, because the eye needs STREAKS and needs the edges to
+      // dissolve rather than end in a straight line. So the alpha does the work:
+      // vertical streaks of varying brightness, faded out at both sides and top
+      // so there is no rectangular border, scrolling downward.
       const od = this.track.wrap(d - 34);
       const op = this.track.pointAt(od, 0);
       const otan = this.track.tangentAt(od);
+      const cv = document.createElement("canvas");
+      cv.width = 128; cv.height = 256;
+      const cx2 = cv.getContext("2d")!;
+      const img = cx2.createImageData(cv.width, cv.height);
+      let cseed = 24601;
+      const crnd = () => { cseed = (cseed * 16807) % 2147483647; return cseed / 2147483647; };
+      const cols: number[] = [];
+      for (let i = 0; i < cv.width; i++) cols.push(0.25 + crnd() * 0.75);
+      for (let y = 0; y < cv.height; y++) {
+        for (let x = 0; x < cv.width; x++) {
+          const u = x / (cv.width - 1), v = y / (cv.height - 1);
+          // streak brightness, with fine vertical grain so it isn't banded
+          const streak = cols[x] * (0.65 + 0.35 * Math.sin(v * 40 + cols[x] * 25));
+          // dissolve the left/right edges and the very top: no hard rectangle
+          const edge = Math.sin(Math.PI * u);
+          const top = Math.min(1, v * 3.2);
+          const a = Math.max(0, streak * Math.pow(edge, 1.6) * top) * 205;
+          const o = (y * cv.width + x) * 4;
+          img.data[o] = 232; img.data[o + 1] = 245; img.data[o + 2] = 255;
+          img.data[o + 3] = a;
+        }
+      }
+      cx2.putImageData(img, 0, 0);
       const curtain = new THREE.Group();
-      const CW = ROAD_HALF_WIDTH * 2.3, CH = 7.5;
-      for (let k = 0; k < 3; k++) {
-        const geo = new THREE.PlaneGeometry(CW, CH, 1, 1);
+      const CW = ROAD_HALF_WIDTH * 2.25, CH = 6.5;
+      for (let k = 0; k < 2; k++) {
+        const tex = new THREE.CanvasTexture(cv);
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(2 + k, 1);
         const mat = new THREE.MeshBasicMaterial({
-          color: 0xdff3ff, transparent: true, opacity: 0.3 - k * 0.07,
+          map: tex, transparent: true, opacity: 0.5 - k * 0.16,
           depthWrite: false, side: THREE.DoubleSide,
         });
-        const sheet = new THREE.Mesh(geo, mat);
-        sheet.position.set(0, CH / 2, (k - 1) * 0.7);
+        const sheet = new THREE.Mesh(new THREE.PlaneGeometry(CW, CH, 1, 1), mat);
+        sheet.position.set(0, CH / 2 - 0.4, (k - 0.5) * 0.8);
         sheet.userData.noShadow = true;
+        sheet.userData.scroll = 1.6 + k * 0.7;   // fall speed
         curtain.add(sheet);
       }
-      curtain.position.set(op.x, op.y - 0.2, op.z);
+      curtain.position.set(op.x, op.y, op.z);
       curtain.rotation.y = Math.atan2(otan.x, otan.z);   // lie across the road
       this.scene.add(curtain);
+      this.waterCurtains.push(curtain);
     }
   }
 
@@ -3912,6 +3945,12 @@ export class Game {
       // their userData, so this is safe to call unconditionally.
       for (const wf of this.grandFalls) updateGrandWaterfall(wf, this.time);
       for (const bf of this.batFlocks) updateBatFlock(bf, this.time);
+      for (const cu of this.waterCurtains) {
+        for (const sh of cu.children) {
+          const mm = (sh as THREE.Mesh).material as THREE.MeshBasicMaterial;
+          if (mm.map) mm.map.offset.y = -this.time * (sh.userData.scroll as number);
+        }
+      }
       // drive the foliage wind + shimmer/sway the god-ray shafts so they breathe
       windTime.value = this.time;
       if (this.heatHaze && this.heatHaze.enabled) this.heatHaze.uniforms.time.value = this.time;
