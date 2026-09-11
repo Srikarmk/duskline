@@ -213,8 +213,8 @@ function frondGeometry(rand: () => number, len: number): THREE.BufferGeometry {
   return g;
 }
 
-/** A single palm's merged geometry, with a warm-to-dark vertical vertex tint. */
-function palmVariantGeometry(rand: () => number): THREE.BufferGeometry {
+/** A single palm's merged geometry, with a vertical vertex tint. */
+function palmVariantGeometry(rand: () => number, lit: boolean): THREE.BufferGeometry {
   const h = 6.0 + rand() * 3.4;   // 6-9.4 m: a palm, not a radio mast
   const lean = (rand() - 0.5) * 0.62;
   const parts: THREE.BufferGeometry[] = [];
@@ -262,15 +262,17 @@ function palmVariantGeometry(rand: () => number): THREE.BufferGeometry {
   // cut-out spiders rather than trees.
   const p = merged.getAttribute("position");
   const col = new Float32Array(p.count * 3);
+  // Two tint sets, because the same numbers cannot serve both. Under the
+  // near-black ambient of a sunset realm anything above ~0.15 comes back as
+  // salmon pink instead of as a backlit silhouette; under a bright daylight
+  // hemisphere those same values read as a dead grey-purple stick. So a lit
+  // realm gets an actual brown trunk and green crown.
+  const base = lit ? [0.30, 0.23, 0.13] : [0.135, 0.100, 0.150];
+  const tip = lit ? [0.10, 0.20, 0.09] : [0.035, 0.025, 0.045];
   for (let i = 0; i < p.count; i++) {
     const t = Math.min(1, Math.max(0, p.getY(i) / h));
     const e = t * t;
-    // Much darker than it looks like it should be: these are lit by a warm
-    // 0xffb27a hemisphere and a 0xffd9a0 sun, so anything above ~0.15 comes
-    // back off the screen as salmon pink rather than as a backlit silhouette.
-    col[i * 3 + 0] = 0.135 - 0.10 * e;
-    col[i * 3 + 1] = 0.100 - 0.075 * e;
-    col[i * 3 + 2] = 0.150 - 0.105 * e;
+    for (let k = 0; k < 3; k++) col[i * 3 + k] = base[k] + (tip[k] - base[k]) * e;
   }
   merged.setAttribute("color", new THREE.BufferAttribute(col, 3));
   return merged;
@@ -284,13 +286,15 @@ function palmVariantGeometry(rand: () => number): THREE.BufferGeometry {
 export function makePalmField(
   rand: () => number,
   spots: { x: number; y: number; z: number; s: number; r: number }[],
+  pal: RealmPalette,
   variants = 8
 ): THREE.Group {
   const out = new THREE.Group();
   if (!spots.length) return out;
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
   const geos = [];
-  for (let v = 0; v < variants; v++) geos.push(palmVariantGeometry(rand));
+  const lit = pal.hemiInt >= 0.6;   // daylight realm vs a backlit sunset one
+  for (let v = 0; v < variants; v++) geos.push(palmVariantGeometry(rand, lit));
   const buckets: (typeof spots)[] = geos.map(() => []);
   spots.forEach((sp, i) => buckets[i % geos.length].push(sp));
   const m = new THREE.Matrix4(), q = new THREE.Quaternion();

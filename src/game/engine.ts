@@ -22,7 +22,16 @@ export type RealmId =
   | "forest" | "ember" | "peaks" | "void"
   | "sands" | "castle" | "circuit" | "metro"
   | "nebula"
-  | "bay";
+  | "bay"
+  // built from the reference photographs: a Riviera street circuit, a snow
+  // pass, a Gulf highway, a desert basin, a clifftop coast road and a canyon
+  // above a city
+  | "azur"
+  | "hokkai"
+  | "mirage"
+  | "basin"
+  | "cape"
+  | "hills";
 export type CarId =
   | "f40" | "tauro" | "meridian" | "veloce" | "testa"
   | "fairlady" | "firehawk" | "iroc" | "imprez" | "zanza";

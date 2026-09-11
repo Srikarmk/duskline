@@ -34,6 +34,12 @@ export const REALM_WEATHER: Record<RealmId, WeatherKind> = {
   metro: "rain",
   nebula: "none",
   bay: "none",
+  azur: "none",
+  hokkai: "snow",
+  mirage: "sand",
+  basin: "none",
+  cape: "mist",
+  hills: "none",
 };
 
 /** Plausible weather each realm can cycle through mid-race. Kept per-realm on
@@ -51,6 +57,12 @@ export const REALM_WEATHER_POOL: Record<RealmId, WeatherKind[]> = {
   metro:  ["rain", "mist", "none"],
   nebula: ["none"],
   bay:    ["none", "mist"],
+  azur:   ["none", "rain", "mist"],     // a Riviera afternoon that can turn
+  hokkai: ["snow", "mist", "none"],
+  mirage: ["sand", "none"],             // no rain in the Gulf
+  basin:  ["none", "sand"],
+  cape:   ["mist", "rain", "none"],     // Pacific fog off the headland
+  hills:  ["none", "mist"],
 };
 
 /** Per-realm ambient sound bed (procedural). */
@@ -66,6 +78,12 @@ export const REALM_AMBIENCE: Record<RealmId, AmbienceKind> = {
   metro: "city",
   nebula: "space",
   bay: "wind",
+  azur: "city",
+  hokkai: "wind",
+  mirage: "wind",
+  basin: "wind",
+  cape: "wind",
+  hills: "city",
 };
 
 /** Tunnel set-pieces per realm: `at` is a fraction (0..1) of the lap where the
@@ -87,6 +105,14 @@ export const REALM_TUNNELS: Record<RealmId, { at: number; len: number }[]> = {
   metro: [{ at: 0.36, len: 98 }, { at: 0.74, len: 66 }],
   nebula: [],
   bay: [],
+  // The Riviera tunnel is the whole point of that circuit: one long bore that
+  // comes out onto the harbour front.
+  azur: [{ at: 0.44, len: 132 }],
+  hokkai: [{ at: 0.22, len: 104 }, { at: 0.68, len: 62 }],   // avalanche galleries
+  mirage: [],
+  basin: [{ at: 0.58, len: 70 }],                            // cut through a mesa
+  cape: [{ at: 0.34, len: 88 }],                             // headland bore
+  hills: [{ at: 0.7, len: 74 }],
 };
 
 /** River crossings per realm: fractions (0..1) of the lap where the track
@@ -102,6 +128,12 @@ export const REALM_RIVERS: Record<RealmId, number[]> = {
   metro: [],
   nebula: [],
   bay: [],
+  azur: [],
+  hokkai: [0.46],
+  mirage: [],
+  basin: [],
+  cape: [0.62],      // the creek that comes off the ridge to the sea
+  hills: [],
 };
 
 /** Fork zones per realm: the road splits around a central island into a LEFT
@@ -121,6 +153,12 @@ export const REALM_SPLITS: Record<RealmId, { at: number; len: number }[]> = {
   metro: [{ at: 0.52, len: 120 }],
   nebula: [],
   bay: [],
+  azur: [],                          // no room on a street circuit
+  hokkai: [{ at: 0.36, len: 130 }],
+  mirage: [{ at: 0.2, len: 170 }],   // the desert has the space for a long one
+  basin: [{ at: 0.42, len: 150 }],
+  cape: [],                          // a clifftop road has one lane of options
+  hills: [{ at: 0.14, len: 120 }],
 };
 
 /** A line of flavour for each world — shown on the loadout before a race. */
@@ -144,6 +182,18 @@ export const REALM_LORE: Record<RealmId, string> = {
   nebula:
     "Deeper than the Void, where the war-tubes coil through a living green cloud. Weapons hot, no rules, no witnesses.",
   bay: "Ten miles of causeway between a burning sky and a flat calm sea. The city watches from across the water and never gets any closer.",
+  azur:
+    "They close the streets for one weekend a year and the whole principality holds its breath. Barriers where the run-off should be, and a tunnel that eats the daylight.",
+  hokkai:
+    "Nobody drives the pass in winter except the people who grew up on it. Studded tyres, a heater that never quite wins, and the sea somewhere below the cloud.",
+  mirage:
+    "Eight lanes across the sand to a city that was not there twenty years ago. The tarmac is new, the heat is not, and the speed limit is a suggestion.",
+  basin:
+    "Two hundred miles of nothing, a line of telephone poles, and red rock going gold. The kind of road that was built for the car you brought.",
+  cape:
+    "The road was cut into the cliff by men with dynamite and no safety line. On the right, hills. On the left, a two-hundred-foot drop and the Pacific.",
+  hills:
+    "Up above the grid of lights, where the canyon roads switch back on themselves. Locals only after dark, and everyone here is a local."
 };
 
 export interface RealmPalette {
@@ -200,6 +250,21 @@ export interface RealmSpec {
   controlPoints: [number, number, number][];
   /** scales the global rolling-hill profile; <1 flattens (coastal causeways). */
   hillScale?: number;
+  /**
+   * Coastal realms: the circuit is a strip of land with open sea beyond it.
+   * Was hardcoded to the bay; a causeway and a clifftop road are the same
+   * machinery with different numbers, so it's data now.
+   *   land — metres of land either side of the centreline before it falls away
+   *   band — width of the shore slope (short = a cliff, long = a beach)
+   *   drop — how far the ground falls across that band
+   */
+  coast?: {
+    land: number;
+    band?: number;
+    drop?: number;
+    skyline?: boolean;
+    palms?: boolean;
+  };
   palette: RealmPalette;
   /** weighted scenery mix for roadside props */
   scenery: { kind: SceneryKind; weight: number }[];
@@ -619,6 +684,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     id: "bay",
     name: "Sunset Bay",
     hillScale: 0.18,
+    coast: { land: 11, band: 9, drop: 46, skyline: true, palms: true },
     blurb: "A causeway between a burning sky and a flat calm sea, the city watching from across the water.",
     // Sunset Bay: a long coastal loop with sweeping, open corners — the art this
     // realm is built from is about the VIEW, so the road is deliberately fast and
@@ -653,6 +719,241 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     },
     // only palms — everything else in the art is either sea, sky or skyline
     scenery: [{ kind: "palm", weight: 1 }],
+  },
+
+  // -------------------------------------------------------------------------
+  // Built from the reference photographs. Each one is a real place with a real
+  // elevation profile, because "ups and downs" is the whole character of a
+  // driving road — a flat loop with scenery bolted on is a racetrack, not a
+  // drive. hillScale is low on the ones whose elevation is authored into the
+  // control points, so the global rolling-hill profile doesn't fight it.
+  // -------------------------------------------------------------------------
+
+  azur: {
+    id: "azur",
+    name: "Port Azur",
+    blurb: "Riviera street circuit — barriers instead of run-off, a harbour full of yachts and a tunnel that eats the light.",
+    // The principality lap: up out of the square, a slow climb around the hill
+    // to the high point, a fast plunge back down to the waterfront, then flat
+    // and tight along the harbour. 4 m at the water, 38 m at the top.
+    hillScale: 0.3,
+    coast: { land: 17, band: 11, drop: 34, skyline: false, palms: true },
+    controlPoints: [
+      [316, 5, 0], [312, 7, 62], [286, 10, 118], [244, 14, 164], [190, 19, 196],
+      [128, 24, 214], [64, 29, 222], [-2, 33, 220], [-66, 36, 207], [-124, 38, 182],
+      [-172, 38, 146], [-206, 36, 100], [-224, 33, 48], [-228, 29, -6], [-218, 25, -60],
+      [-196, 21, -110], [-162, 17, -154], [-118, 13, -188], [-66, 10, -208], [-10, 8, -214],
+      [46, 7, -206], [98, 6, -186], [142, 5, -156], [178, 5, -120], [208, 5, -84],
+      [240, 5, -62], [274, 5, -46], [300, 5, -28],
+    ],
+    palette: {
+      // late Riviera afternoon: the sun already low over the water
+      sky: ["#16306b", "#3a72ab", "#8fc0d8", "#ffe6b4"],
+      posterSun: true,
+      stars: false,
+      moons: [],
+      fog: 0xc9dbe6, fogNear: 220, fogFar: 1500,
+      hemiSky: 0xdcefff, hemiGround: 0x4a5460, hemiInt: 0.62,
+      sun: 0xfff2d4, sunInt: 1.05,
+      groundBase: "#b5a892", groundSpeck: "#c6baa4", groundDark: "#6f6656",
+      groundTint: 0xb0a48e,
+      road: "#3a3a44", roadDark: "#2c2c34", rumbleA: "#ffffff", rumbleB: "#d63a3a",
+      laneLine: "#fff6e0", edgeLine: "#ffffff", roadFinish: "gloss",
+      crystalColors: [0xffe6b4, 0x8fc0d8, 0xffffff],
+      mountain: 0x7d8a96, mountainDark: 0x4c5660, clutter: 0x8f9a6a, gem: 0xffd166,
+    },
+    scenery: [
+      { kind: "brownstone", weight: 7 }, { kind: "skyscraper", weight: 2 },
+      { kind: "streetlight", weight: 3 }, { kind: "palm", weight: 3 },
+      { kind: "billboard", weight: 1 },
+    ],
+  },
+
+  hokkai: {
+    id: "hokkai",
+    name: "Hokkai Pass",
+    blurb: "Snowbound mountain pass — plowed walls either side, black firs, and a climb that never quite stops.",
+    // A pass, so the elevation IS the track: 6 m in the valley to 92 m at the
+    // saddle over one lap, with a secondary roll on the descent.
+    hillScale: 0.55,
+    controlPoints: [
+      [352, 8, 0], [340, 14, 94], [300, 22, 180], [236, 32, 248], [156, 43, 296],
+      [66, 54, 322], [-28, 64, 324], [-120, 73, 302], [-202, 80, 258], [-268, 86, 196],
+      [-310, 90, 120], [-326, 92, 38], [-316, 90, -46], [-282, 84, -126], [-228, 76, -196],
+      [-158, 66, -250], [-76, 55, -284], [10, 44, -294], [96, 34, -280], [176, 26, -244],
+      [244, 19, -190], [294, 14, -124], [324, 10, -52], [344, 8, 22], [352, 8, 62],
+    ],
+    palette: {
+      // cold blue dusk with a thin band of sunset left on the horizon
+      sky: ["#0b1533", "#243a69", "#6d81a8", "#f4d8bd"],
+      posterSun: true,
+      stars: false,
+      moons: [],
+      fog: 0xc4d0e0, fogNear: 150, fogFar: 900,
+      hemiSky: 0xd8e6ff, hemiGround: 0x5a6472, hemiInt: 0.7,
+      sun: 0xfff0dc, sunInt: 0.8,
+      groundBase: "#eef4fb", groundSpeck: "#dae4f0", groundDark: "#a8b6c8",
+      groundTint: 0xdfe8f4,
+      road: "#3e444d", roadDark: "#31363e", rumbleA: "#ffffff", rumbleB: "#2f5fa8",
+      laneLine: "#f4f8ff", edgeLine: "#ffd166", roadFinish: "wet",
+      crystalColors: [0xbfe0ff, 0xe8f4ff, 0xffffff],
+      mountain: 0x8ea2bc, mountainDark: 0x54637a, clutter: 0xcdd8e6, gem: 0x7fd4ff,
+    },
+    scenery: [
+      { kind: "treeDark", weight: 9 }, { kind: "treeA", weight: 3 },
+      { kind: "rockA", weight: 2 },
+    ],
+  },
+
+  mirage: {
+    id: "mirage",
+    name: "Mirage Mile",
+    blurb: "Eight lanes of new tarmac across the sand, a glass skyline on the heat haze, and straights long enough to find the limiter.",
+    // Deliberately the flattest realm — a Gulf expressway. The long rises are
+    // there to make the skyline rise and fall in the windscreen, not to jump.
+    hillScale: 0.4,
+    controlPoints: [
+      [612, 6, 0], [604, 8, 122], [560, 11, 232], [486, 13, 322], [388, 14, 392],
+      [274, 14, 436], [150, 13, 456], [22, 12, 452], [-104, 11, 424], [-222, 10, 374],
+      [-324, 10, 302], [-402, 11, 212], [-452, 12, 110], [-468, 13, 4], [-452, 14, -104],
+      [-402, 14, -206], [-322, 13, -294], [-218, 12, -362], [-98, 11, -406], [30, 10, -422],
+      [158, 10, -410], [282, 11, -370], [394, 12, -306], [486, 13, -222], [552, 11, -122],
+      [594, 8, -54],
+    ],
+    palette: {
+      // noon-into-afternoon Gulf: hard turquoise zenith down to a gold haze
+      sky: ["#0a4f86", "#2b93bd", "#93d9d0", "#ffd98a"],
+      posterSun: true,
+      stars: false,
+      moons: [],
+      fog: 0xe6c78f, fogNear: 320, fogFar: 2200,
+      hemiSky: 0xfff0cf, hemiGround: 0x8a6b44, hemiInt: 0.85,
+      sun: 0xffffff, sunInt: 1.15,
+      groundBase: "#d9b47e", groundSpeck: "#eacb95", groundDark: "#a57f4d",
+      groundTint: 0xd8b47c,
+      road: "#33333c", roadDark: "#282830", rumbleA: "#f4f0e6", rumbleB: "#e8a33a",
+      laneLine: "#fffaf0", edgeLine: "#fff0c8", roadFinish: "dusty",
+      crystalColors: [0xffd98a, 0x93d9d0, 0xffffff],
+      mountain: 0xc9a978, mountainDark: 0x8d6c43, clutter: 0xc9a46e, gem: 0xf5b942,
+    },
+    scenery: [
+      { kind: "sandRock", weight: 6 }, { kind: "palm", weight: 4 },
+      { kind: "skyscraper", weight: 2 }, { kind: "obelisk", weight: 1 },
+    ],
+  },
+
+  basin: {
+    id: "basin",
+    name: "Basin Run",
+    blurb: "Red rock and telephone poles — two hundred miles of nothing, taken at whatever speed you brought.",
+    // Long straights with real crests: 10 m to 74 m and back twice a lap, so
+    // the road disappears over a rise the way a desert highway does.
+    hillScale: 0.85,
+    controlPoints: [
+      [468, 12, 0], [456, 22, 106], [412, 34, 202], [342, 46, 280], [252, 56, 336],
+      [150, 64, 366], [42, 68, 368], [-66, 66, 344], [-166, 60, 300], [-252, 51, 238],
+      [-316, 41, 162], [-352, 31, 78], [-358, 22, -10], [-334, 16, -98], [-284, 12, -180],
+      [-210, 11, -250], [-118, 12, -302], [-14, 16, -332], [92, 24, -336], [196, 34, -316],
+      [292, 44, -274], [372, 50, -212], [428, 50, -136], [458, 40, -62], [468, 24, -22],
+    ],
+    palette: {
+      // high desert: deep blue zenith, hard sun, red rock throwing warm bounce
+      sky: ["#0f3878", "#3d7cc2", "#9ecbe0", "#ffcf9a"],
+      posterSun: true,
+      stars: false,
+      moons: [],
+      fog: 0xd6a079, fogNear: 300, fogFar: 2000,
+      hemiSky: 0xfde4c8, hemiGround: 0x7a3f28, hemiInt: 0.8,
+      sun: 0xfff6e0, sunInt: 1.1,
+      groundBase: "#b5673f", groundSpeck: "#ca7c4d", groundDark: "#77402a",
+      groundTint: 0xb06340,
+      road: "#3a3540", roadDark: "#2d2932", rumbleA: "#f0eee8", rumbleB: "#c2432c",
+      laneLine: "#fff4e0", edgeLine: "#ffe0b0", roadFinish: "dusty",
+      crystalColors: [0xffcf9a, 0xc2432c, 0xfff4e0],
+      mountain: 0xa8583a, mountainDark: 0x6b3522, clutter: 0x9a7a4a, gem: 0xef7b3b,
+    },
+    scenery: [
+      { kind: "sandRock", weight: 8 }, { kind: "rockA", weight: 3 },
+      { kind: "rockB", weight: 3 }, { kind: "obelisk", weight: 1 },
+    ],
+  },
+
+  cape: {
+    id: "cape",
+    name: "Cape Road",
+    blurb: "Cut into the cliff with dynamite — hills on one side, a two-hundred-foot drop and the Pacific on the other.",
+    // The biggest elevation range of any realm: 12 m where the road crosses a
+    // creek mouth to 118 m on the headland. The sea is right there, and a long
+    // way down — see the coast block (a short band with a huge drop = a cliff,
+    // the same machinery the causeway uses with different numbers).
+    hillScale: 0.5,
+    coast: { land: 24, band: 14, drop: 150, skyline: false, palms: false },
+    controlPoints: [
+      [392, 20, 0], [382, 34, 98], [344, 52, 186], [282, 70, 258], [202, 86, 310],
+      [110, 100, 340], [14, 110, 344], [-82, 116, 322], [-172, 118, 276], [-248, 112, 212],
+      [-302, 100, 136], [-332, 84, 52], [-336, 66, -34], [-312, 48, -118], [-262, 32, -194],
+      [-190, 20, -256], [-102, 13, -298], [-6, 12, -314], [90, 16, -304], [184, 26, -268],
+      [268, 38, -212], [334, 46, -142], [374, 44, -68], [392, 32, -24],
+    ],
+    palette: {
+      // Pacific afternoon going to fog: cool grey-blue with a warm rim
+      sky: ["#172b5c", "#48699c", "#9db9c9", "#ffd9a8"],
+      posterSun: true,
+      stars: false,
+      moons: [],
+      fog: 0xc2cdd2, fogNear: 180, fogFar: 1300,
+      hemiSky: 0xd6e4ea, hemiGround: 0x4a5240, hemiInt: 0.66,
+      sun: 0xfff0d8, sunInt: 0.95,
+      // Big Sur in late summer is straw and olive, not a fairway — the bright
+      // green was coming back off the hemisphere as a golf course.
+      groundBase: "#7d7a52", groundSpeck: "#8e8a5e", groundDark: "#43472f",
+      groundTint: 0x76744c,
+      road: "#3c3f45", roadDark: "#2f3238", rumbleA: "#f2f2ee", rumbleB: "#c8a24a",
+      laneLine: "#fffaf0", edgeLine: "#ffffff", roadFinish: "gloss",
+      crystalColors: [0xffd9a8, 0x9db9c9, 0xffffff],
+      mountain: 0x6f7a62, mountainDark: 0x3f4838, clutter: 0x7c8654, gem: 0xffc46b,
+    },
+    scenery: [
+      { kind: "treeDark", weight: 7 }, { kind: "rockA", weight: 4 },
+      { kind: "rockB", weight: 2 }, { kind: "treeB", weight: 2 },
+    ],
+  },
+
+  hills: {
+    id: "hills",
+    name: "Sunset Hills",
+    blurb: "Canyon switchbacks above the grid of lights. Locals only after dark, and everyone up here is a local.",
+    // Switchbacks: the tightest radii of any realm, and 30 m to 128 m of climb
+    // in a lap, because a canyon road is nothing but gradient and corner.
+    hillScale: 0.6,
+    controlPoints: [
+      [286, 34, 0], [282, 44, 58], [258, 56, 110], [216, 68, 150], [164, 80, 176],
+      [104, 92, 190], [42, 102, 190], [-20, 112, 178], [-80, 120, 154], [-132, 126, 118],
+      [-170, 128, 72], [-192, 126, 20], [-196, 120, -34], [-182, 112, -88], [-152, 102, -136],
+      [-110, 92, -174], [-58, 82, -200], [-2, 72, -210], [54, 64, -204], [108, 56, -184],
+      [156, 48, -154], [198, 42, -116], [232, 38, -74], [258, 36, -44], [276, 34, -20],
+    ],
+    palette: {
+      // dusk over the basin: violet zenith burning to a hot horizon
+      sky: ["#1e1040", "#552163", "#ae4069", "#ffb27a"],
+      posterSun: true,
+      stars: false,
+      moons: [],
+      fog: 0x8a5a72, fogNear: 160, fogFar: 1400,
+      hemiSky: 0xffb894, hemiGround: 0x2e2030, hemiInt: 0.5,
+      sun: 0xffd6a8, sunInt: 0.95,
+      groundBase: "#63504a", groundSpeck: "#74605a", groundDark: "#33282c",
+      groundTint: 0x5f4c46,
+      road: "#2f2b35", roadDark: "#252229", rumbleA: "#f4ecdc", rumbleB: "#e8555f",
+      laneLine: "#fff0d0", edgeLine: "#ffd9a8", roadFinish: "gloss",
+      crystalColors: [0xffb27a, 0xe8555f, 0xffe0b8],
+      mountain: 0x4a3a48, mountainDark: 0x2a2030, clutter: 0x6b5a42, gem: 0xff9f4a,
+    },
+    scenery: [
+      { kind: "palm", weight: 5 }, { kind: "treeDark", weight: 4 },
+      { kind: "billboard", weight: 2 }, { kind: "streetlight", weight: 2 },
+      { kind: "rockA", weight: 2 },
+    ],
   },
 };
 

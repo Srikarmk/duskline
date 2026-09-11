@@ -336,7 +336,7 @@ export class Game {
   private sparks: SmokePuff[] = []; // impact-spark pool (bumps/hits)
   private camPos = new THREE.Vector3();
   private camYaw = 0; // smoothed camera heading — eases toward the car so the view swings in behind you instead of snapping with every steer
-  private coast: { x: number; z: number; r: number; far: number } | null = null;
+  private coast: { x: number; z: number; r: number; far: number; band: number; drop: number } | null = null;
   private clouds: THREE.Mesh | null = null;
   private seaY = -11; // coastal realms: land inside r, sea beyond
   private reliefAmp = 0; // per-realm amplitude of the rolling hills the ground rises into away from the road
@@ -648,7 +648,7 @@ export class Game {
     // must precede the ground mesh / scenery / grass — they all sample
     // groundHeightAtXZ and need the coastline already in it
     this.coast = null;
-    if (this.realm.palette.posterSun && this.realm.id === "bay") {
+    if (this.realm.coast) {
       const N = 160, len = this.track.length;
       let cx = 0, cz = 0;
       const pts: { x: number; z: number }[] = [];
@@ -671,7 +671,8 @@ export class Game {
       // These are different quantities and must not share a field: they did,
       // and the skyline ended up at 34*2.15 = 73 m from the centre — i.e. towers
       // standing ON the racing line, which is the giant flat wall on the road.
-      this.coast = { x: cx, z: cz, r: 11, far };   // land only a few m past the kerb
+      const cs = this.realm.coast;
+      this.coast = { x: cx, z: cz, r: cs.land, far, band: cs.band ?? 9, drop: cs.drop ?? 46 };
     }
     const { scene, track, realm } = this;
     const pal = realm.palette;
@@ -2140,8 +2141,8 @@ export class Game {
         // appeared ~77 m from the centreline, which from a low camera is a wide
         // brown plain with a distant pink strip — not a causeway. This puts the
         // waterline a few metres past the kerb.
-        const t = Math.min(1, over / 9);
-        h -= (t * t) * 46;
+        const t = Math.min(1, over / this.coast.band);
+        h -= (t * t) * this.coast.drop;
       }
     }
     return h;
@@ -2750,20 +2751,21 @@ export class Game {
         w.scale.multiplyScalar(1.4 + rand() * 0.6);
         place(w, d, side * (ROAD_HALF_WIDTH + 12 + rand() * 6), faceRoad(d, side));
       }
-    } else if (realm.id === "bay") {
+    } else if (this.coast) {
       // THE SEA. Offset to one side of the circuit and dropped below the road so
       // the causeway reads as running along a shore. It's a painted plane rather
       // than a reflective surface — see makeOceanPlane — because the look needs
       // it to hold its colour exactly, and anything lit turns grey once the
       // ambient is this low.
-      const c = this.coast ?? { x: 0, z: 0, r: 34, far: 600 };
+      const c = this.coast;
+      const cs = realm.coast!;
       const sea = makeOceanPlane(pal, Math.max(12000, c.far * 8));
       // just under the beach ramp, centred on the island so it surrounds it
       sea.position.set(c.x, this.seaY, c.z);
       this.scene.add(sea);
 
       // the city, across the water: a flat cut-out band on the far shore
-      for (const [ang, span, dist] of [[0.6, 2400, 2.15], [2.4, 1700, 2.45], [4.3, 1500, 2.3]] as const) {
+      if (cs.skyline) for (const [ang, span, dist] of [[0.6, 2400, 2.15], [2.4, 1700, 2.45], [4.3, 1500, 2.3]] as const) {
         const sk = makeSkyline(rand, pal, span);
         const R = c.far * dist;   // c.far, NOT c.r — see the coast comment above
         sk.position.set(c.x + Math.cos(ang) * R, this.seaY + 1, c.z + Math.sin(ang) * R);
@@ -2773,7 +2775,7 @@ export class Game {
 
       // palms all the way down both sides of the causeway, instanced
       const palmSpots: { x: number; y: number; z: number; s: number; r: number }[] = [];
-      for (let d = 0; d < len; d += 15) {
+      if (cs.palms) for (let d = 0; d < len; d += 15) {
         for (const side of [-1, 1]) {
           if (rand() < 0.28) continue;
           // clear of the tarmac: a palm trunk at +5 m was close enough to
@@ -2787,7 +2789,7 @@ export class Game {
           if (this.obstacleClear(p.x, p.z, 1.0)) this.obstacles.push({ x: p.x, z: p.z, r: 1.0 });
         }
       }
-      this.scene.add(makePalmField(rand, palmSpots));
+      this.scene.add(makePalmField(rand, palmSpots, pal));
     } else if (realm.id === "forest") {
       // cave mouths set back in the hillsides, facing the road
       for (let d = 60; d < len - 40; d += 220) {
