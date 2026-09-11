@@ -336,7 +336,7 @@ export class Game {
   private sparks: SmokePuff[] = []; // impact-spark pool (bumps/hits)
   private camPos = new THREE.Vector3();
   private camYaw = 0; // smoothed camera heading — eases toward the car so the view swings in behind you instead of snapping with every steer
-  private coast: { x: number; z: number; r: number; far: number; band: number; drop: number } | null = null;
+  private coast: { x: number; z: number; r: number; far: number; band: number; drop: number; side: number } | null = null;
   private clouds: THREE.Mesh | null = null;
   private seaY = -11; // coastal realms: land inside r, sea beyond
   private reliefAmp = 0; // per-realm amplitude of the rolling hills the ground rises into away from the road
@@ -443,7 +443,11 @@ export class Game {
     // heave, the speedway + city stay near-flat, the space tubes get none
     this.reliefAmp = ({
       forest: 18, ember: 26, peaks: 32, void: 0, sands: 28,
-      castle: 22, circuit: 7, metro: 10, nebula: 0,
+      castle: 22, circuit: 7, metro: 10, nebula: 0, bay: 0,
+      // The photo realms. On a one-sided coast this is what the INLAND side
+      // becomes, so the cliff road has a hillside to have been cut into rather
+      // than a flat shelf: 70 m of relief on the cape, 90 in the canyon.
+      azur: 46, hokkai: 74, mirage: 12, basin: 40, cape: 70, hills: 90,
     } as Record<string, number>)[this.realm.id] ?? 18;
     this.minimap = new Minimap(this.track);
     this.onFinish = options.onFinish;
@@ -620,6 +624,18 @@ export class Game {
       forest: "ground_forest", ember: "ground_ember", peaks: "ground_peaks",
       void: "ground_peaks", sands: "ground_peaks", castle: "ground_forest",
       circuit: "ground_forest", metro: "ground_peaks",
+      // The photo realms were falling through to ground_forest, which is a
+      // dark green woodland floor. groundTint is a MULTIPLY, so it can only
+      // ever darken that — which is why the snow pass came out olive and the
+      // deserts came out mossy. Pick the closest shipped albedo per realm and
+      // let the tint do the last 20%.
+      hokkai: "ground_peaks",   // pale rock, tints to snow
+      cape: "ground_peaks",     // dry headland grass over rock
+      hills: "ground_ember",    // scorched chaparral
+      basin: "ground_ember",    // red desert rock
+      mirage: "ground_peaks",   // pale sand
+      azur: "ground_peaks",     // dusty stone waterfront
+      bay: "ground_peaks",
     };
     const groundName = GROUND[this.realm.id] ?? "ground_forest";
     const [library] = await Promise.all([loadModels(), loadPBR(groundName)]);
@@ -672,7 +688,7 @@ export class Game {
       // and the skyline ended up at 34*2.15 = 73 m from the centre — i.e. towers
       // standing ON the racing line, which is the giant flat wall on the road.
       const cs = this.realm.coast;
-      this.coast = { x: cx, z: cz, r: cs.land, far, band: cs.band ?? 9, drop: cs.drop ?? 46 };
+      this.coast = { x: cx, z: cz, r: cs.land, far, band: cs.band ?? 9, drop: cs.drop ?? 46, side: cs.side ?? 0 };
     }
     const { scene, track, realm } = this;
     const pal = realm.palette;
@@ -2102,14 +2118,21 @@ export class Game {
     // nearest sample. Snapping produced a staircase whose steps stood up to ~0.2 m
     // ABOVE the real (smooth) road surface between samples — that is the terrain
     // poking through the ribbon that reads as "dirt instead of road".
-    let by = sy[bi], bd2 = best;
+    let by = sy[bi], bd2 = best, bside = 0;
     for (const j of [(bi - 1 + n) % n, (bi + 1) % n]) {
       const ax = sx[bi], az = sz[bi], ux = sx[j] - ax, uz = sz[j] - az;
       const L2 = ux * ux + uz * uz || 1;
       const t = Math.max(0, Math.min(1, ((x - ax) * ux + (z - az) * uz) / L2));
       const px = ax + ux * t, pz = az + uz * t;
       const dx = x - px, dz = z - pz, d2 = dx * dx + dz * dz;
-      if (d2 < bd2) { bd2 = d2; by = sy[bi] + (sy[j] - sy[bi]) * t; }
+      if (d2 < bd2) {
+        bd2 = d2; by = sy[bi] + (sy[j] - sy[bi]) * t;
+        // which hand of the road this point falls on. Forward is (ux,uz) from
+        // bi toward j, so the cross product's sign is the side — but j can be
+        // the PREVIOUS sample, in which case forward is reversed.
+        const fwd = j === (bi + 1) % n ? 1 : -1;
+        bside = Math.sign((ux * dz - uz * dx) * fwd);
+      }
     }
     const dist = Math.sqrt(bd2);
     const near = 34, fall = 108; // narrower flat shelf + steeper onset = more dramatic land
@@ -2136,12 +2159,18 @@ export class Game {
     // ISLAND: land holds inside `r`, then the ground ramps down past sea level
     // over a beach band. The ocean plane sits under that, so open water is
     // visible off the outside of every corner.
-    if (this.coast) {
+    if (this.coast && (this.coast.side === 0 || this.coast.side === bside)) {
       // Measured from the ROAD, not from the middle of the circuit. An island
       // ring put the shore 876 m away on a loop this size — technically water,
       // but past the fog and invisible from the car. The references are
       // causeways: the sea is right there at the verge on both sides. `dist` is
       // already the distance to the centreline, so this costs nothing.
+      //
+      // SIDED. A causeway drops away on both hands and that is correct for one.
+      // A cliff road does not: the sea is on one side and the hill it was cut
+      // into is on the other. Dropping both made Cape Road a 48 m ribbon of
+      // land floating in fog with sheer walls either side — a flying road, not
+      // a coast road. `side` 0 keeps the old behaviour for the causeway.
       const over = dist - this.coast.r;
       if (over > 0) {
         // Steep and immediate. The previous 55 m ramp meant water only actually

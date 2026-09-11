@@ -262,6 +262,13 @@ export interface RealmSpec {
     land: number;
     band?: number;
     drop?: number;
+    /**
+     * Which hand of the road falls away: 0 (default) both, as a causeway does;
+     * -1 or +1 for a cliff road, where the sea is on one side and the hillside
+     * it was cut into is on the other. Dropping both sides turns a coast road
+     * into a ribbon of land floating in fog.
+     */
+    side?: -1 | 0 | 1;
     skyline?: boolean;
     palms?: boolean;
   };
@@ -737,7 +744,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     // to the high point, a fast plunge back down to the waterfront, then flat
     // and tight along the harbour. 4 m at the water, 38 m at the top.
     hillScale: 0.3,
-    coast: { land: 17, band: 11, drop: 34, skyline: false, palms: true },
+    coast: { land: 17, band: 11, drop: 34, side: -1, skyline: false, palms: true },
     controlPoints: [
       [316, 5, 0], [312, 7, 62], [286, 10, 118], [244, 14, 164], [190, 19, 196],
       [128, 24, 214], [64, 29, 222], [-2, 33, 220], [-66, 36, 207], [-124, 38, 182],
@@ -756,7 +763,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       hemiSky: 0xdcefff, hemiGround: 0x4a5460, hemiInt: 0.62,
       sun: 0xfff2d4, sunInt: 1.05,
       groundBase: "#b5a892", groundSpeck: "#c6baa4", groundDark: "#6f6656",
-      groundTint: 0xb0a48e,
+      groundTint: 0xd2cabb,
       road: "#3a3a44", roadDark: "#2c2c34", rumbleA: "#ffffff", rumbleB: "#d63a3a",
       laneLine: "#fff6e0", edgeLine: "#ffffff", roadFinish: "gloss",
       crystalColors: [0xffe6b4, 0x8fc0d8, 0xffffff],
@@ -793,7 +800,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       hemiSky: 0xd8e6ff, hemiGround: 0x5a6472, hemiInt: 0.7,
       sun: 0xfff0dc, sunInt: 0.8,
       groundBase: "#eef4fb", groundSpeck: "#dae4f0", groundDark: "#a8b6c8",
-      groundTint: 0xdfe8f4,
+      groundTint: 0xf4f8ff,
       road: "#3e444d", roadDark: "#31363e", rumbleA: "#ffffff", rumbleB: "#2f5fa8",
       laneLine: "#f4f8ff", edgeLine: "#ffd166", roadFinish: "wet",
       crystalColors: [0xbfe0ff, 0xe8f4ff, 0xffffff],
@@ -830,7 +837,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       hemiSky: 0xfff0cf, hemiGround: 0x8a6b44, hemiInt: 0.85,
       sun: 0xffffff, sunInt: 1.15,
       groundBase: "#d9b47e", groundSpeck: "#eacb95", groundDark: "#a57f4d",
-      groundTint: 0xd8b47c,
+      groundTint: 0xe8d2a4,
       road: "#33333c", roadDark: "#282830", rumbleA: "#f4f0e6", rumbleB: "#e8a33a",
       laneLine: "#fffaf0", edgeLine: "#fff0c8", roadFinish: "dusty",
       crystalColors: [0xffd98a, 0x93d9d0, 0xffffff],
@@ -866,7 +873,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       hemiSky: 0xfde4c8, hemiGround: 0x7a3f28, hemiInt: 0.8,
       sun: 0xfff6e0, sunInt: 1.1,
       groundBase: "#b5673f", groundSpeck: "#ca7c4d", groundDark: "#77402a",
-      groundTint: 0xb06340,
+      groundTint: 0xd9905e,
       road: "#3a3540", roadDark: "#2d2932", rumbleA: "#f0eee8", rumbleB: "#c2432c",
       laneLine: "#fff4e0", edgeLine: "#ffe0b0", roadFinish: "dusty",
       crystalColors: [0xffcf9a, 0xc2432c, 0xfff4e0],
@@ -887,7 +894,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     // way down — see the coast block (a short band with a huge drop = a cliff,
     // the same machinery the causeway uses with different numbers).
     hillScale: 0.5,
-    coast: { land: 24, band: 14, drop: 150, skyline: false, palms: false },
+    coast: { land: 24, band: 14, drop: 150, side: 1, skyline: false, palms: false },
     controlPoints: [
       [392, 20, 0], [382, 34, 98], [344, 52, 186], [282, 70, 258], [202, 86, 310],
       [110, 100, 340], [14, 110, 344], [-82, 116, 322], [-172, 118, 276], [-248, 112, 212],
@@ -907,7 +914,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       // Big Sur in late summer is straw and olive, not a fairway — the bright
       // green was coming back off the hemisphere as a golf course.
       groundBase: "#7d7a52", groundSpeck: "#8e8a5e", groundDark: "#43472f",
-      groundTint: 0x76744c,
+      groundTint: 0xa8a274,
       road: "#3c3f45", roadDark: "#2f3238", rumbleA: "#f2f2ee", rumbleB: "#c8a24a",
       laneLine: "#fffaf0", edgeLine: "#ffffff", roadFinish: "gloss",
       crystalColors: [0xffd9a8, 0x9db9c9, 0xffffff],
@@ -943,7 +950,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       hemiSky: 0xffb894, hemiGround: 0x2e2030, hemiInt: 0.5,
       sun: 0xffd6a8, sunInt: 0.95,
       groundBase: "#63504a", groundSpeck: "#74605a", groundDark: "#33282c",
-      groundTint: 0x5f4c46,
+      groundTint: 0xbba079,
       road: "#2f2b35", roadDark: "#252229", rumbleA: "#f4ecdc", rumbleB: "#e8555f",
       laneLine: "#fff0d0", edgeLine: "#ffd9a8", roadFinish: "gloss",
       crystalColors: [0xffb27a, 0xe8555f, 0xffe0b8],
