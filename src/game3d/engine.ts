@@ -1698,6 +1698,91 @@ export class Game {
 
   /** River crossings: a railed bridge over water, with a mega jump ramp just
    *  before it and an air-gem arc across the gap. */
+
+  /** An arched viaduct GENERATED ALONG THE ROAD.
+   *
+   *  The imported makeStoneBridge is one rigid straight deck, which is why it cut
+   *  diagonally across the tarmac here: this circuit both curves AND climbs
+   *  through the river crossing, so a straight slab simply cannot follow it. This
+   *  builds the deck from the track centreline itself — same technique as the cave
+   *  tube — so it tracks every curve and every hill exactly. Piers drop at regular
+   *  spans and the soffit between them dips in a semicircle, giving the Roman
+   *  arcade read while still being one merged geometry. */
+  private buildRoadBridge(d0: number, d1: number): THREE.Mesh[] {
+    const STEP = 2.0;
+    const W = ROAD_HALF_WIDTH + 2.4;      // deck half-width (road + shoulders)
+    const DECK = 1.1;                      // deck slab thickness
+    const SPAN = 17;                       // distance between pier centres
+    const ARCH = 5.0;                      // how deep the soffit arcs between piers
+    const PIER_DROP = 15;                  // how far piers reach into the gorge
+    const deck: number[] = [];
+    const rail: number[] = [];
+    const piers: THREE.BufferGeometry[] = [];
+    const quad = (arr: number[], a: number[], b: number[], c: number[], d: number[]) => {
+      arr.push(...a, ...b, ...c, ...a, ...c, ...d);
+    };
+    let prev: { L: number[]; R: number[]; Lb: number[]; Rb: number[]; rlo: number[]; rhi: number[]; rlo2: number[]; rhi2: number[] } | null = null;
+    for (let d = d0; d <= d1; d += STEP) {
+      const w = this.track.wrap(d);
+      const c = this.track.pointAt(w, 0, undefined, true);
+      const tan = this.track.tangentAt(w);
+      const rx = tan.z, rz = -tan.x;
+      // 0.30 under the ribbon, not 0.06: the road is BANKED and now hilly, so a
+      // deck only 6 cm down poked through the tarmac on cambered sections and
+      // swallowed the lane markings. The shoulders still read as bridge.
+      const top = c.y - 0.30;
+      // soffit arcs between piers -> the arcade read
+      const phase = ((d - d0) % SPAN) / SPAN;
+      const sag = Math.sin(Math.PI * phase) * ARCH;
+      const bot = top - DECK - sag;
+      const L = [c.x - rx * W, top, c.z - rz * W];
+      const R = [c.x + rx * W, top, c.z + rz * W];
+      const Lb = [c.x - rx * W, bot, c.z - rz * W];
+      const Rb = [c.x + rx * W, bot, c.z + rz * W];
+      // low parapet along both edges (kept under 1 m so it never blocks the view)
+      const H = 0.92, T = 0.34;
+      const rlo = [c.x - rx * W, top, c.z - rz * W];
+      const rhi = [c.x - rx * (W - T), top + H, c.z - rz * (W - T)];
+      const rlo2 = [c.x + rx * W, top, c.z + rz * W];
+      const rhi2 = [c.x + rx * (W - T), top + H, c.z + rz * (W - T)];
+      if (prev) {
+        quad(deck, prev.L, L, R, prev.R);           // deck top
+        quad(deck, prev.Lb, prev.Rb, Rb, Lb);       // arched soffit
+        quad(deck, prev.L, prev.Lb, Lb, L);         // outer faces
+        quad(deck, prev.R, R, Rb, prev.Rb);
+        quad(rail, prev.rlo, prev.rhi, rhi, rlo);   // parapets
+        quad(rail, prev.rlo2, rlo2, rhi2, prev.rhi2);
+        quad(rail, prev.rhi, prev.rhi2, rhi2, rhi);
+      }
+      prev = { L, R, Lb, Rb, rlo, rhi, rlo2, rhi2 };
+      // a pier at each span crossing
+      if (Math.abs(phase) < STEP / SPAN) {
+        const pw = 1.9;
+        const g = new THREE.BoxGeometry(pw * 2, PIER_DROP, pw * 1.3);
+        g.translate(c.x, top - DECK - PIER_DROP / 2, c.z);
+        piers.push(g.toNonIndexed());
+      }
+    }
+    const lib = pbr();
+    const stone = new THREE.MeshStandardMaterial({
+      ...(lib ? { map: lib.rock.diff, normalMap: lib.rock.nor, roughnessMap: lib.rock.arm ?? undefined } : {}),
+      color: 0x9d9a92, roughness: 1, metalness: 0, flatShading: true, side: THREE.DoubleSide,
+    });
+    const mk = (arr: number[]) => {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.Float32BufferAttribute(arr, 3));
+      g.computeVertexNormals();
+      return new THREE.Mesh(g, stone);
+    };
+    const out = [mk(deck), mk(rail)];
+    if (piers.length) {
+      const merged = mergeGeometries(piers, false);
+      if (merged) out.push(new THREE.Mesh(merged, stone));
+    }
+    for (const m of out) { m.castShadow = true; m.receiveShadow = true; }
+    return out;
+  }
+
   private placeRivers() {
     const pal = this.realm.palette;
     const len = this.track.length;
@@ -1713,9 +1798,7 @@ export class Game {
       // needs a straight, flat span to sit on, which this circuit doesn't have at
       // the river. Left out rather than shipped broken; the crossing keeps the
       // original railed bridge that actually follows the road.
-      const bridge = makeRiverBridge(pal);
-      this.placeOnTrack(bridge, d);
-      this.scene.add(bridge);
+      for (const m of this.buildRoadBridge(d - 46, d + 46)) this.scene.add(m);
 
       // ...and a monumental fall pouring in beside it. Its footprint is ~74 m
       // wide by 42 m deep, so it has to be set well back or it would swallow the
@@ -2504,20 +2587,34 @@ export class Game {
     minDist: number,
     reach: number
   ): Placement[] {
-    const { bounds } = this.track;
+    // Sample ALONG THE ROAD, not across the track's bounding box.
+    //
+    // The old version threw darts at the whole bounding box and rejected
+    // anything too close to the centreline. On a circuit that box is mostly
+    // empty interior, so the overwhelming majority of darts landed nowhere near
+    // the road, the `tries < count * 4` budget burned out long before `count`
+    // points were accepted, and what survived was thin and blotchy — the bald
+    // patches on the forest floor. There was also no MAXIMUM distance, so
+    // accepted points were scattered across the entire map, spending instances
+    // where nobody ever drives.
+    //
+    // Picking a centreline segment and then an offset inside [minDist, reach]
+    // is rejection-free: every point lands in the band you actually see, the
+    // full count is always met, and coverage is even along the whole lap.
     const pts: Placement[] = [];
-    let tries = 0;
-    while (pts.length < count && tries < count * 4) {
-      tries++;
-      const x = bounds.minX - reach + rand() * (bounds.maxX - bounds.minX + reach * 2);
-      const z = bounds.minZ - reach + rand() * (bounds.maxZ - bounds.minZ + reach * 2);
-      let near = Infinity;
-      for (const c of centerline) {
-        const dx = c.x - x, dz = c.z - z;
-        const dd = dx * dx + dz * dz;
-        if (dd < near) near = dd;
-      }
-      if (near < minDist * minDist) continue;
+    const n = centerline.length;
+    if (!n) return pts;
+    for (let k = 0; k < count; k++) {
+      const i = Math.floor(rand() * n);
+      const c = centerline[i], c2 = centerline[(i + 1) % n];
+      const tx = c2.x - c.x, tz = c2.z - c.z;
+      const tl = Math.hypot(tx, tz) || 1;
+      const rx = tz / tl, rz = -tx / tl;          // road "right"
+      const u = rand();                            // slide along this segment
+      const side = rand() < 0.5 ? -1 : 1;
+      const off = minDist + rand() * Math.max(0, reach - minDist);
+      const x = c.x + tx * u + rx * off * side;
+      const z = c.z + tz * u + rz * off * side;
       // +0.1: groundHeightAtXZ deliberately holds the ground a few cm BELOW the
       // road ribbon across the corridor (so the tarmac always wins the depth
       // test). Scatter placed on that lowered surface, which is why tufts and
