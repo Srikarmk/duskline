@@ -142,6 +142,9 @@ export const REALM_LORE: Record<RealmId, string> = {
 export interface RealmPalette {
   // sky gradient stops, top -> bottom (canvas)
   sky: [string, string, string, string];
+  /** draw a big hard-edged sun disc (80s city-pop poster look) rather than a
+   *  soft naturalistic glare */
+  posterSun?: boolean;
   stars: boolean;
   moons: { x: number; y: number; r: number; tint: string }[];
   // fog (three.js)
@@ -251,15 +254,18 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       [-300, 15, 119],
     ],
     palette: {
-      sky: ["#020b0f", "#04211d", "#0a3d33", "#12614a"],
+      sky: ["#3d1a6b", "#8c2f7a", "#e8555f", "#ff9b52"],
+      posterSun: true,
       stars: true,
       moons: [
         { x: 700, y: 130, r: 34, tint: "#8ff5d0" },
         { x: 240, y: 180, r: 14, tint: "#4fd8c4" },
       ],
-      fog: 0x123f2e, fogNear: 150, fogFar: 840,
-      hemiSky: 0x6bf0cf, hemiGround: 0x123f2a, hemiInt: 0.98,
-      sun: 0xd8f3e0, sunInt: 1.05,
+      fog: 0xd96a63, fogNear: 210, fogFar: 1250,
+      // low ambient on purpose: the sky is the light source, so scenery falls
+      // into near-black silhouette against it — the whole basis of the look
+      hemiSky: 0xffb27a, hemiGround: 0x2a1330, hemiInt: 0.42,
+      sun: 0xffd9a0, sunInt: 0.85,
       groundBase: "#18542f", groundSpeck: "#2c7648", groundDark: "#0e3521",
       road: "#233a34", roadDark: "#1a2c27", rumbleA: "#0f9d76", rumbleB: "#5eead4",
       laneLine: "#a7f3e0", edgeLine: "#d0fff0", roadFinish: "gloss",

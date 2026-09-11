@@ -284,13 +284,38 @@ export function makeSkyDome(pal: RealmPalette): THREE.Mesh {
     ctx.fill();
   }
 
-  // --- sun-side glow --------------------------------------------------------
+  // --- the sun ---------------------------------------------------------------
   // Placed at the SAME direction the HDR probe puts its sun (makeEnvMap's
   // sunU/sunV), so the bright side of the sky agrees with where reflections and
-  // shadows say the light comes from. Soft and disc-less on purpose: the key
-  // light's exact azimuth is engine-side tuning, and a hard disc in the wrong
-  // place would read as a mistake where a broad glow just reads as air.
+  // shadows say the light comes from.
+  //
+  // Realms flagged `posterSun` get a big HARD-EDGED disc sitting just above the
+  // horizon. That single flat circle is the signature of the 80s city-pop poster
+  // look — the sun is a shape, not a glare — so it deliberately breaks the
+  // "disc-less" rule the glow below follows for the naturalistic realms.
   const sun = rgb255(pal.sun);
+  if (pal.posterSun) {
+    const sx = 0.62 * W, sy = HZ - H * 0.075, sr = W * 0.052;
+    // broad atmospheric bloom around it first, so the disc sits IN the sky
+    const halo = ctx.createRadialGradient(sx, sy, sr * 0.9, sx, sy, sr * 6.5);
+    halo.addColorStop(0, rgbaCss(sun, 0.5));
+    halo.addColorStop(0.35, rgbaCss(sun, 0.18));
+    halo.addColorStop(1, rgbaCss(sun, 0));
+    ctx.fillStyle = halo;
+    ctx.beginPath();
+    ctx.arc(sx, sy, sr * 6.5, 0, Math.PI * 2);
+    ctx.fill();
+    // the disc itself: flat, hard-edged, near-white at the core
+    const face = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr);
+    face.addColorStop(0, rgbaCss(mixRgb(sun, [255, 255, 255], 0.75), 1));
+    face.addColorStop(0.82, rgbaCss(mixRgb(sun, [255, 255, 255], 0.35), 1));
+    face.addColorStop(1, rgbaCss(sun, 1));
+    ctx.fillStyle = face;
+    ctx.beginPath();
+    ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   for (const [gx, gy, gr, ga] of [
     [0.62 * W, 0.18 * H, HZ * 0.62, pal.stars ? 0.16 : 0.30],  // the sun itself
     [0.62 * W, HZ, HZ * 0.95, pal.stars ? 0.10 : 0.22],        // its haze on the horizon
