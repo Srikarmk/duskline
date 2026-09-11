@@ -171,12 +171,15 @@ function posterClouds(pal: RealmPalette, W: number, H: number): HTMLCanvasElemen
     // screen from the chase camera — the dome is only 880 m out, so texture
     // space maps to a LOT of screen. Reference skies put dozens of small crisp
     // cumulus across the frame, not three billboards.
-    const count = Math.max(6, Math.round(30 * dens));
+    // 30 was a polka-dot field overhead. Fewer, with a much wider size spread
+    // below, so a cumulus deck has big ones and small ones rather than 300
+    // identical dots.
+    const count = Math.max(5, Math.round(19 * dens));
     const hBase = H * 0.0125 * (0.35 + el * 0.8);
     const wBase = W * 0.0125 * (1.5 - el * 0.42);
     for (let i = 0; i < count; i++) {
       const x = (i / count) * W + rand() * (W / count);
-      const k = rand() < 0.45 ? 0.4 + rand() * 0.3 : 0.75 + rand() * 0.6;
+      const k = rand() < 0.4 ? 0.32 + rand() * 0.3 : 0.7 + rand() * 1.15;
       // higher rows must be NARROWER on the canvas: the equirect wraps W texels
       // around a circle that shrinks toward the pole, so a puff of fixed canvas
       // width covers more and more azimuth as it climbs

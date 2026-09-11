@@ -19,10 +19,17 @@ function canvas(w: number, h: number) {
  * env sampling, nothing that could go grey or "ghostly" at a distance. The
  * banding does all the work of reading as water.
  */
-export function makeOceanPlane(pal: RealmPalette, size = 4200): THREE.Mesh {
+export function makeOceanPlane(pal: RealmPalette, size = 4200, sea?: [string, string]): THREE.Mesh {
   const W = 512, H = 512;
   const { c, ctx } = canvas(W, H);
-  const near = pal.sky[2], far = pal.sky[3];
+  // Water mirrors the sky, so deriving its colour from the sky palette is the
+  // right default — for a hot sunset, where the sky IS the brightest thing
+  // around. It fails on a pale sky: Cape Road's grey-blue afternoon and Port
+  // Azur's hazy noon both gave a sea the exact value of the fog behind it, so
+  // the Pacific and the Med read as more haze rather than as water. Those
+  // realms name their own [near, far] instead.
+  const near = sea ? sea[0] : pal.sky[2];
+  const far = sea ? sea[1] : pal.sky[3];
 
   // base: sky colour at the horizon fading to a deeper tone close in, because
   // water mirrors the sky above it

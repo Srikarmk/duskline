@@ -2798,7 +2798,7 @@ export class Game {
       // ambient is this low.
       const c = this.coast;
       const cs = realm.coast!;
-      const sea = makeOceanPlane(pal, Math.max(12000, c.far * 8));
+      const sea = makeOceanPlane(pal, Math.max(12000, c.far * 8), cs.sea);
       // just under the beach ramp, centred on the island so it surrounds it
       sea.position.set(c.x, this.seaY, c.z);
       this.scene.add(sea);

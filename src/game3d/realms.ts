@@ -262,6 +262,9 @@ export interface RealmSpec {
     land: number;
     band?: number;
     drop?: number;
+    /** [near, far] water colours, for realms whose sky is too pale to mirror
+     *  into anything that reads as sea. */
+    sea?: [string, string];
     /**
      * Which hand of the road falls away: 0 (default) both, as a causeway does;
      * -1 or +1 for a cliff road, where the sea is on one side and the hillside
@@ -744,7 +747,8 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     // to the high point, a fast plunge back down to the waterfront, then flat
     // and tight along the harbour. 4 m at the water, 38 m at the top.
     hillScale: 0.3,
-    coast: { land: 17, band: 11, drop: 34, side: -1, skyline: false, palms: true },
+    coast: { land: 17, band: 11, drop: 34, side: -1, skyline: false, palms: true,
+      sea: ["#1b6a8c", "#57a8bd"] },   // Mediterranean turquoise
     controlPoints: [
       [316, 5, 0], [312, 7, 62], [286, 10, 118], [244, 14, 164], [190, 19, 196],
       [128, 24, 214], [64, 29, 222], [-2, 33, 220], [-66, 36, 207], [-124, 38, 182],
@@ -894,7 +898,8 @@ export const REALMS: Record<RealmId, RealmSpec> = {
     // way down — see the coast block (a short band with a huge drop = a cliff,
     // the same machinery the causeway uses with different numbers).
     hillScale: 0.5,
-    coast: { land: 24, band: 14, drop: 150, side: 1, skyline: false, palms: false },
+    coast: { land: 24, band: 14, drop: 150, side: 1, skyline: false, palms: false,
+      sea: ["#1d4f6b", "#4d7f96"] },   // deep cold Pacific, not the pale sky above it
     controlPoints: [
       [392, 20, 0], [382, 34, 98], [344, 52, 186], [282, 70, 258], [202, 86, 310],
       [110, 100, 340], [14, 110, 344], [-82, 116, 322], [-172, 118, 276], [-248, 112, 212],
