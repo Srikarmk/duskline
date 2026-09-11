@@ -336,6 +336,7 @@ export class Game {
   private sparks: SmokePuff[] = []; // impact-spark pool (bumps/hits)
   private camPos = new THREE.Vector3();
   private camYaw = 0; // smoothed camera heading — eases toward the car so the view swings in behind you instead of snapping with every steer
+  private coast: { x: number; z: number; r: number } | null = null; // coastal realms: land inside r, sea beyond
   private reliefAmp = 0; // per-realm amplitude of the rolling hills the ground rises into away from the road
   private sun!: THREE.DirectionalLight; // shadow-casting key light; its frustum follows the car
   private offTrackT = 0; // seconds left before an off-track respawn (0 = on track / no warning)
@@ -387,6 +388,7 @@ export class Game {
 
   private nitroCharges = 1;
   private nitroT = 0;
+  private nitroFill = 0;   // 0..1 toward the next charge; fills on its own
   private transformed = false;
   private transformT = 0;
 
@@ -641,6 +643,28 @@ export class Game {
     this.grandFalls.length = 0;
     this.waterCurtains.length = 0;
     this.batFlocks.length = 0;
+    // must precede the ground mesh / scenery / grass — they all sample
+    // groundHeightAtXZ and need the coastline already in it
+    this.coast = null;
+    if (this.realm.palette.posterSun && this.realm.id === "bay") {
+      const N = 160, len = this.track.length;
+      let cx = 0, cz = 0;
+      const pts: { x: number; z: number }[] = [];
+      for (let i = 0; i < N; i++) {
+        const p = this.track.pointAt((i / N) * len, 0, undefined, true);
+        pts.push({ x: p.x, z: p.z });
+        cx += p.x; cz += p.z;
+      }
+      cx /= N; cz /= N;
+      let far = 0;
+      for (const p of pts) far = Math.max(far, Math.hypot(p.x - cx, p.z - cz));
+      // shore sits a little beyond the widest point of the circuit, so there's a
+      // strip of land outside the road rather than the tarmac ending in surf
+      // land extends this far either side of the tarmac before the beach drops
+      // away — wide enough to hold the palms, narrow enough that the water is
+      // always in frame
+      this.coast = { x: cx, z: cz, r: 34 };
+    }
     const { scene, track, realm } = this;
     const pal = realm.palette;
 
@@ -742,7 +766,9 @@ export class Game {
       this.flames.push(flame);
       this.playerBody.add(flame);
     }
-    this.playerBody.add(this.carModel, mech.group, this.underGlow);
+    // underGlow removed: a glowing disc under the car reads as a UI marker
+    // sitting on the road, not as part of the car
+    this.playerBody.add(this.carModel, mech.group);
     this.playerRoot.add(this.playerBody);
     scene.add(this.playerRoot);
     this.playerWheels = collectWheels(this.carModel);
@@ -2077,7 +2103,26 @@ export class Game {
     // lost the ground under it and became "floating ghost water". A gorge needs a
     // proper spanning structure AND protected verges to exist at all — carving
     // terrain alone makes the world strictly worse, so it's gone.
-    return y - CLEAR * Math.max(0, 1 - fade);
+    let h = y - CLEAR * Math.max(0, 1 - fade);
+    // COASTLINE. A single ocean plane parked beside the track only shows up for
+    // the stretch of lap that happens to face it. For a coast road the water has
+    // to be there the whole way round, so coastal realms treat the circuit as an
+    // ISLAND: land holds inside `r`, then the ground ramps down past sea level
+    // over a beach band. The ocean plane sits under that, so open water is
+    // visible off the outside of every corner.
+    if (this.coast) {
+      // Measured from the ROAD, not from the middle of the circuit. An island
+      // ring put the shore 876 m away on a loop this size — technically water,
+      // but past the fog and invisible from the car. The references are
+      // causeways: the sea is right there at the verge on both sides. `dist` is
+      // already the distance to the centreline, so this costs nothing.
+      const over = dist - this.coast.r;
+      if (over > 0) {
+        const t = Math.min(1, over / 55);         // narrow beach, then straight to water
+        h -= (t * t) * 40;
+      }
+    }
+    return h;
   }
 
   private buildGroundTerrain(mat: THREE.Material): THREE.Mesh {
@@ -2637,20 +2682,19 @@ export class Game {
       // than a reflective surface — see makeOceanPlane — because the look needs
       // it to hold its colour exactly, and anything lit turns grey once the
       // ambient is this low.
-      const seaAt = track.pointAt(len * 0.5, 0);
-      const sea = makeOceanPlane(pal, 5200);
-      sea.position.set(seaAt.x, -9, seaAt.z - 1500);
+      const c = this.coast ?? { x: 0, z: 0, r: 600 };
+      const sea = makeOceanPlane(pal, Math.max(9000, c.r * 10));
+      // just under the beach ramp, centred on the island so it surrounds it
+      sea.position.set(c.x, -11, c.z);
       this.scene.add(sea);
 
       // the city, across the water: a flat cut-out band on the far shore
-      const sky1 = makeSkyline(rand, pal, 2000);
-      sky1.position.set(seaAt.x - 250, -8, seaAt.z - 2050);
-      sky1.rotation.y = 0.12;
-      this.scene.add(sky1);
-      const sky2 = makeSkyline(rand, pal, 1400);
-      sky2.position.set(seaAt.x + 900, -8, seaAt.z - 2350);
-      sky2.rotation.y = -0.2;
-      this.scene.add(sky2);
+      for (const [ang, span, dist] of [[0.6, 2400, 2.15], [2.4, 1700, 2.45], [4.3, 1500, 2.3]] as const) {
+        const sk = makeSkyline(rand, pal, span);
+        sk.position.set(c.x + Math.cos(ang) * c.r * dist, -10, c.z + Math.sin(ang) * c.r * dist);
+        sk.rotation.y = -ang + Math.PI / 2;   // face the island across the water
+        this.scene.add(sk);
+      }
 
       // palms along the verge, as silhouettes
       for (let d = 0; d < len; d += 34) {
@@ -3070,6 +3114,18 @@ export class Game {
 
     // nitro
     this.nitroT = Math.max(0, this.nitroT - dt);
+    // Nitro trickles back on its own, so the meter is always doing something
+    // and you're never stranded with an empty bar between pickups. Slow enough
+    // (~14 s a charge) that collecting cans is still clearly the fast route.
+    if (this.nitroCharges < NITRO_MAX_CHARGES) {
+      this.nitroFill += dt / 14;
+      while (this.nitroFill >= 1 && this.nitroCharges < NITRO_MAX_CHARGES) {
+        this.nitroFill -= 1;
+        this.nitroCharges++;
+      }
+    } else {
+      this.nitroFill = 0;
+    }
     if (this.input.nitroPressed && this.nitroCharges > 0 && this.nitroT <= 0) {
       this.nitroCharges--;
       this.nitroT = NITRO_DURATION;
@@ -4081,6 +4137,7 @@ export class Game {
       totalLaps: this.cfg.laps,
       raceTime: this.raceTime,
       nitroCharges: this.nitroCharges,
+      nitroFill: this.nitroFill,
       nitroActive: this.nitroT > 0,
       transformT: this.transformed ? this.transformT : 0,
       crashFlash: this.crashFlash,

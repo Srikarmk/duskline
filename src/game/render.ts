@@ -525,6 +525,8 @@ export interface HudState {
   totalLaps: number;
   raceTime: number;
   nitroCharges: number;
+  /** 0..1 progress toward the NEXT charge (the bar fills continuously) */
+  nitroFill?: number;
   nitroActive: boolean;
   transformT: number;
   crashFlash: number;
@@ -630,16 +632,31 @@ export function drawHud(
     ctx.fillText(`of ${hud.totalRacers}`, vw - 192, 114);
   }
 
-  // --- nitro charges (bottom-left) ---
-  panel(ctx, 16, vh - 60, 128, 44);
-  for (let i = 0; i < NITRO_MAX_CHARGES; i++) {
-    ctx.fillStyle = i < hud.nitroCharges ? (hud.nitroActive ? "#fb923c" : "#67e8f9") : "#333048";
-    flame(ctx, 44 + i * 32, vh - 50, 10);
+  // --- nitro: ONE continuous bar (Asphalt-style) rather than discrete bottles.
+  // It always shows how close the next charge is, so the meter is alive even
+  // when you're not picking anything up.
+  {
+    const bx = 16, by = vh - 56, bw = 168, bh = 20;
+    panel(ctx, bx, by - 6, bw + 12, 46);
+    const total = (hud.nitroCharges + (hud.nitroFill ?? 0)) / NITRO_MAX_CHARGES;
+    ctx.fillStyle = "#241f38";
+    ctx.fillRect(bx + 6, by, bw, bh);
+    const g2 = ctx.createLinearGradient(bx + 6, 0, bx + 6 + bw, 0);
+    if (hud.nitroActive) { g2.addColorStop(0, "#fb923c"); g2.addColorStop(1, "#fde047"); }
+    else { g2.addColorStop(0, "#22d3ee"); g2.addColorStop(1, "#a855f7"); }
+    ctx.fillStyle = g2;
+    ctx.fillRect(bx + 6, by, bw * Math.max(0, Math.min(1, total)), bh);
+    // ticks at each whole charge, so you can still read "how many bursts"
+    ctx.fillStyle = "rgba(11,11,26,0.85)";
+    for (let i = 1; i < NITRO_MAX_CHARGES; i++) ctx.fillRect(bx + 6 + (bw * i) / NITRO_MAX_CHARGES - 1, by, 2, bh);
+    ctx.strokeStyle = hud.nitroCharges > 0 ? "#67e8f9" : "#4a4468";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(bx + 6.5, by + 0.5, bw - 1, bh - 1);
+    ctx.fillStyle = "#8b85a8";
+    ctx.font = "9px monospace";
+    ctx.textAlign = "left";
+    ctx.fillText("[SPACE] NITRO", bx + 8, by + bh + 13);
   }
-  ctx.fillStyle = "#8b85a8";
-  ctx.font = "9px monospace";
-  ctx.textAlign = "left";
-  ctx.fillText("[SPACE] NITRO", 24, vh - 24);
 
   // --- control hints (bottom-left, above nitro) ---
   if (hud.cameraName) {
