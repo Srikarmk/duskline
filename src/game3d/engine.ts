@@ -42,6 +42,7 @@ import {
 import { makeWeather, type WeatherSystem } from "./weather";
 import { makeTunnelArch, makeTunnelPortal } from "./setpieces";
 import { makeGrandWaterfall, updateGrandWaterfall, makeStoneBridge, makeBatFlock, updateBatFlock } from "./props/grand";
+import { makeOceanPlane, makeSkyline, makePalmSilhouette } from "./props/coast";
 import { makeForkArrowSign, makeBlimp } from "./props/signage";
 import { BranchPath } from "./branch";
 import { FreeDrive } from "./freedrive";
@@ -2626,6 +2627,40 @@ export class Game {
         const w = makeWaterfall(rand);
         w.scale.multiplyScalar(1.4 + rand() * 0.6);
         place(w, d, side * (ROAD_HALF_WIDTH + 12 + rand() * 6), faceRoad(d, side));
+      }
+    } else if (realm.id === "bay") {
+      // THE SEA. Offset to one side of the circuit and dropped below the road so
+      // the causeway reads as running along a shore. It's a painted plane rather
+      // than a reflective surface — see makeOceanPlane — because the look needs
+      // it to hold its colour exactly, and anything lit turns grey once the
+      // ambient is this low.
+      const seaAt = track.pointAt(len * 0.5, 0);
+      const sea = makeOceanPlane(pal, 5200);
+      sea.position.set(seaAt.x, -9, seaAt.z - 1500);
+      this.scene.add(sea);
+
+      // the city, across the water: a flat cut-out band on the far shore
+      const sky1 = makeSkyline(rand, pal, 2000);
+      sky1.position.set(seaAt.x - 250, -8, seaAt.z - 2050);
+      sky1.rotation.y = 0.12;
+      this.scene.add(sky1);
+      const sky2 = makeSkyline(rand, pal, 1400);
+      sky2.position.set(seaAt.x + 900, -8, seaAt.z - 2350);
+      sky2.rotation.y = -0.2;
+      this.scene.add(sky2);
+
+      // palms along the verge, as silhouettes
+      for (let d = 0; d < len; d += 34) {
+        for (const side of [-1, 1]) {
+          if (rand() < 0.5) continue;
+          const off = side * (ROAD_HALF_WIDTH + 5 + rand() * 9);
+          const jd = d + rand() * 12;
+          const p = track.pointAt(this.track.wrap(jd), off);
+          const pm = makePalmSilhouette(rand);
+          pm.position.set(p.x, this.terrainYAt(jd, off), p.z);
+          pm.rotation.y = rand() * Math.PI * 2;
+          this.scene.add(pm);
+        }
       }
     } else if (realm.id === "forest") {
       // cave mouths set back in the hillsides, facing the road

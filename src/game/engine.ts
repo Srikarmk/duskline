@@ -21,7 +21,8 @@ export type GameMode = "classic" | "timetrial" | "nitro" | "transform" | "grandp
 export type RealmId =
   | "forest" | "ember" | "peaks" | "void"
   | "sands" | "castle" | "circuit" | "metro"
-  | "nebula";
+  | "nebula"
+  | "bay";
 export type CarId =
   | "comet" | "bolt" | "titan" | "wisp" | "apex" | "goliath"
   | "wraith" | "nitro" | "dune" | "blaze";

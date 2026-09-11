@@ -33,6 +33,7 @@ export const REALM_WEATHER: Record<RealmId, WeatherKind> = {
   circuit: "none",
   metro: "rain",
   nebula: "none",
+  bay: "none",
 };
 
 /** Plausible weather each realm can cycle through mid-race. Kept per-realm on
@@ -49,6 +50,7 @@ export const REALM_WEATHER_POOL: Record<RealmId, WeatherKind[]> = {
   circuit:["none", "rain", "mist"],
   metro:  ["rain", "mist", "none"],
   nebula: ["none"],
+  bay:    ["none", "mist"],
 };
 
 /** Per-realm ambient sound bed (procedural). */
@@ -63,6 +65,7 @@ export const REALM_AMBIENCE: Record<RealmId, AmbienceKind> = {
   circuit: "city",
   metro: "city",
   nebula: "space",
+  bay: "wind",
 };
 
 /** Tunnel set-pieces per realm: `at` is a fraction (0..1) of the lap where the
@@ -83,6 +86,7 @@ export const REALM_TUNNELS: Record<RealmId, { at: number; len: number }[]> = {
   circuit: [],
   metro: [{ at: 0.36, len: 98 }, { at: 0.74, len: 66 }],
   nebula: [],
+  bay: [],
 };
 
 /** River crossings per realm: fractions (0..1) of the lap where the track
@@ -97,6 +101,7 @@ export const REALM_RIVERS: Record<RealmId, number[]> = {
   circuit: [],
   metro: [],
   nebula: [],
+  bay: [],
 };
 
 /** Fork zones per realm: the road splits around a central island into a LEFT
@@ -115,6 +120,7 @@ export const REALM_SPLITS: Record<RealmId, { at: number; len: number }[]> = {
   circuit: [{ at: 0.3, len: 140 }],
   metro: [{ at: 0.52, len: 120 }],
   nebula: [],
+  bay: [],
 };
 
 /** A line of flavour for each world — shown on the loadout before a race. */
@@ -137,6 +143,7 @@ export const REALM_LORE: Record<RealmId, string> = {
     "Downtown after midnight, when the grid belongs to whoever's fastest. Wet asphalt, neon, and no speed limit the law can catch.",
   nebula:
     "Deeper than the Void, where the war-tubes coil through a living green cloud. Weapons hot, no rules, no witnesses.",
+  bay: "Ten miles of causeway between a burning sky and a flat calm sea. The city watches from across the water and never gets any closer.",
 };
 
 export interface RealmPalette {
@@ -596,6 +603,44 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       mountain: 0x0a3020, mountainDark: 0x051f14, clutter: 0x0a3020, gem: 0x22e88a,
     },
     scenery: [{ kind: "crystal", weight: 1 }],
+  },
+  bay: {
+    id: "bay",
+    name: "Sunset Bay",
+    blurb: "A causeway between a burning sky and a flat calm sea, the city watching from across the water.",
+    // Sunset Bay: a long coastal loop with sweeping, open corners — the art this
+    // realm is built from is about the VIEW, so the road is deliberately fast and
+    // uncluttered rather than technical, giving you time to look out to sea.
+    controlPoints: [
+      [501, 14, 0], [497, 15, 83], [446, 15, 155], [366, 14, 208], [278, 12, 241],
+      [192, 10, 260], [112, 8, 270], [37, 6, 273], [-36, 5, 266], [-102, 5, 246],
+      [-159, 6, 215], [-203, 7, 177], [-242, 9, 138], [-285, 11, 99], [-339, 13, 56],
+      [-400, 14, 0], [-451, 15, -75], [-469, 15, -163], [-438, 14, -248], [-356, 12, -309],
+      [-243, 10, -329], [-127, 8, -305], [-34, 6, -254], [27, 5, -198], [66, 5, -159],
+      [108, 6, -146], [172, 7, -149], [263, 9, -149], [366, 11, -127], [454, 13, -75],
+    ],
+    palette: {
+      // the reference palette: violet zenith burning down through magenta and
+      // coral to a hot amber horizon
+      sky: ["#2b1a5e", "#8e2f7d", "#e8555f", "#ffae5c"],
+      posterSun: true,
+      stars: false,
+      moons: [],
+      // fog is the horizon colour so land, sea and sky all meet in one wash
+      fog: 0xe2795f, fogNear: 260, fogFar: 1600,
+      // low ambient: the sky is the light source and everything on the shore
+      // falls into silhouette against it
+      hemiSky: 0xffb27a, hemiGround: 0x2a1330, hemiInt: 0.40,
+      sun: 0xffd9a0, sunInt: 0.9,
+      groundBase: "#6b4a52", groundSpeck: "#7d5560", groundDark: "#3d2833",
+      groundTint: 0x8a5f63,
+      road: "#2a2230", roadDark: "#1d1825", rumbleA: "#ffffff", rumbleB: "#e8555f",
+      laneLine: "#fff3d6", edgeLine: "#ffe6b0", roadFinish: "gloss",
+      crystalColors: [0xffae5c, 0xe8555f, 0xffd9a0],
+      mountain: 0x3a2440, mountainDark: 0x241528, clutter: 0x2a1c30, gem: 0xffae5c,
+    },
+    // only palms — everything else in the art is either sea, sky or skyline
+    scenery: [{ kind: "palm", weight: 1 }],
   },
 };
 
