@@ -334,6 +334,7 @@ export class Game {
   private sparks: SmokePuff[] = []; // impact-spark pool (bumps/hits)
   private camPos = new THREE.Vector3();
   private camYaw = 0; // smoothed camera heading — eases toward the car so the view swings in behind you instead of snapping with every steer
+  private gorges: { x: number; z: number }[] = [];   // river crossings to carve a valley under
   private reliefAmp = 0; // per-realm amplitude of the rolling hills the ground rises into away from the road
   private sun!: THREE.DirectionalLight; // shadow-casting key light; its frustum follows the car
   private offTrackT = 0; // seconds left before an off-track respawn (0 = on track / no warning)
@@ -638,6 +639,9 @@ export class Game {
     // wiping the set-pieces placement had just registered (0 animated groups)
     this.grandFalls.length = 0;
     this.batFlocks.length = 0;
+    // before anything samples the terrain — the ground mesh, scenery and grass
+    // all read groundHeightAtXZ, and the gorge has to already be in it
+    this.markGorges();
     const { scene, track, realm } = this;
     const pal = realm.palette;
 
@@ -1783,6 +1787,18 @@ export class Game {
     return out;
   }
 
+  /** Register each river crossing so the terrain carves a valley there. Must run
+   *  before the ground mesh or any scenery is placed, since both sample
+   *  groundHeightAtXZ. */
+  private markGorges() {
+    this.gorges.length = 0;
+    const len = this.track.length;
+    for (const at of REALM_RIVERS[this.realm.id] ?? []) {
+      const p = this.track.pointAt(this.track.wrap(at * len), 0, undefined, true);
+      this.gorges.push({ x: p.x, z: p.z });
+    }
+  }
+
   private placeRivers() {
     const pal = this.realm.palette;
     const len = this.track.length;
@@ -1824,6 +1840,32 @@ export class Game {
       wf.rotation.y = Math.atan2(-dxr, -dzr);
       this.scene.add(wf);
       this.grandFalls.push(wf);
+
+      // A curtain of water falling ACROSS the road, so you actually drive through
+      // it. Deliberately NOT makeGrandWaterfall scaled down: that builder brings a
+      // 60 m cliff and plunge pool with it, and shrinking the whole thing just put
+      // a rock face on the carriageway and blotted out the screen. This is only
+      // what's needed — a few translucent sheets spanning the width, no collision,
+      // no shadow, so you punch straight through.
+      const od = this.track.wrap(d - 34);
+      const op = this.track.pointAt(od, 0);
+      const otan = this.track.tangentAt(od);
+      const curtain = new THREE.Group();
+      const CW = ROAD_HALF_WIDTH * 2.3, CH = 7.5;
+      for (let k = 0; k < 3; k++) {
+        const geo = new THREE.PlaneGeometry(CW, CH, 1, 1);
+        const mat = new THREE.MeshBasicMaterial({
+          color: 0xdff3ff, transparent: true, opacity: 0.3 - k * 0.07,
+          depthWrite: false, side: THREE.DoubleSide,
+        });
+        const sheet = new THREE.Mesh(geo, mat);
+        sheet.position.set(0, CH / 2, (k - 1) * 0.7);
+        sheet.userData.noShadow = true;
+        curtain.add(sheet);
+      }
+      curtain.position.set(op.x, op.y - 0.2, op.z);
+      curtain.rotation.y = Math.atan2(otan.x, otan.z);   // lie across the road
+      this.scene.add(curtain);
     }
   }
 
@@ -2006,7 +2048,20 @@ export class Game {
     // tarmac). Eased out over ~20 m, so it's far too gentle to feel while driving.
     const CLEAR = 0.12, CLEAR_FAR = 26;
     const fade = Math.max(0, dist - ROAD_HALF_WIDTH) / (CLEAR_FAR - ROAD_HALF_WIDTH);
-    return y - CLEAR * Math.max(0, 1 - fade);
+    let h = y - CLEAR * Math.max(0, 1 - fade);
+    // GORGE. A viaduct standing on flat ground is just a wall with a road on it —
+    // the whole point is the drop underneath. Each river crossing carves a bowl
+    // out of the terrain so the bridge genuinely spans a valley. Cosine falloff
+    // so the rim blends into the surrounding land instead of ending in a cliff.
+    for (const gq of this.gorges) {
+      const gd = Math.hypot(x - gq.x, z - gq.z);
+      const R = 78;
+      if (gd < R) {
+        const t = 0.5 + 0.5 * Math.cos((gd / R) * Math.PI);   // 1 at centre -> 0 at rim
+        h -= 17 * t * t;
+      }
+    }
+    return h;
   }
 
   private buildGroundTerrain(mat: THREE.Material): THREE.Mesh {
@@ -2351,7 +2406,10 @@ export class Game {
     // `side` (±1), grounded on the terrain. `faceRoad` turns local +Z (the
     // "front" of stands / castles / sphinxes) toward the track; otherwise the
     // group takes a free random spin.
-    const drop = (group: THREE.Object3D, frac: number, side: 1 | -1, off: number, faceRoad: boolean) => {
+    // `yawOffset` exists for props whose FRONT is -Z (the waterfalls). Aiming +Z
+    // at the road, as faceRoad does, presents their back — which is why bare
+    // cliffs kept turning up around the map.
+    const drop = (group: THREE.Object3D, frac: number, side: 1 | -1, off: number, faceRoad: boolean, yawOffset = 0) => {
       const d = track.wrap(frac * len);
       // Hero monuments are huge, so a local offset isn't enough — walk them out
       // until their whole footprint clears the ENTIRE circuit (a twisty lap can
@@ -2367,7 +2425,7 @@ export class Game {
       group.position.set(p.x, this.terrainYAt(d, lat), p.z);
       if (faceRoad) {
         const rp = track.pointAt(d, 0);
-        group.rotation.y = Math.atan2(rp.x - p.x, rp.z - p.z);
+        group.rotation.y = Math.atan2(rp.x - p.x, rp.z - p.z) + yawOffset;
       } else {
         group.rotation.y = rand() * Math.PI * 2;
       }
@@ -2464,7 +2522,7 @@ export class Game {
         grove.add(crystals(2.6));
         drop(grove, 0.4, 1, 95, false);
         // a big scenic waterfall cliff
-        drop(at(makeWaterfall(rand), 0, 0, 2.0), 0.15, -1, 100, false);
+        drop(at(makeWaterfall(rand), 0, 0, 2.0), 0.15, -1, 100, true, Math.PI);
         drop(cluster(crystals(3.0), at(makeCrystalCluster(rand, cols), 11, 6, 2.2)), 0.78, 1, 90, false);
         break;
       }
@@ -2490,7 +2548,7 @@ export class Game {
           at(makeCrystalCluster(rand, cols), -10, 6, 2.4),
           at(rock("rockA", 10), 6, -6, 1),
         ), 0.4, 1, 100, false);
-        drop(at(makeWaterfall(rand), 0, 0, 2.2), 0.62, -1, 95, false);
+        drop(at(makeWaterfall(rand), 0, 0, 2.2), 0.62, -1, 95, true, Math.PI);
         drop(cluster(
           crystals(4.0),
           at(makeCrystalCluster(rand, cols), 14, 10, 2.6),

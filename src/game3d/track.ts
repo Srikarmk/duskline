@@ -398,13 +398,19 @@ export class Track {
     const count = Math.max(2, Math.floor(this.length / step));
 
     // dark stems (lit) + bright caps (fullbright) as two instanced meshes
-    const stemGeo = new THREE.CylinderGeometry(0.13, 0.18, 1.35, 6);
-    stemGeo.translate(0, 0.675, 0);
-    const stemMat = new THREE.MeshStandardMaterial({ color: 0x2a2438, metalness: 0.5, roughness: 0.5 });
+    // These are roadside reflector markers, but the stem was 0x2a2438 — a
+    // near-black at luminance 0.021 — on a 1.35 m post every 13 m down BOTH
+    // verges. 370 of them silhouetted into the "small black pillars" dotted all
+    // over the map. Real marker posts are pale so drivers can see them: slimmer,
+    // shorter and light grey now, so they read as roadside furniture instead of
+    // unexplained black stumps.
+    const stemGeo = new THREE.CylinderGeometry(0.075, 0.10, 0.95, 6);
+    stemGeo.translate(0, 0.475, 0);
+    const stemMat = new THREE.MeshStandardMaterial({ color: 0xc9c6d6, metalness: 0.25, roughness: 0.55 });
     const stems = new THREE.InstancedMesh(stemGeo, stemMat, count * 2);
 
-    const capGeo = new THREE.SphereGeometry(0.26, 10, 8);
-    capGeo.translate(0, 1.45, 0);
+    const capGeo = new THREE.SphereGeometry(0.17, 10, 8);
+    capGeo.translate(0, 1.02, 0);
     const capMat = new THREE.MeshBasicMaterial({ vertexColors: true });
     const caps = new THREE.InstancedMesh(capGeo, capMat, count * 2);
 
