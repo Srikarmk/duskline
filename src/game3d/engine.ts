@@ -45,7 +45,7 @@ import { makeGrandWaterfall, updateGrandWaterfall, makeStoneBridge, makeBatFlock
 import { makeForkArrowSign, makeBlimp } from "./props/signage";
 import { BranchPath } from "./branch";
 import { FreeDrive } from "./freedrive";
-import { loadPBR } from "./textures";
+import { loadPBR, pbr } from "./textures";
 import { makeKart, setCarEnvTint, CAR_SPECS, CAR_IDS, type CarStat } from "./cars";
 import { REALMS, pickScenery, REALM_WEATHER, REALM_WEATHER_POOL, REALM_AMBIENCE, REALM_TUNNELS, REALM_RIVERS, REALM_SPLITS, type RealmSpec, type SceneryKind, type RealmPalette, type WeatherKind } from "./realms";
 import { makePyramid, makeObelisk, makeSphinx, makePalm, makeSandRock } from "./props/egyptian";
@@ -1361,6 +1361,108 @@ export class Game {
     return Math.sign(off) * Math.max(Math.abs(off), need);
   }
 
+
+  // --- instanced scenery ----------------------------------------------------
+  /** Baked, mergeable variants for one scenery kind, or null if the kind can't
+   *  be instanced (sprites, animated parts, multi-material meshes). */
+  private propVariantCache = new Map<SceneryKind, { reach: number; parts: { mat: THREE.Material; geo: THREE.BufferGeometry }[] }[] | null>();
+
+  /** Build a small variant set for a kind ONCE, baking each variant's geometry
+   *  down to one merged geometry per material.
+   *
+   *  Trees proved the point: this renderer is draw-call bound, so thousands of
+   *  individually-built props convert almost linearly into frame time. Props are
+   *  procedurally unique, which is exactly what blocks instancing — so we trade
+   *  "every prop unique" for "N unique variants, reused". The group's own random
+   *  yaw is deliberately NOT baked; yaw goes per instance, so a handful of
+   *  variants still yields a roadside where no two props sit identically.
+   *  Building 5 variants instead of thousands of objects also makes world build
+   *  dramatically cheaper. */
+  private getPropVariants(kind: SceneryKind, library: ModelLibrary, rand: () => number) {
+    const cached = this.propVariantCache.get(kind);
+    if (cached !== undefined) return cached;
+    const list: { reach: number; parts: { mat: THREE.Material; geo: THREE.BufferGeometry }[] }[] = [];
+    let ok = true;
+    for (let i = 0; i < 5 && ok; i++) {
+      const g = this.sceneryObjectRaw(kind, library, rand);
+      g.rotation.y = 0;
+      g.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(g);
+      if (!isFinite(box.min.x) || !isFinite(box.max.x)) { ok = false; break; }
+      const reach = Math.max(Math.abs(box.min.x), Math.abs(box.max.x), Math.abs(box.min.z), Math.abs(box.max.z));
+      const inv = g.matrixWorld.clone().invert();
+      const buckets = new Map<THREE.Material, THREE.BufferGeometry[]>();
+      g.traverse((o) => {
+        if (!ok) return;
+        const a = o as unknown as { isMesh?: boolean; isInstancedMesh?: boolean; isSprite?: boolean; isLine?: boolean; isPoints?: boolean };
+        if (a.isSprite || a.isLine || a.isPoints || a.isInstancedMesh) { ok = false; return; }
+        if (!a.isMesh) return;
+        const m = o as THREE.Mesh;
+        if (Array.isArray(m.material)) { ok = false; return; }
+        let geo = m.geometry.clone();
+        if (geo.index) geo = geo.toNonIndexed();
+        geo.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld));
+        const arr = buckets.get(m.material as THREE.Material) ?? [];
+        arr.push(geo);
+        buckets.set(m.material as THREE.Material, arr);
+      });
+      if (!ok) break;
+      const parts: { mat: THREE.Material; geo: THREE.BufferGeometry }[] = [];
+      for (const [mat, geos] of buckets) {
+        // a merge needs every geometry in the bucket to carry the same attributes
+        const sig = new Set(geos.map((x) => Object.keys(x.attributes).sort().join(",")));
+        if (sig.size !== 1) { ok = false; break; }
+        const merged = geos.length === 1 ? geos[0] : mergeGeometries(geos, false);
+        if (!merged) { ok = false; break; }
+        parts.push({ mat, geo: merged });
+      }
+      if (!ok) break;
+      list.push({ reach, parts });
+    }
+    const result = ok && list.length ? list : null;
+    this.propVariantCache.set(kind, result);
+    return result;
+  }
+
+  /** Same standoff rule as clearOffset/propMetrics, but from a cached reach so
+   *  no object needs to exist to decide where a prop can stand. */
+  private offsetForReach(reach: number, off: number, gap = 4) {
+    const need = ROAD_HALF_WIDTH + gap + reach;
+    return Math.sign(off) * Math.max(Math.abs(off), need);
+  }
+  private marginForReach(reach: number) {
+    return 3 + Math.max(0, reach - 4) * 1.4;
+  }
+
+  /** Turn collected placements into instanced draw calls. */
+  private buildPropFields(buckets: Map<string, { variant: { parts: { mat: THREE.Material; geo: THREE.BufferGeometry }[] }; spots: { x: number; y: number; z: number; s: number; r: number }[] }>) {
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const up = new THREE.Vector3(0, 1, 0);
+    const pos = new THREE.Vector3();
+    const scl = new THREE.Vector3();
+    let calls = 0;
+    for (const { variant, spots } of buckets.values()) {
+      if (!spots.length) continue;
+      for (const part of variant.parts) {
+        const inst = new THREE.InstancedMesh(part.geo, part.mat, spots.length);
+        spots.forEach((sp, i) => {
+          q.setFromAxisAngle(up, sp.r);
+          pos.set(sp.x, sp.y, sp.z);
+          scl.set(sp.s, sp.s, sp.s);
+          m.compose(pos, q, scl);
+          inst.setMatrixAt(i, m);
+        });
+        inst.instanceMatrix.needsUpdate = true;
+        inst.castShadow = true;
+        inst.receiveShadow = true;
+        this.scene.add(inst);
+        calls++;
+      }
+    }
+    return calls;
+  }
+
   private sceneryObject(kind: SceneryKind, library: ModelLibrary, rand: () => number): THREE.Object3D {
     return this.mergeProp(this.sceneryObjectRaw(kind, library, rand));
   }
@@ -1473,6 +1575,82 @@ export class Game {
 
   /** Build tunnel runs (entry/exit portals + a colonnade of arches) that hug
    *  the track curve, from the per-realm REALM_TUNNELS config. */
+
+  /** A genuine stone CAVE, not a road tunnel.
+   *
+   *  The previous "cave" was the engineered tunnel geometry: a repeated, perfectly
+   *  uniform ribbed arch. That reads as poured concrete infrastructure no matter
+   *  what texture you hang on it. A cave is the opposite of uniform — it's a bored
+   *  irregular tube through rock, so this generates ONE continuous mesh that
+   *  follows the road centreline, with the cross-section radius perturbed by
+   *  layered sine noise per-ring AND per-angle so no two metres of wall match.
+   *  Stalactites hang from the ceiling; the whole thing is one merged geometry,
+   *  so a 90 m cave is 1-2 draw calls instead of ~35 arches. */
+  private buildCaveTube(d0: number, d1: number): THREE.Mesh[] {
+    const STEP = 2.2, M = 13;          // rings along the cave, points around the arch
+    const HALF = ROAD_HALF_WIDTH + 4.2, H = 8.2;
+    const rings: THREE.Vector3[][] = [];
+    const noise = (a: number, b: number) =>
+      Math.sin(a * 1.7 + b * 0.9) * 0.5 + Math.sin(a * 3.1 - b * 2.3) * 0.28 + Math.sin(b * 5.7) * 0.16;
+    const tmpC = new THREE.Vector3();
+    for (let d = d0; d <= d1; d += STEP) {
+      const c = this.track.pointAt(this.track.wrap(d), 0, tmpC.clone(), true);
+      const tan = this.track.tangentAt(this.track.wrap(d));
+      const right = new THREE.Vector3(tan.z, 0, -tan.x).normalize();
+      const ring: THREE.Vector3[] = [];
+      for (let i = 0; i < M; i++) {
+        const a = (i / (M - 1)) * Math.PI;            // right side -> over the top -> left
+        const wob = 1 + noise(d * 0.22, a * 2.4) * 0.17;
+        // the walls flare out near the floor like a real bored passage
+        const flare = 1 + Math.pow(Math.cos(a), 2) * 0.12;
+        const x = Math.cos(a) * HALF * wob * flare;
+        const y = Math.sin(a) * H * wob;
+        ring.push(new THREE.Vector3(c.x + right.x * x, c.y + y, c.z + right.z * x));
+      }
+      rings.push(ring);
+    }
+    const pos: number[] = [];
+    for (let r = 0; r < rings.length - 1; r++) {
+      for (let i = 0; i < M - 1; i++) {
+        const A = rings[r][i], B = rings[r][i + 1], C = rings[r + 1][i + 1], D = rings[r + 1][i];
+        // wound so the faces point INWARD — you're inside the rock looking out
+        pos.push(A.x, A.y, A.z, C.x, C.y, C.z, B.x, B.y, B.z);
+        pos.push(A.x, A.y, A.z, D.x, D.y, D.z, C.x, C.y, C.z);
+      }
+    }
+    const shell = new THREE.BufferGeometry();
+    shell.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    shell.computeVertexNormals();
+
+    // stalactites: cones hung from the ceiling, merged into one geometry
+    const spikes: THREE.BufferGeometry[] = [];
+    let seed = 1337;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    for (let r = 2; r < rings.length - 2; r++) {
+      if (rnd() > 0.55) continue;
+      const i = 4 + Math.floor(rnd() * 5);            // roughly the ceiling band
+      const p = rings[r][i];
+      const len = 0.8 + rnd() * 2.4;
+      const g = new THREE.ConeGeometry(0.18 + rnd() * 0.26, len, 5);
+      g.translate(0, -len / 2, 0);                    // hang downward from the roof
+      g.rotateX(Math.PI);
+      g.translate(p.x, p.y - 0.1, p.z);
+      spikes.push(g.toNonIndexed());
+    }
+    const lib = pbr();
+    const rockMat = new THREE.MeshStandardMaterial({
+      ...(lib ? { map: lib.rock.diff, normalMap: lib.rock.nor, roughnessMap: lib.rock.arm ?? undefined } : {}),
+      color: 0x8f8c86, roughness: 1, metalness: 0, flatShading: true, side: THREE.DoubleSide,
+    });
+    const out = [new THREE.Mesh(shell, rockMat)];
+    if (spikes.length) {
+      const merged = mergeGeometries(spikes, false);
+      if (merged) out.push(new THREE.Mesh(merged, rockMat));
+    }
+    for (const m of out) { m.castShadow = true; m.receiveShadow = true; }
+    return out;
+  }
+
   private placeTunnels() {
     const pal = this.realm.palette;
     const len = this.track.length;
@@ -1490,10 +1668,15 @@ export class Game {
       const exit = makeTunnelPortal(pal, lit);
       this.placeOnTrack(exit, d1, Math.PI); // flip so its face points back out
       this.scene.add(exit);
-      for (let d = d0 + 3; d < d1 - 3; d += 2.6) {
-        const arch = makeTunnelArch(pal, lit);
-        this.placeOnTrack(arch, d);
-        this.scene.add(arch);
+      if (lit) {
+        for (let d = d0 + 3; d < d1 - 3; d += 2.6) {
+          const arch = makeTunnelArch(pal, lit);
+          this.placeOnTrack(arch, d);
+          this.scene.add(arch);
+        }
+      } else {
+        // natural cave: one irregular bored tube, not a row of identical arches
+        for (const m of this.buildCaveTube(d0 + 1, d1 - 1)) this.scene.add(m);
       }
       // Bats, but only in the natural (unlit) caves — a colony roosting in a
       // lit road tunnel would read as a bug. Their flight volume floors at
@@ -1522,7 +1705,13 @@ export class Game {
       // A classical arched viaduct now carries the road over the gorge instead of
       // the old flat plank bridge. Its deck sits 4 cm proud of nothing — recessed
       // to y = -0.04 — so the road ribbon at y = 0 always wins the depth test.
-      const bridge = makeStoneBridge(rand, pal, 78);
+      // NO rigid viaduct here. makeStoneBridge is one straight 88 m slab, but the
+      // road both curves AND (since hills went in) climbs through this stretch —
+      // so the deck cut diagonally across the tarmac instead of carrying it. It
+      // needs a straight, flat span to sit on, which this circuit doesn't have at
+      // the river. Left out rather than shipped broken; the crossing keeps the
+      // original railed bridge that actually follows the road.
+      const bridge = makeRiverBridge(pal);
       this.placeOnTrack(bridge, d);
       this.scene.add(bridge);
 
@@ -1537,7 +1726,9 @@ export class Game {
       wf.position.set(p.x, this.terrainYAt(jd, off) - 5, p.z);
       const tan = this.track.tangentAt(jd);
       const rx = tan.z, rz = -tan.x;              // road "right"
-      wf.rotation.y = Math.atan2(-side * rx, -side * rz);
+      // The fall is built facing -Z, but this yaw aims +Z at the road — so it was
+      // presenting the bare back of its cliff, which is the mystery "building".
+      wf.rotation.y = Math.atan2(-side * rx, -side * rz) + Math.PI;
       this.scene.add(wf);
       this.grandFalls.push(wf);
     }
@@ -1781,59 +1972,75 @@ export class Game {
     if (realm.style === "void") {
       this.decorateVoid(library, rand);
     } else {
-      // roadside scenery — three bands each side for depth. Spacing is tuned so
-      // the (now longer) tracks stay lush without ballooning the draw-call count
-      // (that was the top-speed lag: thousands of separate meshes). Density leans
-      // on the mid/far bands (cheaper, further-out fill) so worlds read as full.
+      // ROADSIDE SCENERY — three bands each side for depth, now INSTANCED.
+      // Every prop used to be individually built and added to the scene, and
+      // since the renderer is draw-call bound that converted almost linearly
+      // into frame time (this was the bulk of the ~6,300 remaining meshes).
+      // Trees proved the fix; this applies it to the rest of the scenery. Kinds
+      // that can't be instanced (sprites, animated parts) fall back to the old
+      // per-object path automatically.
+      const propBuckets = new Map<string, { variant: { parts: { mat: THREE.Material; geo: THREE.BufferGeometry }[] }; spots: { x: number; y: number; z: number; s: number; r: number }[] }>();
+      const addInstanced = (kind: SceneryKind, vi: number, v: { parts: { mat: THREE.Material; geo: THREE.BufferGeometry }[] }, x: number, y: number, z: number, sc: number, yaw: number) => {
+        const key = kind + "#" + vi;
+        let b = propBuckets.get(key);
+        if (!b) { b = { variant: v, spots: [] }; propBuckets.set(key, b); }
+        b.spots.push({ x, y, z, s: sc, r: yaw });
+      };
+
       for (let d = 0; d < len; d += 5.3) {
         for (const side of [-1, 1]) {
-          // near band (dense, right by the road)
-          if (rand() < 0.85) {
+          // three bands: near (dense, by the road), mid, far (big background fill)
+          const bands: { chance: number; base: number; spread: number; scale: [number, number]; solid: number | null }[] = [
+            { chance: 0.85, base: 5, spread: 13, scale: [1.0, 0.0], solid: 1.7 },
+            { chance: 0.56, base: 20, spread: 36, scale: [1.1, 0.5], solid: 2.2 },
+            { chance: 0.34, base: 58, spread: 70, scale: [1.5, 1.1], solid: null },
+          ];
+          bands.forEach((band, bi) => {
+            if (rand() >= band.chance) return;
             const kind = pickScenery(realm, rand);
-            const obj = this.sceneryObject(kind, library, rand);
-            // keep big monuments off the verge so they don't overhang the track
             const isLandmark = LANDMARK_KINDS.has(kind);
-            const nearOff = isLandmark ? 34 + rand() * 22 : 5 + rand() * 13;
-            const off = this.clearOffset(obj, side * (ROAD_HALF_WIDTH + nearOff));
-            const jd = d + rand() * 4;
-            const p = track.pointAt(jd, off);
-            // the offset clears the road HERE, but a winding circuit can loop back
-            // into this spot — drop the prop rather than block the racing line
-            const mt = this.propMetrics(obj);
-            if (!this.roadClear(p.x, p.z, mt.reach, mt.margin)) continue;
-            obj.position.set(p.x, this.terrainYAt(jd, off), p.z); // sit on the terrain (roads have elevation now)
-            this.scene.add(obj);
-            const nr = isLandmark ? 5 : 1.7;
-            if (!SOFT_SCENERY.has(kind) && this.obstacleClear(p.x, p.z, nr)) this.obstacles.push({ x: p.x, z: p.z, r: nr });
-          }
-          // mid band
-          if (rand() < 0.56) {
-            const kind = pickScenery(realm, rand);
+            const sc = band.scale[0] + rand() * band.scale[1];
+            const jd = d + rand() * (bi === 2 ? 5 : 4);
+            const yaw = rand() * Math.PI * 2;
+
+            const variants = this.getPropVariants(kind, library, rand);
+            if (variants) {
+              const vi = Math.floor(rand() * variants.length);
+              const v = variants[vi];
+              const reach = v.reach * sc;
+              // big monuments stand well back so they never overhang the track
+              const want = bi === 0 && isLandmark ? 34 + rand() * 22 : band.base + rand() * band.spread;
+              const off = this.offsetForReach(reach, side * (ROAD_HALF_WIDTH + want));
+              const p = track.pointAt(jd, off);
+              // the offset clears the road HERE, but a winding circuit can loop
+              // back into this spot — drop the prop rather than block the line
+              if (!this.roadClear(p.x, p.z, reach, this.marginForReach(reach))) return;
+              addInstanced(kind, vi, v, p.x, this.terrainYAt(jd, off), p.z, sc, yaw);
+              const nr = band.solid === null ? null : (bi === 0 && isLandmark ? 5 : band.solid);
+              if (nr !== null && !SOFT_SCENERY.has(kind) && this.obstacleClear(p.x, p.z, nr)) {
+                this.obstacles.push({ x: p.x, z: p.z, r: nr });
+              }
+              return;
+            }
+
+            // fallback: kinds with sprites/animated parts stay individual objects
             const obj = this.sceneryObject(kind, library, rand);
-            obj.scale.multiplyScalar(1.1 + rand() * 0.5); // scale BEFORE clearing, so the gap uses the real size
-            const off = this.clearOffset(obj, side * (ROAD_HALF_WIDTH + 20 + rand() * 36));
-            const jd = d + rand() * 4;
+            if (sc !== 1) obj.scale.multiplyScalar(sc);
+            const want = bi === 0 && isLandmark ? 34 + rand() * 22 : band.base + rand() * band.spread;
+            const off = this.clearOffset(obj, side * (ROAD_HALF_WIDTH + want));
             const p = track.pointAt(jd, off);
             const mt = this.propMetrics(obj);
-            if (!this.roadClear(p.x, p.z, mt.reach, mt.margin)) continue;
+            if (!this.roadClear(p.x, p.z, mt.reach, mt.margin)) return;
             obj.position.set(p.x, this.terrainYAt(jd, off), p.z);
             this.scene.add(obj);
-            if (!SOFT_SCENERY.has(kind) && this.obstacleClear(p.x, p.z, 2.2)) this.obstacles.push({ x: p.x, z: p.z, r: 2.2 });
-          }
-          // far band (big, fills the mid-distance out toward the mountains)
-          if (rand() < 0.34) {
-            const obj = this.sceneryObject(pickScenery(realm, rand), library, rand);
-            obj.scale.multiplyScalar(1.5 + rand() * 1.1); // scale BEFORE clearing, so the gap uses the real size
-            const off = this.clearOffset(obj, side * (ROAD_HALF_WIDTH + 58 + rand() * 70));
-            const jd = d + rand() * 5;
-            const p = track.pointAt(jd, off);
-            const mt = this.propMetrics(obj);
-            if (!this.roadClear(p.x, p.z, mt.reach, mt.margin)) continue;
-            obj.position.set(p.x, this.terrainYAt(jd, off), p.z);
-            this.scene.add(obj);
-          }
+            const nr = band.solid === null ? null : (bi === 0 && isLandmark ? 5 : band.solid);
+            if (nr !== null && !SOFT_SCENERY.has(kind) && this.obstacleClear(p.x, p.z, nr)) {
+              this.obstacles.push({ x: p.x, z: p.z, r: nr });
+            }
+          });
         }
       }
+      this.buildPropFields(propBuckets);
 
       // ground clutter fills the empty flats
       const centerline = track.sampleXZ(240);
