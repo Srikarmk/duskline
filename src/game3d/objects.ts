@@ -128,55 +128,69 @@ function posterClouds(pal: RealmPalette, W: number, H: number): HTMLCanvasElemen
   const rand = () => { sd = (sd * 1664525 + 1013904223) >>> 0; return sd / 4294967296; };
 
   const sky1 = rgb255(pal.sky[1]), sky2 = rgb255(pal.sky[2]), sky3 = rgb255(pal.sky[3]);
-  const lit = mixRgb(sky3, [255, 255, 255], 0.7);
-  const mid = mixRgb(sky2, [255, 255, 255], 0.42);
-  const shade = mixRgb(sky1, sky2, 0.55);
+  const lit = mixRgb(sky3, [255, 255, 255], 0.74);
+  const mid = mixRgb(sky2, [255, 255, 255], 0.46);
+  const shade = mixRgb(sky1, sky2, 0.5);
 
-  // one puff = a row of overlapping flattened ellipses, so the outline is lumpy
-  const puff = (x: number, y: number, w: number, h: number, n: number, fill: string) => {
+  /**
+   * One cumulus: a FLAT BASE with a row of circular lobes on top. That flat
+   * bottom is the whole silhouette — a cloud built from a row of ellipses (what
+   * this used to do) is lumpy on both sides and reads as a smudge, because a
+   * real cloud's base is where the air hits its condensation level and is
+   * dead level across the whole thing.
+   */
+  const cumulus = (x: number, y: number, w: number, h: number, lobes: number, fill: string, lift: number) => {
     ctx.fillStyle = fill;
     ctx.beginPath();
-    for (let i = 0; i < n; i++) {
-      const t = n === 1 ? 0.5 : i / (n - 1);
-      const px = x + (t - 0.5) * w;
-      // tallest in the middle, tapering to the ends
-      const ph = h * (0.45 + 0.55 * Math.sin(Math.PI * (0.15 + t * 0.7)));
-      const pw = (w / n) * (1.5 + rand() * 0.7);
-      ctx.ellipse(px, y - ph * 0.5, pw, ph, 0, 0, Math.PI * 2);
+    ctx.moveTo(x - w, y);
+    for (let i = 0; i < lobes; i++) {
+      const t = (i + 0.5) / lobes;
+      // tallest lobes in the middle of the cloud, smaller at the shoulders
+      const r = (w / lobes) * (0.95 + 1.15 * Math.sin(Math.PI * t)) * lift;
+      const cx = x - w + 2 * w * t;
+      ctx.arc(cx, y - Math.min(h, r) * 0.22, Math.min(r, h * 1.5), Math.PI, 0);
     }
+    ctx.lineTo(x + w, y);
+    ctx.closePath();
     ctx.fill();
   };
 
-  const ROWS = 11;
+  // Rows all the way from just off the horizon to overhead. Previously these
+  // stopped at 53 degrees, which put every cloud in one band hugging the
+  // horizon where they merged into mush, and left the zenith completely bare.
+  const ROWS = 15;
   for (let r = 0; r < ROWS; r++) {
-    // elevation of this row, packed toward the horizon
     const f = r / (ROWS - 1);
-    const el = 0.035 + Math.pow(f, 1.7) * 0.92;             // radians above horizon
+    const el = 0.05 + Math.pow(f, 1.35) * 1.42;            // radians above horizon
     const y = HZ - (el / (Math.PI / 2)) * HZ;
-    // near the horizon a cloud is far away: short, wide and numerous
-    const sizeK = 0.22 + el * 1.05;
-    const count = Math.round(40 - f * 26);
-    const hBase = H * 0.013 * sizeK * 1.5;
-    const wBase = W * 0.028 * (1.9 - el * 0.55) * 1.15;
+    // Density peaks at mid elevation. Packing the horizon rows is what made the
+    // haze band: at 2 degrees up you are looking through 30 km of cloud deck,
+    // so they overlap into a solid smear rather than reading as clouds.
+    const dens = Math.sin(Math.PI * Math.min(1, 0.12 + f * 0.88));
+    // Small and many. At the old scale one cloud filled a quarter of the
+    // screen from the chase camera — the dome is only 880 m out, so texture
+    // space maps to a LOT of screen. Reference skies put dozens of small crisp
+    // cumulus across the frame, not three billboards.
+    const count = Math.max(6, Math.round(30 * dens));
+    const hBase = H * 0.0125 * (0.35 + el * 0.8);
+    const wBase = W * 0.0125 * (1.5 - el * 0.42);
     for (let i = 0; i < count; i++) {
-      const x = rand() * W;
-      // a fair number of small ones: all-large puffs merge into ribbons that
-      // wrap the whole dome instead of reading as individual clouds
-      const k = rand() < 0.5 ? 0.3 + rand() * 0.28 : 0.62 + rand() * 0.6;
-      // Higher rows must be NARROWER on the canvas. The equirect wraps W texels
+      const x = (i / count) * W + rand() * (W / count);
+      const k = rand() < 0.45 ? 0.4 + rand() * 0.3 : 0.75 + rand() * 0.6;
+      // higher rows must be NARROWER on the canvas: the equirect wraps W texels
       // around a circle that shrinks toward the pole, so a puff of fixed canvas
-      // width covers more and more azimuth as it climbs — at 60 degrees up the
-      // same ellipse smears into a ribbon right across the sky.
-      const w = wBase * k * (1 - 0.55 * f);
-      const h = hBase * (0.5 + rand() * 0.85) * (0.6 + k * 0.45);
-      // break the row up so 11 rows don't read as 11 stripes
-      const yj = (rand() - 0.5) * (HZ / ROWS) * 0.8;
-      const n = 2 + Math.floor(rand() * 4);
-      // three flat tones, each inset and lifted — reads as a lit top over a
-      // shaded base with no gradient anywhere
-      puff(x, y + yj + h * 0.22, w, h * 0.72, n, rgbaCss(shade, 0.9));
-      puff(x + w * 0.02, y + yj + h * 0.05, w * 0.92, h * 0.8, n, rgbaCss(mid, 0.95));
-      puff(x + w * 0.04, y + yj - h * 0.1, w * 0.74, h * 0.66, n, rgbaCss(lit, 1));
+      // width covers more and more azimuth as it climbs
+      const w = wBase * k * (1 - 0.5 * f);
+      const h = hBase * (0.7 + rand() * 0.7);
+      const lobes = 2 + Math.floor(rand() * 3);
+      const yj = (rand() - 0.5) * (HZ / ROWS) * 0.9;
+      const yy = y + yj;
+      // shaded underside: the same flat base, sitting a little proud below
+      cumulus(x, yy + h * 0.1, w, h * 0.55, lobes, rgbaCss(shade, 0.92), 0.8);
+      // main body
+      cumulus(x, yy, w, h, lobes, rgbaCss(mid, 0.97), 1);
+      // sunlit crown, inset and raised so it catches only the tops
+      cumulus(x + w * 0.06, yy - h * 0.2, w * 0.78, h * 0.85, lobes, rgbaCss(lit, 1), 1);
     }
   }
   return c;
@@ -316,11 +330,17 @@ export function makeSkyDome(pal: RealmPalette): THREE.Mesh {
   // into 16 of them, packed tighter toward the horizon where the colour is
   // changing fastest.
   if (pal.posterSun) {
-    const BANDS = 16;
+    // Bands are EVEN IN ELEVATION ANGLE, which for an equirect means even in v.
+    // The previous pow(t, 0.68) made them widest at the zenith, where the
+    // equirect's latitude circles converge — so they came out as concentric
+    // rings around the pole, like a target. And banding stops before the top
+    // 18%: nothing hides pole convergence except not drawing an edge there.
+    const BANDS = 26, TOP = 0.18;
     const img = ctx.getImageData(0, 0, 1, H).data;   // sample the gradient we just laid
     for (let b = 0; b < BANDS; b++) {
-      const t0 = Math.pow(b / BANDS, 0.68), t1 = Math.pow((b + 1) / BANDS, 0.68);
-      const y0 = Math.round(t0 * HZ), y1 = Math.round(t1 * HZ);
+      const t0 = b / BANDS, t1 = (b + 1) / BANDS;
+      if (t1 <= TOP) continue;
+      const y0 = Math.round(Math.max(t0, TOP) * HZ), y1 = Math.round(t1 * HZ);
       if (y1 <= y0) continue;
       const sy = Math.min(H - 1, Math.round((y0 + y1) / 2)) * 4;
       ctx.fillStyle = `rgb(${img[sy]},${img[sy + 1]},${img[sy + 2]})`;
@@ -403,15 +423,7 @@ export function makeSkyDome(pal: RealmPalette): THREE.Mesh {
   const sun = rgb255(pal.sun);
   if (pal.posterSun) {
     const sx = 0.62 * W, sy = HZ - H * 0.075, sr = W * 0.052;
-    // broad atmospheric bloom around it first, so the disc sits IN the sky
-    const halo = ctx.createRadialGradient(sx, sy, sr * 0.9, sx, sy, sr * 6.5);
-    halo.addColorStop(0, rgbaCss(sun, 0.5));
-    halo.addColorStop(0.35, rgbaCss(sun, 0.18));
-    halo.addColorStop(1, rgbaCss(sun, 0));
-    ctx.fillStyle = halo;
-    ctx.beginPath();
-    ctx.arc(sx, sy, sr * 6.5, 0, Math.PI * 2);
-    ctx.fill();
+    // NO broad bloom. A 6.5-radius soft halo is a blur the width of the sky.
     // the disc itself: flat, hard-edged, near-white at the core
     const face = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr);
     face.addColorStop(0, rgbaCss(mixRgb(sun, [255, 255, 255], 0.75), 1));
@@ -423,7 +435,21 @@ export function makeSkyDome(pal: RealmPalette): THREE.Mesh {
     ctx.fill();
   }
 
-  for (const [gx, gy, gr, ga] of [
+  // These two are the actual reason the poster sky kept coming back "blurry".
+  // They are radial gradients 0.62 and 0.95 of the dome HEIGHT across, painted
+  // over the whole upper sky at 0.30 and 0.22 alpha — i.e. a soft white bloom
+  // covering everything, applied AFTER the band quantisation, which erased it.
+  // Naturalistic realms want them. A screen-printed sunset does not: there the
+  // sun is a shape with a tight ring, and the sky around it is flat colour.
+  if (pal.posterSun) {
+    const sx = 0.62 * W, sy = HZ - H * 0.075, sr = W * 0.052;
+    for (const [k, a] of [[1.55, 0.3], [2.2, 0.16], [3.1, 0.07]] as const) {
+      ctx.fillStyle = rgbaCss(sun, a);
+      ctx.beginPath();
+      ctx.arc(sx, sy, sr * k, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else for (const [gx, gy, gr, ga] of [
     [0.62 * W, 0.18 * H, HZ * 0.62, pal.stars ? 0.16 : 0.30],  // the sun itself
     [0.62 * W, HZ, HZ * 0.95, pal.stars ? 0.10 : 0.22],        // its haze on the horizon
   ] as const) {

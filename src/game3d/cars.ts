@@ -265,7 +265,9 @@ function neutralMats(): NeutralMats {
     grilleMat: paint(0x14141a, { metal: 0.7, rough: 0.5 }),
     headMat: paint(0xfff6d5, { emissive: 0xffe6a0, ei: 0.7 }),
     lensMat: paint(0xcdeeff, { emissive: 0x9fdcff, ei: 0.5, metal: 0.4, rough: 0.12 }),
-    tailMat: paint(0x3a0202, { emissive: 0xff2626, ei: 1.25 }),
+    // 2.1 blew the lamps out to peach-white; 1.4 keeps them unmistakably RED
+    // while still separating from red bodywork
+    tailMat: paint(0x4a0303, { emissive: 0xff2a20, ei: 1.4 }),
   });
 }
 
@@ -789,8 +791,15 @@ function carMaterials(color: number, raceNum?: number): CarMaterials {
       void metalMap;
     }
   }
-  // bright alloy wheel face in the livery accent (per-car colour, so not shared)
-  const rimMat = paint(accentHex, { metal: 0.95, rough: 0.22 });
+  // ALLOY, not livery. Painting the wheel face in the car's accent colour is a
+  // kart convention: on a red car it renders four bright red discs where the
+  // wheels should be. Road cars wear machined alloy; the livery reaches them
+  // through the environment reflection, which is enough.
+  // metalness 0.95 makes the wheel face a MIRROR, and a mirror inside a red
+  // sunset is a red wheel — which is what it still looked like after dropping
+  // the livery tint. A machined alloy is only semi-specular; at 0.7/0.34 the
+  // base grey wins and the sky just glints off it.
+  const rimMat = paint(0x9ba2ad, { metal: 0.7, rough: 0.34 });
   // The accent metals want a slightly hotter reflection than the paint. NOTE:
   // three overwrites envMapIntensity with scene.environmentIntensity while the
   // scene probe is installed, so this is the probe-less fallback — the values
@@ -1421,21 +1430,31 @@ interface RoadCarParams {
   twoTone?: boolean;           // dark lower body
   chrome?: boolean;            // chrome bumpers (classics)
   fogLamps?: boolean;
-  pipes?: number;              // exhaust tip count
+  pipes?: number;
+  /** wheel finish, when the car is known for one (rally gold, dark alloy) */
+  rim?: number;              // exhaust tip count
 }
 
 // --- section profiles, shared between cars of the same architecture ---------
 // A wedge and a long-bonnet classic differ mostly HERE: the wedge's front deck
 // sits far below its rear deck, the classic's bonnet runs flat for half the car.
 const RIBS_MID_WEDGE: RibRow[] = [
-  [ 1.00, 0.05, 0.14, 0.36, 0.40, 0.26, 0.44],
+  // Blunter, wider nose. A 0.14 floor width tapering to a 0.36 shoulder is a
+  // prototype's needle; a road wedge has a squared-off nose with a splitter
+  // under it, and the difference is most of why the old profile read as a Le
+  // Mans car rather than a road car.
+  [ 1.00, 0.05, 0.34, 0.56, 0.42, 0.46, 0.46],
   [ 0.88, 0.00, 0.50, 0.76, 0.48, 0.54, 0.52],
   [ 0.62, 0.00, 0.64, 0.96, 0.60, 0.82, 0.62],
   [ 0.32, 0.00, 0.70, 0.93, 0.72, 0.74, 0.74],
   [-0.02, 0.00, 0.72, 0.94, 1.00, 0.70, 1.00],
   [-0.40, 0.00, 0.74, 1.00, 1.00, 0.80, 1.00],
   [-0.74, 0.02, 0.70, 0.99, 1.00, 0.88, 1.00],
-  [-1.00, 0.04, 0.60, 0.95, 0.98, 0.92, 0.99],
+  // Tuck the tail UNDER. A kamm cut that runs from the floor to the deck is a
+  // 0.73 m x 1.86 m flat plate aimed straight at the chase camera — the "red
+  // slab" read. Lifting the floor and pulling the bottom width in gives the
+  // undercut every mid-engine car has, and leaves room for a diffuser.
+  [-1.00, 0.17, 0.50, 0.95, 0.98, 0.92, 0.99],
 ];
 const RIBS_MID_CURVE: RibRow[] = [
   [ 1.00, 0.05, 0.18, 0.42, 0.44, 0.30, 0.50],
@@ -1482,61 +1501,62 @@ const ROAD_CARS: Record<CarId, RoadCarParams> = {
   f40: {
     L: 4.43, W: 1.98, R: 0.33, rearR: 1.08, clr: 0.12,
     sillY: 0.40, shoulderY: 0.78, deckY: 0.86, roofY: 1.24,
-    ribs: RIBS_MID_WEDGE, cabF: 0.34, cabR: -0.50, cabW: 0.68, whF: 0.62, whR: 0.60,
+    ribs: RIBS_MID_WEDGE, cabF: 0.34, cabR: -0.50, cabW: 0.78, whF: 0.62, whR: 0.60,
     wing: "straked", lamps: "popup", tail: "quad", louvres: 6, naca: true, pipes: 3,
   },
   tauro: {
     L: 4.16, W: 2.02, R: 0.33, rearR: 1.12, clr: 0.11,
     sillY: 0.38, shoulderY: 0.74, deckY: 0.82, roofY: 1.16,
-    ribs: RIBS_MID_WEDGE, cabF: 0.40, cabR: -0.36, cabW: 0.60, whF: 0.60, whR: 0.62,
+    ribs: RIBS_MID_WEDGE, cabF: 0.40, cabR: -0.36, cabW: 0.7, whF: 0.60, whR: 0.62,
     wing: "basket", lamps: "popup", tail: "quad", louvres: 5, naca: true, pipes: 4,
   },
   meridian: {
     L: 4.29, W: 1.84, R: 0.32, rearR: 1.06, clr: 0.12,
     sillY: 0.42, shoulderY: 0.80, deckY: 0.90, roofY: 1.26,
-    ribs: RIBS_MID_CURVE, cabF: 0.36, cabR: -0.48, cabW: 0.72, whF: 0.62, whR: 0.60,
+    ribs: RIBS_MID_CURVE, cabF: 0.36, cabR: -0.48, cabW: 0.8, whF: 0.62, whR: 0.60,
     wing: "duck", lamps: "slim", tail: "bar", louvres: 7, scoop: "roof", pipes: 2,
   },
   veloce: {
     L: 4.46, W: 2.00, R: 0.34, rearR: 1.04, clr: 0.13,
     sillY: 0.44, shoulderY: 0.84, deckY: 0.94, roofY: 1.32,
-    ribs: RIBS_MID_CURVE, cabF: 0.30, cabR: -0.50, cabW: 0.74, whF: 0.62, whR: 0.60,
+    ribs: RIBS_MID_CURVE, cabF: 0.30, cabR: -0.50, cabW: 0.82, whF: 0.62, whR: 0.60,
     wing: "duck", lamps: "round2", tail: "bar", twoTone: true, scoop: "roof", pipes: 2,
   },
   testa: {
     L: 4.49, W: 1.98, R: 0.33, rearR: 1.10, clr: 0.12,
     sillY: 0.40, shoulderY: 0.76, deckY: 0.84, roofY: 1.22,
-    ribs: RIBS_MID_WEDGE, cabF: 0.34, cabR: -0.42, cabW: 0.66, whF: 0.62, whR: 0.60,
+    ribs: RIBS_MID_WEDGE, cabF: 0.34, cabR: -0.42, cabW: 0.76, whF: 0.62, whR: 0.60,
     wing: "none", lamps: "popup", tail: "slats", strakes: 5, pipes: 2,
   },
   zanza: {
     L: 4.43, W: 1.81, R: 0.32, rearR: 1.05, clr: 0.12,
     sillY: 0.40, shoulderY: 0.78, deckY: 0.86, roofY: 1.26,
-    ribs: RIBS_MID_CURVE, cabF: 0.34, cabR: -0.50, cabW: 0.76, whF: 0.62, whR: 0.60,
+    ribs: RIBS_MID_CURVE, cabF: 0.34, cabR: -0.50, cabW: 0.82, whF: 0.62, whR: 0.60,
     wing: "duck", lamps: "slim", tail: "bar", louvres: 4, pipes: 2,
   },
   imprez: {
     L: 4.34, W: 1.75, R: 0.32, clr: 0.20,
     sillY: 0.46, shoulderY: 0.88, deckY: 0.98, roofY: 1.46,
-    ribs: RIBS_SEDAN, cabF: 0.22, cabR: -0.46, cabW: 0.82, whF: 0.64, whR: 0.62,
+    ribs: RIBS_SEDAN, cabF: 0.22, cabR: -0.46, cabW: 0.86, whF: 0.64, whR: 0.62,
     wing: "blade", lamps: "slim", tail: "twin", scoop: "rally", fogLamps: true, pipes: 2,
+    rim: 0xc9a44a,   // the gold wheels are half of why you recognise this car
   },
   firehawk: {
     L: 4.98, W: 1.86, R: 0.35, rearR: 1.06, clr: 0.17,
     sillY: 0.44, shoulderY: 0.84, deckY: 0.92, roofY: 1.40,
-    ribs: RIBS_MUSCLE, cabF: 0.12, cabR: -0.60, cabW: 0.80, whF: 0.66, whR: 0.62,
-    wing: "whale", lamps: "slim", tail: "twin", scoop: "shaker", pipes: 2,
+    ribs: RIBS_MUSCLE, cabF: 0.12, cabR: -0.60, cabW: 0.86, whF: 0.66, whR: 0.62,
+    wing: "whale", lamps: "slim", tail: "twin", scoop: "shaker", pipes: 2, rim: 0x8a8e96,
   },
   iroc: {
     L: 4.87, W: 1.85, R: 0.34, rearR: 1.06, clr: 0.16,
     sillY: 0.42, shoulderY: 0.82, deckY: 0.90, roofY: 1.38,
-    ribs: RIBS_MUSCLE, cabF: 0.14, cabR: -0.58, cabW: 0.80, whF: 0.66, whR: 0.62,
-    wing: "duck", lamps: "round4", tail: "quad", twoTone: true, scoop: "bulge", pipes: 2,
+    ribs: RIBS_MUSCLE, cabF: 0.14, cabR: -0.58, cabW: 0.86, whF: 0.66, whR: 0.62,
+    wing: "duck", lamps: "round4", tail: "quad", twoTone: true, scoop: "bulge", pipes: 2, rim: 0x8a8e96,
   },
   fairlady: {
     L: 4.14, W: 1.63, R: 0.31, clr: 0.16,
     sillY: 0.40, shoulderY: 0.78, deckY: 0.86, roofY: 1.32,
-    ribs: RIBS_FRONT_LONG, cabF: 0.10, cabR: -0.64, cabW: 0.74, whF: 0.64, whR: 0.62,
+    ribs: RIBS_FRONT_LONG, cabF: 0.10, cabR: -0.64, cabW: 0.82, whF: 0.64, whR: 0.62,
     wing: "none", lamps: "round2", tail: "twin", chrome: true, pipes: 1,
   },
 };
@@ -1546,6 +1566,7 @@ function buildRoadCar(color: number, p: RoadCarParams, num?: number): THREE.Grou
   const m = carMaterials(color, num);
   const { bodyMat, bodyPlain, darkMat, glass, tireMat, rimMat, chromeMat, grilleMat, lensMat, tailMat } = m;
 
+  if (p.rim !== undefined) m.rimMat.color.setHex(p.rim);
   const { L, W, R, sillY, shoulderY, deckY, roofY } = p;
   const hl = L / 2, hw = W / 2;
   const clr = p.clr ?? 0.13;
@@ -1633,16 +1654,23 @@ function buildRoadCar(color: number, p: RoadCarParams, num?: number): THREE.Grou
   // bodywork and were half-swallowed by it, which is why the tail read as an
   // unlit slab from the chase camera.
   const ty = deckY * 0.82, tz = -hl - 0.012;
-  // dark panel the lamps are let into, so they read as inset rather than stuck on
-  g.add(box(W * 0.92, 0.3, 0.03, darkMat, 0, ty, -hl * 0.998));
+  // Dark panel the lamps are let into. It must not be COPLANAR with the body's
+  // own rear face — at -hl * 0.998 with a 0.03 depth it straddled it, leaving
+  // two surfaces a hundredth of a metre apart, and that z-fight is the glitchy
+  // flicker across the back of the car. Front face buried inside, rear face
+  // clearly proud.
+  g.add(box(W * 0.9, 0.27, 0.06, grilleMat, 0, ty, -hl - 0.008));
+  // body-colour lip above the recess, so the tail is BANDED (lip / black panel
+  // / undercut / diffuser) instead of one continuous painted face
+  g.add(box(W * 0.95, 0.06, 0.08, bodyPlain, 0, ty + 0.17, -hl - 0.004));
   if (tail === "bar") {
     g.add(box(W * 0.86, 0.085, 0.05, tailMat, 0, ty, tz));
-    g.add(box(W * 0.88, 0.03, 0.05, darkMat, 0, deckY * 0.9, -hl * 0.99));
+    g.add(box(W * 0.88, 0.03, 0.06, darkMat, 0, deckY * 0.9, -hl - 0.012));
   } else if (tail === "quad") {
     for (const sx of [-1.55, -0.55, 0.55, 1.55]) {
-      const l = new THREE.Mesh(new THREE.CylinderGeometry(0.095, 0.095, 0.05, 12), tailMat);
+      const l = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.115, 0.06, 14), tailMat);
       l.rotation.x = Math.PI / 2;
-      l.position.set(sx * W * 0.21, ty, tz);
+      l.position.set(sx * W * 0.21, ty, tz - 0.01);
       g.add(l);
     }
   } else if (tail === "twin") {
@@ -1653,7 +1681,9 @@ function buildRoadCar(color: number, p: RoadCarParams, num?: number): THREE.Grou
     for (let i = 0; i < 5; i++)
       g.add(box(W * 0.92, 0.022, 0.05, bodyPlain, 0, ty - 0.08 + i * 0.04, -hl * 0.995));
   }
-  g.add(box(W * 0.66, 0.2, L * 0.05, grilleMat, 0, clr + 0.1, -hl * 0.95));   // diffuser
+  // diffuser — depth chosen so its rear face clears the body rather than
+  // landing half a millimetre off it
+  g.add(box(W * 0.66, 0.2, L * 0.05, grilleMat, 0, clr + 0.1, -hl * 0.93));
   const np = p.pipes ?? 2;
   for (let i = 0; i < np; i++) {
     const off = np === 1 ? 0 : (i / (np - 1) - 0.5) * W * 0.34;
@@ -1668,13 +1698,16 @@ function buildRoadCar(color: number, p: RoadCarParams, num?: number): THREE.Grou
   if (wing === "duck") {
     g.add(box(W * 0.9, 0.05, L * 0.07, bodyPlain, 0, deckY + 0.05, -hl * 0.86));
   } else if (wing === "straked") {
-    // the 80s straked wing: one plane carried on two fences that run forward
-    // into the engine cover, endplates squared off
-    const wy = deckY + 0.3, wz = -hl * 0.84;
-    g.add(box(W * 0.96, 0.055, L * 0.11, bodyPlain, 0, wy, wz));
+    // The 80s straked wing: a thin plane carried clear of the deck on two
+    // uprights. The endplates used to be 0.3 tall and a fifth of the car LONG,
+    // which with the plane on top closed the whole thing into a box — it read
+    // as a red packing crate strapped to the tail, not as an aerofoil. The
+    // defining feature of a wing is that you can see the sky under it.
+    const wy = deckY + 0.26, wz = -hl * 0.86;
+    g.add(box(W * 0.94, 0.05, L * 0.085, bodyPlain, 0, wy, wz));              // plane
     for (const sx of [-1, 1]) {
-      g.add(box(0.05, 0.3, L * 0.2, bodyPlain, sx * hw * 0.95, wy - 0.15, wz + L * 0.03));
-      g.add(box(0.06, 0.26, L * 0.09, darkMat, sx * hw * 0.5, wy - 0.14, wz));
+      g.add(box(0.04, 0.19, L * 0.1, bodyPlain, sx * hw * 0.94, wy - 0.1, wz));  // endplate
+      g.add(box(0.05, 0.23, 0.08, darkMat, sx * hw * 0.44, wy - 0.12, wz));      // upright
     }
   } else if (wing === "basket") {
     const wy = deckY + 0.44, wz = -hl * 0.7;
@@ -1709,15 +1742,45 @@ function buildRoadCar(color: number, p: RoadCarParams, num?: number): THREE.Grou
   const canopyHalf = (w: number, yB: number, yT: number): [number, number][] => [
     [0, yB], [w, yB], [w * 0.95, (yB + yT) / 2], [w * 0.5, yT], [0, yT],
   ];
+  /**
+   * Deck height of the BODY at a given z-fraction, read back out of the rib
+   * table. The canopy used to start at a constant deckY, but the bonnet is far
+   * below the rear deck on a wedge — 0.64 against 0.86 on the F40 — so the
+   * windscreen began 17 cm in the air above the bonnet it was supposed to be
+   * growing out of, which is the gap between the glass and the body.
+   */
+  const deckAtZ = (zf: number): number => {
+    const rows = p.ribs;
+    for (let i = 0; i < rows.length - 1; i++) {
+      const a = rows[i], b = rows[i + 1];
+      if (zf <= a[0] && zf >= b[0]) {
+        const t = (a[0] - zf) / (a[0] - b[0] || 1);
+        return deckY * (a[6] + (b[6] - a[6]) * t);
+      }
+    }
+    return deckY * rows[rows.length - 1][6];
+  };
   const span = p.cabF - p.cabR;
+  const zf = (k: number) => p.cabF - span * k;
   const canopy: Rib[] = [
-    { z: hl * p.cabF,                  half: canopyHalf(cw * 0.8,  deckY * 0.94, deckY * 0.99) },
-    { z: hl * (p.cabF - span * 0.22),  half: canopyHalf(cw * 0.95, deckY,        roofY * 0.96) },
-    { z: hl * (p.cabF - span * 0.52),  half: canopyHalf(cw,        deckY,        roofY) },
-    { z: hl * (p.cabF - span * 0.8),   half: canopyHalf(cw * 0.9,  deckY,        roofY * 0.93) },
-    { z: hl * p.cabR,                  half: canopyHalf(cw * 0.72, deckY,        deckY * 1.02) },
+    { z: hl * zf(0),     half: canopyHalf(cw * 0.8,  deckAtZ(zf(0)) - 0.03,    deckAtZ(zf(0))) },
+    { z: hl * zf(0.22),  half: canopyHalf(cw * 0.95, deckAtZ(zf(0.22)) - 0.02, roofY * 0.96) },
+    { z: hl * zf(0.52),  half: canopyHalf(cw,        deckAtZ(zf(0.52)) - 0.02, roofY) },
+    { z: hl * zf(0.8),   half: canopyHalf(cw * 0.9,  deckAtZ(zf(0.8)) - 0.02,  roofY * 0.93) },
+    { z: hl * zf(1),     half: canopyHalf(cw * 0.72, deckAtZ(zf(1)) - 0.02,    deckAtZ(zf(1)) + 0.02) },
   ];
-  g.add(loftBody(canopy, glass, 5));
+  g.add(loftBody(canopy, glass, 2));
+  // A/B pillars in body colour. Without them the canopy is one dark blob and
+  // the eye never separates "cabin" from "bodywork" — you read the whole car
+  // as a single moulded lump.
+  for (const sx of [-1, 1]) {
+    const aY = (deckAtZ(zf(0.22)) + roofY * 0.96) / 2;
+    g.add(box(0.055, roofY * 0.96 - deckAtZ(zf(0.22)), 0.09, bodyPlain, sx * cw * 0.9, aY, hl * zf(0.2)));
+    const bY = (deckAtZ(zf(0.82)) + roofY * 0.92) / 2;
+    g.add(box(0.06, roofY * 0.92 - deckAtZ(zf(0.82)), 0.1, bodyPlain, sx * cw * 0.86, bY, hl * zf(0.84)));
+  }
+  // roof cap, so the top of the cabin is body and not more glass
+  g.add(box(cw * 1.5, 0.045, Math.abs(hl * span) * 0.34, bodyPlain, 0, roofY, hl * zf(0.52)));
   const drv = makeDriver(0x14121c, false);
   drv.position.set(0, deckY - 0.16, hl * (p.cabF - span * 0.45));
   drv.scale.setScalar(0.86);
