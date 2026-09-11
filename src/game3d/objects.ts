@@ -1185,69 +1185,66 @@ function gemGeometry(girdleR: number, pavH: number, crownH: number, tableR: numb
 }
 
 export function makeGem(color: number, air: boolean): THREE.Mesh {
-  // A proper cut jewel: a hexagonal pavilion tapering to a point, a girdle and
-  // a short crown rising to a flat table — a real brilliant-cut silhouette,
-  // not a stretched octahedron — with a bright emissive core blooming through
-  // the translucent facets and a thin sparkle rim tracing every edge. Air
-  // (mid-air bonus) gems are bigger, glow harder and carry a faceted halo ring
-  // so they read as high-value.
-  const base = new THREE.Color(air ? 0xfbbf24 : color);
-  const R = air ? 0.42 : 0.34; // girdle radius
-  const geo = gemGeometry(R, R * 2.2, R * 0.9, R * 0.42);
+  // Not a diamond. The old pickup was a brilliant-cut jewel with an emissive
+  // shell at ~1.0 AND a white core at 2.1 behind it, so every facet blew out to
+  // the same cream white — all that cut geometry, and it read as a pale blob.
+  // Emissive is not the same thing as expensive.
+  //
+  // This is a spinning chrome CHIP instead: a dark octagonal body, a polished
+  // mirror rim that catches the sky probe as a hard moving glint, and a neon
+  // face inset with a chevron. Standing vertical and spinning about Y it goes
+  // edge-on and back like a flipped coin, which is what makes it catch the eye
+  // at 160 mph without needing to glow at the sky.
+  const base = new THREE.Color(air ? 0xffc857 : color);
+  const R = air ? 0.46 : 0.36;
+  const T = R * 0.26;
 
-  const shell = new THREE.MeshStandardMaterial({
-    color: base,
-    emissive: base.clone().offsetHSL(0, 0.06, -0.04),
-    emissiveIntensity: air ? 1.25 : 0.95,
-    metalness: 0.25,
-    roughness: 0.1,
-    flatShading: true,
-    transparent: true,
-    opacity: 0.85,
+  // body: axis along local Y, then laid over so the face points along Z. Every
+  // child below is authored in this local frame.
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(R * 0.9, R * 0.9, T, 8),
+    new THREE.MeshStandardMaterial({ color: 0x16131d, metalness: 0.85, roughness: 0.3, flatShading: true })
+  );
+  body.rotation.x = Math.PI / 2;
+
+  const chrome = new THREE.MeshStandardMaterial({ color: 0xf4f6fa, metalness: 1, roughness: 0.08, flatShading: true });
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(R * 0.92, T * 0.44, 4, 8), chrome);
+  rim.rotation.x = Math.PI / 2;
+  body.add(rim);
+
+  const faceMat = new THREE.MeshStandardMaterial({
+    color: base, emissive: base, emissiveIntensity: air ? 1.5 : 1.1,
+    metalness: 0.2, roughness: 0.35, flatShading: true,
   });
-  const gem = new THREE.Mesh(geo, shell);
-
-  // hotter inner core visible through the translucent shell — same cut,
-  // scaled down, so it reads as a hot heart rather than a blurry blob
-  const coreGeo = geo.clone();
-  coreGeo.scale(0.5, 0.5, 0.5);
-  const core = new THREE.Mesh(
-    coreGeo,
-    new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      emissive: base.clone().offsetHSL(0, -0.2, 0.35),
-      emissiveIntensity: air ? 2.7 : 2.1,
-      flatShading: true,
-    })
-  );
-  gem.add(core);
-
-  // thin bright rim tracing every facet edge — the cut's sparkle
-  const rim = new THREE.LineSegments(
-    new THREE.EdgesGeometry(geo),
-    new THREE.LineBasicMaterial({
-      color: base.clone().offsetHSL(0, -0.35, 0.42),
-      transparent: true,
-      opacity: 0.9,
-    })
-  );
-  gem.add(rim);
-
-  if (air) {
-    const halo = new THREE.Mesh(
-      new THREE.TorusGeometry(R * 1.9, 0.05, 3, 12),
-      new THREE.MeshStandardMaterial({
-        color: base.clone().offsetHSL(0, -0.1, 0.2),
-        emissive: base.clone().offsetHSL(0, 0, 0.15),
-        emissiveIntensity: 1.7,
-        flatShading: true,
-      })
-    );
-    halo.rotation.x = Math.PI / 2.6; // tilt so the spin reads as an orbit
-    gem.add(halo);
+  const glyphMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff, emissive: base.clone().offsetHSL(0, -0.45, 0.4),
+    emissiveIntensity: air ? 2.2 : 1.7, flatShading: true,
+  });
+  for (const sy of [-1, 1]) {
+    const face = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.68, R * 0.68, T * 0.18, 8), faceMat);
+    face.position.y = sy * (T * 0.52);
+    body.add(face);
+    // chevron glyph: two short bars meeting at a point, pointing "up" the chip
+    for (const sx of [-1, 1]) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(R * 0.5, T * 0.22, R * 0.14), glyphMat);
+      bar.position.set(sx * R * 0.17, sy * (T * 0.62), -R * 0.1);
+      bar.rotation.y = sx * 0.62;
+      body.add(bar);
+    }
   }
 
-  return gem;
+  if (air) {
+    // mid-air bonus: an orbiting ring so it reads as the high-value pickup
+    const halo = new THREE.Mesh(
+      new THREE.TorusGeometry(R * 1.7, 0.045, 3, 14),
+      new THREE.MeshStandardMaterial({
+        color: base, emissive: base.clone().offsetHSL(0, 0, 0.2), emissiveIntensity: 1.6, flatShading: true,
+      })
+    );
+    halo.rotation.set(Math.PI / 2.6, 0, 0.4);
+    body.add(halo);
+  }
+  return body;
 }
 
 export function makeNitroCan(): THREE.Group {
