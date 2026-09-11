@@ -636,7 +636,9 @@ export function drawHud(
   // It always shows how close the next charge is, so the meter is alive even
   // when you're not picking anything up.
   {
-    const bx = 16, by = vh - 56, bw = 168, bh = 20;
+    // centred along the bottom: it's the thing you watch while driving, so it
+    // belongs on the line your eyes already follow, not tucked in a corner
+    const bw = 260, bh = 18, bx = Math.round(vw / 2 - bw / 2) - 6, by = vh - 46;
     panel(ctx, bx, by - 6, bw + 12, 46);
     const total = (hud.nitroCharges + (hud.nitroFill ?? 0)) / NITRO_MAX_CHARGES;
     ctx.fillStyle = "#241f38";
@@ -655,7 +657,9 @@ export function drawHud(
     ctx.fillStyle = "#8b85a8";
     ctx.font = "9px monospace";
     ctx.textAlign = "left";
-    ctx.fillText("[SPACE] NITRO", bx + 8, by + bh + 13);
+    ctx.textAlign = "center";
+    ctx.fillText("[SPACE] NITRO", bx + 6 + bw / 2, by + bh + 13);
+    ctx.textAlign = "left";
   }
 
   // --- control hints (bottom-left, above nitro) ---

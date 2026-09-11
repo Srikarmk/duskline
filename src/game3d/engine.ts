@@ -336,7 +336,7 @@ export class Game {
   private sparks: SmokePuff[] = []; // impact-spark pool (bumps/hits)
   private camPos = new THREE.Vector3();
   private camYaw = 0; // smoothed camera heading — eases toward the car so the view swings in behind you instead of snapping with every steer
-  private coast: { x: number; z: number; r: number } | null = null; // coastal realms: land inside r, sea beyond
+  private coast: { x: number; z: number; r: number; far: number } | null = null; // coastal realms: land inside r, sea beyond
   private reliefAmp = 0; // per-realm amplitude of the rolling hills the ground rises into away from the road
   private sun!: THREE.DirectionalLight; // shadow-casting key light; its frustum follows the car
   private offTrackT = 0; // seconds left before an off-track respawn (0 = on track / no warning)
@@ -658,12 +658,13 @@ export class Game {
       cx /= N; cz /= N;
       let far = 0;
       for (const p of pts) far = Math.max(far, Math.hypot(p.x - cx, p.z - cz));
-      // shore sits a little beyond the widest point of the circuit, so there's a
-      // strip of land outside the road rather than the tarmac ending in surf
-      // land extends this far either side of the tarmac before the beach drops
-      // away — wide enough to hold the palms, narrow enough that the water is
-      // always in frame
-      this.coast = { x: cx, z: cz, r: 34 };
+      // r  = how far LAND extends either side of the tarmac before the beach
+      //      drops to the sea (this is what makes it a causeway)
+      // far = the circuit's own radius, used to push the far-shore skyline out
+      // These are different quantities and must not share a field: they did,
+      // and the skyline ended up at 34*2.15 = 73 m from the centre — i.e. towers
+      // standing ON the racing line, which is the giant flat wall on the road.
+      this.coast = { x: cx, z: cz, r: 34, far };
     }
     const { scene, track, realm } = this;
     const pal = realm.palette;
@@ -819,7 +820,9 @@ export class Game {
       none: "SKIES CLEARING", snow: "SNOWFALL", ember: "EMBER STORM",
       sand: "SANDSTORM", spores: "SPORE DRIFT", mist: "MIST ROLLING IN", rain: "RAIN INCOMING",
     };
-    this.announce(LABEL[next] ?? "WEATHER SHIFT", "", "#a5b4fc", 1.4);
+    // deliberately silent. A full-screen "MIST ROLLING IN" callout every 25-45 s
+    // is pure interruption — you can SEE the weather change, it doesn't need
+    // announcing over the racing.
   }
 
   /** three.js reads `aoMap` from the SECOND uv channel (`uv1`), which none of
@@ -2682,8 +2685,8 @@ export class Game {
       // than a reflective surface — see makeOceanPlane — because the look needs
       // it to hold its colour exactly, and anything lit turns grey once the
       // ambient is this low.
-      const c = this.coast ?? { x: 0, z: 0, r: 600 };
-      const sea = makeOceanPlane(pal, Math.max(9000, c.r * 10));
+      const c = this.coast ?? { x: 0, z: 0, r: 34, far: 600 };
+      const sea = makeOceanPlane(pal, Math.max(12000, c.far * 8));
       // just under the beach ramp, centred on the island so it surrounds it
       sea.position.set(c.x, -11, c.z);
       this.scene.add(sea);
@@ -2691,7 +2694,8 @@ export class Game {
       // the city, across the water: a flat cut-out band on the far shore
       for (const [ang, span, dist] of [[0.6, 2400, 2.15], [2.4, 1700, 2.45], [4.3, 1500, 2.3]] as const) {
         const sk = makeSkyline(rand, pal, span);
-        sk.position.set(c.x + Math.cos(ang) * c.r * dist, -10, c.z + Math.sin(ang) * c.r * dist);
+        const R = c.far * dist;   // c.far, NOT c.r — see the coast comment above
+        sk.position.set(c.x + Math.cos(ang) * R, -10, c.z + Math.sin(ang) * R);
         sk.rotation.y = -ang + Math.PI / 2;   // face the island across the water
         this.scene.add(sk);
       }
@@ -2700,13 +2704,18 @@ export class Game {
       for (let d = 0; d < len; d += 34) {
         for (const side of [-1, 1]) {
           if (rand() < 0.5) continue;
-          const off = side * (ROAD_HALF_WIDTH + 5 + rand() * 9);
+          // well clear of the verge: a palm trunk at +5 m was close enough to
+          // overhang the tarmac on a bend, which is why they read as standing
+          // "on the road"
+          const off = side * (ROAD_HALF_WIDTH + 12 + rand() * 12);
           const jd = d + rand() * 12;
           const p = track.pointAt(this.track.wrap(jd), off);
           const pm = makePalmSilhouette(rand);
           pm.position.set(p.x, this.terrainYAt(jd, off), p.z);
           pm.rotation.y = rand() * Math.PI * 2;
           this.scene.add(pm);
+          // and SOLID — scenery you can drive straight through breaks the world
+          if (this.obstacleClear(p.x, p.z, 1.1)) this.obstacles.push({ x: p.x, z: p.z, r: 1.1 });
         }
       }
     } else if (realm.id === "forest") {

@@ -145,7 +145,11 @@ export interface CameraPreset {
 export const CAMERA_PRESETS: CameraPreset[] = [
   { name: "CHASE", back: 9.5, height: 3.4, ahead: 7, lookHeight: 1.2, fov: 72 },
   { name: "CINEMATIC", back: 16, height: 6.5, ahead: 4, lookHeight: 1.8, fov: 66 },
-  { name: "HOOD", back: 2, height: 2.3, ahead: 14, lookHeight: 1.6, fov: 82 },
+  // A bonnet cam has to sit AHEAD of the car's centre, not 2 m behind it. With
+  // the old value the camera sat inside the new low supercar body and you got a
+  // full-screen close-up of the driver's helmet. Negative `back` puts it out
+  // over the nose, so nothing of the car is between you and the road.
+  { name: "HOOD", back: -1.6, height: 1.15, ahead: 18, lookHeight: 1.1, fov: 84 },
 ];
 
 // re-exported so 3D code and the shared HUD agree
