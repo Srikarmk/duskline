@@ -58,6 +58,16 @@ let _envTint: number | null = null;
  * roughness-prefiltered (blurry on satin, sharp on the clearcoat) and already
  * carry the realm's colours.
  */
+/** Poster mode: realms built from the 80s city-pop art deliberately run a very
+ *  low ambient so scenery falls into silhouette. A physically-correct car under
+ *  that light goes dark and grey — but in the reference art the car is the one
+ *  BOLD, saturated shape in the frame. So in poster realms the paint gets an
+ *  emissive floor of its own colour: it holds its livery no matter how little
+ *  light reaches it, which is what makes it read as a poster car rather than an
+ *  unlit object. */
+let _poster = false;
+export function setCarPosterMode(on: boolean): void { _poster = on; }
+
 function carPaint(
   color: number,
   o: { metal?: number; rough?: number; flat?: boolean } = {}
@@ -79,6 +89,15 @@ function carPaint(
     envMapIntensity: 1.0,
     flatShading: o.flat ?? false,
   });
+  if (_poster) {
+    // hold the livery under near-zero ambient, and flatten the lacquer so the
+    // body reads as one clean colour block instead of a gradient of highlights
+    mat.emissive = new THREE.Color(color);
+    mat.emissiveIntensity = 0.34;
+    mat.clearcoat = 0.55;
+    mat.roughness = Math.max(mat.roughness, 0.42);
+    mat.metalness = 0.05;
+  }
   // No clearcoatNormalMap on purpose: the panel/flake normal map (applied in
   // carMaterials) perturbs only the BASE coat, so the lacquer stays a perfectly
   // smooth layer floating over textured paint. That mismatch between the two
@@ -1372,10 +1391,12 @@ export function makeKart(id: CarId, color: number): THREE.Group {
       return buildJet(color, num);
     case "comet":
     default:
-      // balanced GT coupe — even proportions, full greenhouse, tidy ducktail
+      // Low, wide, cab-rearward supercar — the silhouette the reference art is
+      // built on. Longer and markedly lower than the old GT proportions, with a
+      // shallower canopy, so from behind it reads as a wedge rather than a kart.
       return buildKart(color, {
-        length: 4.3, width: 1.96, ride: 0.9, wheelR: 0.36,
-        wing: "duck", cabin: 0.34, mirrors: true, num,
+        length: 4.72, width: 2.06, ride: 0.62, wheelR: 0.34,
+        wing: "duck", cabin: 0.26, mirrors: true, num,
       });
   }
 }

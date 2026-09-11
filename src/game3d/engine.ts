@@ -47,7 +47,7 @@ import { makeForkArrowSign, makeBlimp } from "./props/signage";
 import { BranchPath } from "./branch";
 import { FreeDrive } from "./freedrive";
 import { loadPBR, pbr } from "./textures";
-import { makeKart, setCarEnvTint, CAR_SPECS, CAR_IDS, type CarStat } from "./cars";
+import { makeKart, setCarEnvTint, setCarPosterMode, CAR_SPECS, CAR_IDS, type CarStat } from "./cars";
 import { REALMS, pickScenery, REALM_WEATHER, REALM_WEATHER_POOL, REALM_AMBIENCE, REALM_TUNNELS, REALM_RIVERS, REALM_SPLITS, type RealmSpec, type SceneryKind, type RealmPalette, type WeatherKind } from "./realms";
 import { makePyramid, makeObelisk, makeSphinx, makePalm, makeSandRock } from "./props/egyptian";
 import { makeTower, makeGatehouse, makeCastleWall, makeBanner, makeTorch } from "./props/castle";
@@ -719,6 +719,9 @@ export class Game {
     }
 
     // tint every car's reflections toward this realm's sky before building them
+    // poster realms light the world for silhouettes, so the car paint has to
+    // hold its colour on its own (see setCarPosterMode)
+    setCarPosterMode(!!pal.posterSun);
     setCarEnvTint(pal.hemiSky);
     // player rig — a procedural kart of the chosen type
     this.carModel = makeKart(this.carId, CAR_SPECS[this.carId].color);
