@@ -490,7 +490,7 @@ export class Game {
     pmrem.compileEquirectangularShader();
     const eq = makeEnvMap(pal);
     this.scene.environment = pmrem.fromEquirectangular(eq).texture;
-    (this.scene as THREE.Scene & { environmentIntensity?: number }).environmentIntensity = 0.4;
+    (this.scene as THREE.Scene & { environmentIntensity?: number }).environmentIntensity = 0.65;
     eq.dispose();
     pmrem.dispose();
 
@@ -665,10 +665,12 @@ export class Game {
       scene.add(this.lightShafts);
     }
 
-    scene.add(new THREE.HemisphereLight(pal.hemiSky, pal.hemiGround, pal.hemiInt * 1.45));
+    // lifted 1.45 -> 2.1: props were silhouetting to near-black, which is what
+    // made ordinary trees and mushrooms read as unidentifiable dark pillars
+    scene.add(new THREE.HemisphereLight(pal.hemiSky, pal.hemiGround, pal.hemiInt * 2.1));
     // gentle ambient so shadows aren't pure black — but light enough that the new
     // real-time shadows actually read (too much fill washed them flat)
-    scene.add(new THREE.AmbientLight(pal.hemiSky, 0.42));
+    scene.add(new THREE.AmbientLight(pal.hemiSky, 0.62));
     // key light rakes across surfaces + casts the shadows; punchier now so the
     // shadowed side reads clearly darker than the lit side
     const sun = new THREE.DirectionalLight(pal.sun, pal.sunInt * 2.2);
@@ -1718,17 +1720,25 @@ export class Game {
       // ...and a monumental fall pouring in beside it. Its footprint is ~74 m
       // wide by 42 m deep, so it has to be set well back or it would swallow the
       // road; and it's built facing -Z, so it needs yawing to look at the driver.
+      // Multnomah composition: the fall should tower right beside the road with
+      // the crossing passing in FRONT of it, not sit 64 m back as distant set
+      // dressing. Its cliff is ~74 m wide, so it's offset enough to clear the
+      // tarmac but close enough to fill the windscreen as you cross.
       const side = rand() < 0.5 ? 1 : -1;
-      const jd = this.track.wrap(d + 26);
-      const off = side * (ROAD_HALF_WIDTH + 64);
+      const jd = this.track.wrap(d + 8);
+      const off = side * (ROAD_HALF_WIDTH + 46);
       const p = this.track.pointAt(jd, off);
+      const p0 = this.track.pointAt(jd, 0);     // the road point it must face
       const wf = makeGrandWaterfall(rand, pal);
-      wf.position.set(p.x, this.terrainYAt(jd, off) - 5, p.z);
-      const tan = this.track.tangentAt(jd);
-      const rx = tan.z, rz = -tan.x;              // road "right"
-      // The fall is built facing -Z, but this yaw aims +Z at the road — so it was
-      // presenting the bare back of its cliff, which is the mystery "building".
-      wf.rotation.y = Math.atan2(-side * rx, -side * rz) + Math.PI;
+      wf.position.set(p.x, this.terrainYAt(jd, off) - 4, p.z);
+      // Aim the fall's FRONT at the road, derived from the actual geometry rather
+      // than from a shared faceRoad() convention — going via that helper got the
+      // facing wrong twice (you saw the bare back of the cliff both times).
+      // makeGrandWaterfall faces -Z. After a yaw of t, its -Z axis points along
+      // (-sin t, -cos t). Setting that equal to the unit vector from the fall to
+      // the road gives t = atan2(-dx, -dz) directly. No convention to misread.
+      const dxr = p0.x - wf.position.x, dzr = p0.z - wf.position.z;
+      wf.rotation.y = Math.atan2(-dxr, -dzr);
       this.scene.add(wf);
       this.grandFalls.push(wf);
     }
