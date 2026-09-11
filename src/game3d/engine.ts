@@ -335,7 +335,6 @@ export class Game {
   private sparks: SmokePuff[] = []; // impact-spark pool (bumps/hits)
   private camPos = new THREE.Vector3();
   private camYaw = 0; // smoothed camera heading — eases toward the car so the view swings in behind you instead of snapping with every steer
-  private gorges: { x: number; z: number }[] = [];   // river crossings to carve a valley under
   private reliefAmp = 0; // per-realm amplitude of the rolling hills the ground rises into away from the road
   private sun!: THREE.DirectionalLight; // shadow-casting key light; its frustum follows the car
   private offTrackT = 0; // seconds left before an off-track respawn (0 = on track / no warning)
@@ -641,9 +640,6 @@ export class Game {
     this.grandFalls.length = 0;
     this.waterCurtains.length = 0;
     this.batFlocks.length = 0;
-    // before anything samples the terrain — the ground mesh, scenery and grass
-    // all read groundHeightAtXZ, and the gorge has to already be in it
-    this.markGorges();
     const { scene, track, realm } = this;
     const pal = realm.palette;
 
@@ -1789,18 +1785,6 @@ export class Game {
     return out;
   }
 
-  /** Register each river crossing so the terrain carves a valley there. Must run
-   *  before the ground mesh or any scenery is placed, since both sample
-   *  groundHeightAtXZ. */
-  private markGorges() {
-    this.gorges.length = 0;
-    const len = this.track.length;
-    for (const at of REALM_RIVERS[this.realm.id] ?? []) {
-      const p = this.track.pointAt(this.track.wrap(at * len), 0, undefined, true);
-      this.gorges.push({ x: p.x, z: p.z });
-    }
-  }
-
   private placeRivers() {
     const pal = this.realm.palette;
     const len = this.track.length;
@@ -2081,20 +2065,15 @@ export class Game {
     // tarmac). Eased out over ~20 m, so it's far too gentle to feel while driving.
     const CLEAR = 0.12, CLEAR_FAR = 26;
     const fade = Math.max(0, dist - ROAD_HALF_WIDTH) / (CLEAR_FAR - ROAD_HALF_WIDTH);
-    let h = y - CLEAR * Math.max(0, 1 - fade);
-    // GORGE. A viaduct standing on flat ground is just a wall with a road on it —
-    // the whole point is the drop underneath. Each river crossing carves a bowl
-    // out of the terrain so the bridge genuinely spans a valley. Cosine falloff
-    // so the rim blends into the surrounding land instead of ending in a cliff.
-    for (const gq of this.gorges) {
-      const gd = Math.hypot(x - gq.x, z - gq.z);
-      const R = 78;
-      if (gd < R) {
-        const t = 0.5 + 0.5 * Math.cos((gd / R) * Math.PI);   // 1 at centre -> 0 at rim
-        h -= 17 * t * t;
-      }
-    }
-    return h;
+    // NO GORGE CARVE HERE. I added one so the bridge would span a valley, and it
+    // caused every symptom at once: the bowl is centred ON the road, so the
+    // ground beside the ribbon fell away and you dropped into a pit the moment
+    // you put a wheel off; the flat plank bridge was suddenly hanging over a void
+    // and read as a black floating slab; and the waterfall standing in the bowl
+    // lost the ground under it and became "floating ghost water". A gorge needs a
+    // proper spanning structure AND protected verges to exist at all — carving
+    // terrain alone makes the world strictly worse, so it's gone.
+    return y - CLEAR * Math.max(0, 1 - fade);
   }
 
   private buildGroundTerrain(mat: THREE.Material): THREE.Mesh {
