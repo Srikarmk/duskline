@@ -1475,61 +1475,61 @@ const RIBS_SEDAN: RibRow[] = [
 const ROAD_CARS: Record<CarId, RoadCarParams> = {
   f40: {
     L: 4.43, W: 1.98, R: 0.33, rearR: 1.08, clr: 0.12,
-    sillY: 0.40, shoulderY: 0.78, deckY: 0.90, roofY: 1.14,
+    sillY: 0.40, shoulderY: 0.78, deckY: 0.86, roofY: 1.24,
     ribs: RIBS_MID_WEDGE, cabF: 0.34, cabR: -0.50, cabW: 0.68, whF: 0.62, whR: 0.60,
     wing: "straked", lamps: "popup", tail: "quad", louvres: 6, naca: true, pipes: 3,
   },
   tauro: {
     L: 4.16, W: 2.02, R: 0.33, rearR: 1.12, clr: 0.11,
-    sillY: 0.38, shoulderY: 0.74, deckY: 0.86, roofY: 1.08,
+    sillY: 0.38, shoulderY: 0.74, deckY: 0.82, roofY: 1.16,
     ribs: RIBS_MID_WEDGE, cabF: 0.40, cabR: -0.36, cabW: 0.60, whF: 0.60, whR: 0.62,
     wing: "basket", lamps: "popup", tail: "quad", louvres: 5, naca: true, pipes: 4,
   },
   meridian: {
     L: 4.29, W: 1.84, R: 0.32, rearR: 1.06, clr: 0.12,
-    sillY: 0.42, shoulderY: 0.80, deckY: 0.94, roofY: 1.16,
+    sillY: 0.42, shoulderY: 0.80, deckY: 0.90, roofY: 1.26,
     ribs: RIBS_MID_CURVE, cabF: 0.36, cabR: -0.48, cabW: 0.72, whF: 0.62, whR: 0.60,
     wing: "duck", lamps: "slim", tail: "bar", louvres: 7, scoop: "roof", pipes: 2,
   },
   veloce: {
     L: 4.46, W: 2.00, R: 0.34, rearR: 1.04, clr: 0.13,
-    sillY: 0.44, shoulderY: 0.84, deckY: 0.98, roofY: 1.24,
+    sillY: 0.44, shoulderY: 0.84, deckY: 0.94, roofY: 1.32,
     ribs: RIBS_MID_CURVE, cabF: 0.30, cabR: -0.50, cabW: 0.74, whF: 0.62, whR: 0.60,
     wing: "duck", lamps: "round2", tail: "bar", twoTone: true, scoop: "roof", pipes: 2,
   },
   testa: {
     L: 4.49, W: 1.98, R: 0.33, rearR: 1.10, clr: 0.12,
-    sillY: 0.40, shoulderY: 0.76, deckY: 0.88, roofY: 1.12,
+    sillY: 0.40, shoulderY: 0.76, deckY: 0.84, roofY: 1.22,
     ribs: RIBS_MID_WEDGE, cabF: 0.34, cabR: -0.42, cabW: 0.66, whF: 0.62, whR: 0.60,
     wing: "none", lamps: "popup", tail: "slats", strakes: 5, pipes: 2,
   },
   zanza: {
     L: 4.43, W: 1.81, R: 0.32, rearR: 1.05, clr: 0.12,
-    sillY: 0.40, shoulderY: 0.78, deckY: 0.90, roofY: 1.15,
+    sillY: 0.40, shoulderY: 0.78, deckY: 0.86, roofY: 1.26,
     ribs: RIBS_MID_CURVE, cabF: 0.34, cabR: -0.50, cabW: 0.76, whF: 0.62, whR: 0.60,
     wing: "duck", lamps: "slim", tail: "bar", louvres: 4, pipes: 2,
   },
   imprez: {
     L: 4.34, W: 1.75, R: 0.32, clr: 0.20,
-    sillY: 0.46, shoulderY: 0.88, deckY: 1.02, roofY: 1.38,
+    sillY: 0.46, shoulderY: 0.88, deckY: 0.98, roofY: 1.46,
     ribs: RIBS_SEDAN, cabF: 0.22, cabR: -0.46, cabW: 0.82, whF: 0.64, whR: 0.62,
     wing: "blade", lamps: "slim", tail: "twin", scoop: "rally", fogLamps: true, pipes: 2,
   },
   firehawk: {
     L: 4.98, W: 1.86, R: 0.35, rearR: 1.06, clr: 0.17,
-    sillY: 0.44, shoulderY: 0.84, deckY: 0.96, roofY: 1.30,
+    sillY: 0.44, shoulderY: 0.84, deckY: 0.92, roofY: 1.40,
     ribs: RIBS_MUSCLE, cabF: 0.12, cabR: -0.60, cabW: 0.80, whF: 0.66, whR: 0.62,
     wing: "whale", lamps: "slim", tail: "twin", scoop: "shaker", pipes: 2,
   },
   iroc: {
     L: 4.87, W: 1.85, R: 0.34, rearR: 1.06, clr: 0.16,
-    sillY: 0.42, shoulderY: 0.82, deckY: 0.94, roofY: 1.28,
+    sillY: 0.42, shoulderY: 0.82, deckY: 0.90, roofY: 1.38,
     ribs: RIBS_MUSCLE, cabF: 0.14, cabR: -0.58, cabW: 0.80, whF: 0.66, whR: 0.62,
     wing: "duck", lamps: "round4", tail: "quad", twoTone: true, scoop: "bulge", pipes: 2,
   },
   fairlady: {
     L: 4.14, W: 1.63, R: 0.31, clr: 0.16,
-    sillY: 0.40, shoulderY: 0.78, deckY: 0.90, roofY: 1.22,
+    sillY: 0.40, shoulderY: 0.78, deckY: 0.86, roofY: 1.32,
     ribs: RIBS_FRONT_LONG, cabF: 0.10, cabR: -0.64, cabW: 0.74, whF: 0.64, whR: 0.62,
     wing: "none", lamps: "round2", tail: "twin", chrome: true, pipes: 1,
   },
@@ -1725,13 +1725,12 @@ function buildRoadCar(color: number, p: RoadCarParams, num?: number): THREE.Grou
     [-wx, -hl * p.whR, rearR], [wx, -hl * p.whR, rearR],
   ] as const) {
     g.add(makeWheel(x, z, r, 0.3, tireMat, rimMat, Math.sign(x)));
-    // arch: a dark liner behind the tyre so the flank reads as cut away, and a
-    // body-colour eyebrow over the top so there's a lip instead of a slab
+    // arch: just a dark liner set INBOARD of the tyre, so the flank reads as
+    // cut away around the wheel. A body-colour torus eyebrow was the obvious
+    // next step and it was wrong — at the tyre's own radius, sitting on its
+    // outer face, it renders as a bright hoop stuck round the wheel rather
+    // than as a lip in the bodywork.
     g.add(box(0.1, r * 1.5, r * 2.1, darkMat, x - Math.sign(x) * 0.16, clr + r * 0.7, z));
-    const eyebrow = new THREE.Mesh(new THREE.TorusGeometry(r * 1.02, 0.045, 4, 10, Math.PI), bodyPlain);
-    eyebrow.rotation.y = Math.PI / 2;
-    eyebrow.position.set(x - Math.sign(x) * 0.02, clr + r, z);
-    g.add(eyebrow);
   }
   return g;
 }

@@ -123,3 +123,25 @@ export const CAR_IDS = Object.keys(CAR_SPECS) as CarId[];
 export function carColorHex(id: CarId): string {
   return "#" + CAR_SPECS[id].color.toString(16).padStart(6, "0");
 }
+
+/**
+ * The livery, lifted to something legible as UI text on the dark home screen.
+ * Real cars come in black and white, and the menu paints the car's NAME in its
+ * own livery — so FIREHAWK (0x14141a) rendered as black text on a black panel
+ * and simply wasn't there. Anything below ~45% luminance is raised; anything
+ * above stays put.
+ */
+export function carUIHex(id: CarId): string {
+  const c = CAR_SPECS[id].color;
+  let r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  if (lum < 0.45) {
+    // push toward white, keeping the hue: a near-black car reads as pale silver
+    const k = (0.45 - lum) / 0.45;
+    const t = 0.25 + 0.65 * k;
+    r = Math.round(r + (235 - r) * t);
+    g = Math.round(g + (238 - g) * t);
+    b = Math.round(b + (245 - b) * t);
+  }
+  return "#" + ((r << 16) | (g << 8) | b).toString(16).padStart(6, "0");
+}

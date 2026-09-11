@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { GameMode, RealmId, CarId, GameResult } from "@/src/game/engine";
 import { REALMS, REALM_LORE } from "@/src/game3d/realms";
-import { CAR_SPECS, CAR_IDS, carColorHex } from "@/src/game3d/carData";
+import { CAR_SPECS, CAR_IDS, carColorHex, carUIHex } from "@/src/game3d/carData";
 import dynamic from "next/dynamic";
 import {
   loadScores, loadLastName, loadLastCar, fetchGlobalScores,
@@ -156,6 +156,7 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
 
   const nextDisabled = (step === 1 && !realmPicked) || (step === 2 && !carPicked);
   const livery = carColorHex(car);
+  const liveryUI = carUIHex(car);   // legible even for the black and white cars
 
   return (
     <div className="home">
@@ -281,7 +282,7 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
                   <span className="showroom-tag">YOUR MACHINE</span>
                   <div className="showroom-name">
                     <span className="car-chip" style={{ background: livery, color: livery }} />
-                    <strong style={{ color: livery }}>{CAR_SPECS[car].name}</strong>
+                    <strong style={{ color: liveryUI }}>{CAR_SPECS[car].name}</strong>
                   </div>
                   <p className="showroom-blurb">{CAR_SPECS[car].blurb}</p>
                 </div>
@@ -289,7 +290,7 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
               <div className="cars">
                 {CAR_IDS.map((id) => {
                   const spec = CAR_SPECS[id];
-                  const swatch = carColorHex(id);
+                  const swatch = carUIHex(id);   // the grid swatch has to survive a black livery too
                   const isSel = car === id;
                   return (
                     <button
@@ -389,7 +390,7 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
                   </span>
                   <span className="loadout-txt">
                     <em>MACHINE</em>
-                    <b style={{ color: livery }}>{CAR_SPECS[car].name}</b>
+                    <b style={{ color: liveryUI }}>{CAR_SPECS[car].name}</b>
                   </span>
                   <span className="swap" aria-hidden="true">SWAP</span>
                 </button>
