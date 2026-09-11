@@ -107,6 +107,81 @@ function valueNoise(t: Float32Array, x: number, y: number): number {
  * bases from the mid sky), so a green forest sky gets green clouds and a desert
  * sky cream ones — the per-realm identity survives.
  */
+/**
+ * Poster clouds: flat lozenges in three hard tones, drawn as VECTORS.
+ *
+ * The noise deck below is the wrong tool for this art direction and no amount
+ * of resolution fixes it. fBm gives you a soft probability field; smoothstep
+ * the alpha and you get a gradient, which upscaled onto the biggest surface on
+ * screen is the "blurry, lifeless" sky. The reference paints clouds as cut
+ * shapes — a flat lit top, a flat mid band, a flat shaded underside, hard edge
+ * all the way round, arranged in rows that compress toward the horizon. Canvas
+ * ellipse fills give exactly that at any resolution, for a fraction of the
+ * cost of per-pixel noise.
+ */
+function posterClouds(pal: RealmPalette, W: number, H: number): HTMLCanvasElement {
+  const c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const ctx = c.getContext("2d")!;
+  const HZ = H / 2;
+  let sd = 20260911;
+  const rand = () => { sd = (sd * 1664525 + 1013904223) >>> 0; return sd / 4294967296; };
+
+  const sky1 = rgb255(pal.sky[1]), sky2 = rgb255(pal.sky[2]), sky3 = rgb255(pal.sky[3]);
+  const lit = mixRgb(sky3, [255, 255, 255], 0.7);
+  const mid = mixRgb(sky2, [255, 255, 255], 0.42);
+  const shade = mixRgb(sky1, sky2, 0.55);
+
+  // one puff = a row of overlapping flattened ellipses, so the outline is lumpy
+  const puff = (x: number, y: number, w: number, h: number, n: number, fill: string) => {
+    ctx.fillStyle = fill;
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const t = n === 1 ? 0.5 : i / (n - 1);
+      const px = x + (t - 0.5) * w;
+      // tallest in the middle, tapering to the ends
+      const ph = h * (0.45 + 0.55 * Math.sin(Math.PI * (0.15 + t * 0.7)));
+      const pw = (w / n) * (1.5 + rand() * 0.7);
+      ctx.ellipse(px, y - ph * 0.5, pw, ph, 0, 0, Math.PI * 2);
+    }
+    ctx.fill();
+  };
+
+  const ROWS = 11;
+  for (let r = 0; r < ROWS; r++) {
+    // elevation of this row, packed toward the horizon
+    const f = r / (ROWS - 1);
+    const el = 0.035 + Math.pow(f, 1.7) * 0.92;             // radians above horizon
+    const y = HZ - (el / (Math.PI / 2)) * HZ;
+    // near the horizon a cloud is far away: short, wide and numerous
+    const sizeK = 0.22 + el * 1.05;
+    const count = Math.round(40 - f * 26);
+    const hBase = H * 0.013 * sizeK * 1.5;
+    const wBase = W * 0.028 * (1.9 - el * 0.55) * 1.15;
+    for (let i = 0; i < count; i++) {
+      const x = rand() * W;
+      // a fair number of small ones: all-large puffs merge into ribbons that
+      // wrap the whole dome instead of reading as individual clouds
+      const k = rand() < 0.5 ? 0.3 + rand() * 0.28 : 0.62 + rand() * 0.6;
+      // Higher rows must be NARROWER on the canvas. The equirect wraps W texels
+      // around a circle that shrinks toward the pole, so a puff of fixed canvas
+      // width covers more and more azimuth as it climbs — at 60 degrees up the
+      // same ellipse smears into a ribbon right across the sky.
+      const w = wBase * k * (1 - 0.55 * f);
+      const h = hBase * (0.5 + rand() * 0.85) * (0.6 + k * 0.45);
+      // break the row up so 11 rows don't read as 11 stripes
+      const yj = (rand() - 0.5) * (HZ / ROWS) * 0.8;
+      const n = 2 + Math.floor(rand() * 4);
+      // three flat tones, each inset and lifted — reads as a lit top over a
+      // shaded base with no gradient anywhere
+      puff(x, y + yj + h * 0.22, w, h * 0.72, n, rgbaCss(shade, 0.9));
+      puff(x + w * 0.02, y + yj + h * 0.05, w * 0.92, h * 0.8, n, rgbaCss(mid, 0.95));
+      puff(x + w * 0.04, y + yj - h * 0.1, w * 0.74, h * 0.66, n, rgbaCss(lit, 1));
+    }
+  }
+  return c;
+}
+
 function cloudDeck(pal: RealmPalette, W: number, H: number): HTMLCanvasElement {
   // HALF the dome resolution, not a quarter. At a quarter the deck was 512x256
   // upscaled 4x with smoothing onto the biggest surface on screen, which is
@@ -233,6 +308,26 @@ export function makeSkyDome(pal: RealmPalette): THREE.Mesh {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
 
+  // POSTER REALMS: step the sky above the horizon into flat bands.
+  // A continuous gradient has no edges in it, and a surface with no edges
+  // reads as out of focus however many pixels you give it — which is why
+  // bumping the dome resolution didn't fix "the sky is blurry". Screen-printed
+  // sunset art works in discrete bands, so this quantises the same palette
+  // into 16 of them, packed tighter toward the horizon where the colour is
+  // changing fastest.
+  if (pal.posterSun) {
+    const BANDS = 16;
+    const img = ctx.getImageData(0, 0, 1, H).data;   // sample the gradient we just laid
+    for (let b = 0; b < BANDS; b++) {
+      const t0 = Math.pow(b / BANDS, 0.68), t1 = Math.pow((b + 1) / BANDS, 0.68);
+      const y0 = Math.round(t0 * HZ), y1 = Math.round(t1 * HZ);
+      if (y1 <= y0) continue;
+      const sy = Math.min(H - 1, Math.round((y0 + y1) / 2)) * 4;
+      ctx.fillStyle = `rgb(${img[sy]},${img[sy + 1]},${img[sy + 2]})`;
+      ctx.fillRect(0, y0, W, y1 - y0);
+    }
+  }
+
   // faint upper-atmosphere deepening at the zenith so the dome doesn't read as
   // a flat wall of colour overhead (Rayleigh-ish: thinnest air is darkest)
   const zen = ctx.createLinearGradient(0, 0, 0, HZ * 0.8);
@@ -354,9 +449,13 @@ export function makeSkyDome(pal: RealmPalette): THREE.Mesh {
   // horizon (circuit, sands) has no headroom left, and pushing haze onto it
   // just clipped the whole band to flat white and erased the cloud bases.
   // Dark realms get the full glow, which is where it reads as depth.
+  // Poster realms get a much weaker haze band: it is a soft vertical gradient
+  // laid over the horizon, i.e. exactly the thing that was smearing the hard
+  // band edges back out again.
+  const hazeK = pal.posterSun ? 0.25 : 1;
   const lum3 = (0.299 * sky3[0] + 0.587 * sky3[1] + 0.114 * sky3[2]) / 255;
   const hazeCol = mixRgb(sky3, [255, 255, 255], (pal.stars ? 0.22 : 0.42) * (1 - lum3));
-  const hA = (pal.stars ? 0.42 : 0.62) * (1 - 0.72 * lum3);
+  const hA = (pal.stars ? 0.42 : 0.62) * (1 - 0.72 * lum3) * hazeK;
   const y0 = HZ - H * 0.22, y1 = HZ + H * 0.18;
   const hg = ctx.createLinearGradient(0, y0, 0, y1);
   hg.addColorStop(0.00, rgbaCss(hazeCol, 0));
@@ -385,13 +484,21 @@ export function makeSkyDome(pal: RealmPalette): THREE.Mesh {
  * clouds into the sky texture meant they could never move at all.
  */
 export function makeCloudLayer(pal: RealmPalette): THREE.Mesh {
-  const W = 2048, H = 1024;
-  const c = document.createElement("canvas");
-  c.width = W; c.height = H;
-  const ctx = c.getContext("2d")!;
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(cloudDeck(pal, W, H), 0, 0, W, H);
+  // Poster realms get 3072 wide and vector clouds drawn straight onto it at
+  // full size — no generate-small-then-upscale step at all, which is where the
+  // softness came from.
+  const W = pal.posterSun ? 3072 : 2048, H = W / 2;
+  let c: HTMLCanvasElement;
+  if (pal.posterSun) {
+    c = posterClouds(pal, W, H);
+  } else {
+    c = document.createElement("canvas");
+    c.width = W; c.height = H;
+    const ctx = c.getContext("2d")!;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(cloudDeck(pal, W, H), 0, 0, W, H);
+  }
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = THREE.RepeatWrapping;

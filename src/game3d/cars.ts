@@ -97,6 +97,12 @@ function carPaint(
     mat.clearcoat = 0.55;
     mat.roughness = Math.max(mat.roughness, 0.42);
     mat.metalness = 0.05;
+    // FLAT SHADING. Smooth vertex normals across a lofted body average every
+    // crease away, so the car arrives on screen as a rounded lump of colour —
+    // the "smoothened 3D effect". Flat shading gives each quad of the loft its
+    // own facet normal, so the shoulder line, the haunch and the tail cut all
+    // come back as hard edges with a visible tone step across them.
+    mat.flatShading = true;
   }
   // No clearcoatNormalMap on purpose: the panel/flake normal map (applied in
   // carMaterials) perturbs only the BASE coat, so the lacquer stays a perfectly
@@ -609,7 +615,7 @@ function buildKart(color: number, p: KartParams): THREE.Group {
       { z: -hl * 0.3,  half: canopyHalf(cw,        beltY - 0.02, roofY) },        // roof back
       { z: -hl * 0.52, half: canopyHalf(cw * 0.8,  beltY, beltY + cabH * 0.16) }, // backlight foot (low)
     ];
-    g.add(loftBody(canopy, glass, 5));
+    g.add(loftBody(canopy, glass, 2));
     // pillars framing the glass
     for (const sx of [-1, 1]) {
       g.add(panelBetween(sx * cw * 0.66, hl * 0.3, beltY, hl * 0.04, roofY, 0.06, 0.05, bodyPlain));   // A-pillar
@@ -1560,7 +1566,10 @@ function buildRoadCar(color: number, p: RoadCarParams, num?: number): THREE.Grou
       [0, deckY * dF],
     ] as [number, number][],
   }));
-  g.add(loftBody(ribs, bodyMat, 6));
+  // subdiv 2, not 6. The rib table already describes the car; resampling it
+  // six times per section splines the edges out of existence. Two keeps the
+  // silhouette smooth enough to read as bodywork and leaves the creases in.
+  g.add(loftBody(ribs, bodyMat, 2));
 
   // shoulder crease down the whole flank + a deep rocker so it sits low
   for (const sx of [-1, 1]) {

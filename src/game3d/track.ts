@@ -400,20 +400,20 @@ export class Track {
     const step = 13;
     const count = Math.max(2, Math.floor(this.length / step));
 
-    // dark stems (lit) + bright caps (fullbright) as two instanced meshes
-    // These are roadside reflector markers, but the stem was 0x2a2438 — a
-    // near-black at luminance 0.021 — on a 1.35 m post every 13 m down BOTH
-    // verges. 370 of them silhouetted into the "small black pillars" dotted all
-    // over the map. Real marker posts are pale so drivers can see them: slimmer,
-    // shorter and light grey now, so they read as roadside furniture instead of
-    // unexplained black stumps.
-    const stemGeo = new THREE.CylinderGeometry(0.075, 0.10, 0.95, 6);
-    stemGeo.translate(0, 0.475, 0);
-    const stemMat = new THREE.MeshStandardMaterial({ color: 0xc9c6d6, metalness: 0.25, roughness: 0.55 });
+    // Marker posts. These have now been wrong twice in opposite directions: a
+    // near-black stem with a near-black cap read as "small black pillars", and
+    // brightening the cap to 0.95 turned it into a glowing white SPHERE on a
+    // white stick — a row of lollipops down both verges, which is the odd
+    // lights. A real marker post is a slim dark blade with a small flat
+    // reflector PLATE facing the traffic, so that is what this builds: the
+    // bright part is a 12 cm square panel, not a ball.
+    const stemGeo = new THREE.BoxGeometry(0.075, 0.8, 0.05);
+    stemGeo.translate(0, 0.4, 0);
+    const stemMat = new THREE.MeshStandardMaterial({ color: 0xe8e6ee, metalness: 0.2, roughness: 0.6 });
     const stems = new THREE.InstancedMesh(stemGeo, stemMat, count * 2);
 
-    const capGeo = new THREE.SphereGeometry(0.115, 9, 7);
-    capGeo.translate(0, 1.02, 0);
+    const capGeo = new THREE.BoxGeometry(0.11, 0.11, 0.02);
+    capGeo.translate(0, 0.66, -0.035);
     const capMat = new THREE.MeshBasicMaterial({ vertexColors: true });
     const caps = new THREE.InstancedMesh(capGeo, capMat, count * 2);
 
@@ -421,12 +421,9 @@ export class Track {
     const q = new THREE.Quaternion();
     const s = new THREE.Vector3(1, 1, 1);
     const p = new THREE.Vector3();
-    // These are UNLIT, so a 0.42 multiplier isn't "dimmed" — it bakes the
-    // reflector permanently dark, and against a bright sunset sky a dark
-    // unlit sphere on a pale post reads as a black ball. Reflectors are the
-    // one bit of roadside furniture that is supposed to be bright.
-    const cA = new THREE.Color(colorA).multiplyScalar(0.95);
-    const cB = new THREE.Color(colorB).multiplyScalar(0.95);
+    const up = new THREE.Vector3(0, 1, 0);
+    const cA = new THREE.Color(colorA);
+    const cB = new THREE.Color(colorB);
     let idx = 0;
     for (let i = 0; i < count; i++) {
       const d = (i / count) * this.length;
@@ -438,6 +435,9 @@ export class Track {
       const col = i % 2 === 0 ? cA : cB;
       for (const side of [-1, 1]) {
         p.set(pt.x + nx * edge * side, y, pt.z + nz * edge * side);
+        // turn the blade edge-on to the road so it stays slim from the car, and
+        // aim the reflector plate inward at the traffic
+        q.setFromAxisAngle(up, Math.atan2(nx * side, nz * side));
         m.compose(p, q, s);
         stems.setMatrixAt(idx, m);
         caps.setMatrixAt(idx, m);
