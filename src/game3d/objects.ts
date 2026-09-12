@@ -2954,9 +2954,11 @@ export function makeShieldBubble(): THREE.Mesh {
 /** Nudge a cloned prop's colours by a small random hue/lightness so a forest of
  *  identical models reads as varied. Clones materials so instances differ. */
 export function varyTint(obj: THREE.Object3D, rand: () => number) {
-  const dh = (rand() - 0.5) * 0.07;
-  const dl = (rand() - 0.5) * 0.24;
-  const ds = (rand() - 0.5) * 0.12;
+  // Wider spread. A cluster of boulders in near-identical colour reads as one
+  // moulded object repeated, which is the other thing that makes them plastic.
+  const dh = (rand() - 0.5) * 0.13;
+  const dl = (rand() - 0.5) * 0.42;
+  const ds = (rand() - 0.5) * 0.26;
   obj.traverse((o) => {
     const mesh = o as THREE.Mesh;
     const mat = mesh.material as THREE.MeshStandardMaterial | undefined;

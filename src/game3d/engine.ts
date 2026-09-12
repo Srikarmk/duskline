@@ -1910,9 +1910,14 @@ export class Game {
       // original railed bridge that actually follows the road.
       for (const m of this.buildRoadBridge(d - 46, d + 46)) this.scene.add(m);
 
-      // ...and a monumental fall pouring in beside it. Its footprint is ~74 m
-      // wide by 42 m deep, so it has to be set well back or it would swallow the
-      // road; and it's built facing -Z, so it needs yawing to look at the driver.
+      // ...and a monumental fall pouring in beside it — but ONLY where the
+      // realm asked for one. This prop is a 74 m x 42 m CLIFF with water on it,
+      // authored for the forest gorge, and REALM_RIVERS was handing it to every
+      // realm with a river. On a Big Sur headland and a snow pass it arrives as
+      // the same enormous brown blocky mass with the same white streaks down it,
+      // in the same place, twice — which is the thing that reads as every new
+      // map being the same map. A river crossing does not imply a monument.
+      if (!this.realm.grandFall) continue;
       // Multnomah composition: the fall should tower right beside the road with
       // the crossing passing in FRONT of it, not sit 64 m back as distant set
       // dressing. Its cliff is ~74 m wide, so it's offset enough to clear the
@@ -2770,6 +2775,87 @@ export class Game {
           crystals(4.0),
           at(makeCrystalCluster(rand, cols), 14, 10, 2.6),
         ), 0.15, 1, 120, false);
+        break;
+      }
+
+      // The six photo realms had NO case here at all, which is why they were
+      // interchangeable: identical roadside scatter, and whatever generic
+      // set-piece the shared systems happened to hand them. Each one gets the
+      // thing you would actually recognise it by.
+      case "azur": {
+        // the harbour: a terrace of pastel apartment blocks stacked up the hill
+        // behind the waterfront, and the breakwater light at the harbour mouth
+        for (const [frac, side, off] of [[0.18, -1, 62], [0.52, -1, 74], [0.81, -1, 58]] as const) {
+          drop(cluster(
+            at(makeBrownstone(rand), 0, 0, 1.5),
+            at(makeBrownstone(rand), 26, 16, 1.8),
+            at(makeBrownstone(rand), -22, 22, 1.3),
+            at(makeBrownstone(rand), 8, 40, 2.1),
+          ), frac, side, off, true);
+        }
+        drop(at(makeTower(rand), 0, 0, 1.1), 0.36, 1, 52, false);
+        break;
+      }
+      case "hokkai": {
+        // avalanche shelter frames and a stand of the tallest firs on the pass
+        for (const [frac, side] of [[0.26, 1], [0.58, -1], [0.87, 1]] as const) {
+          drop(cluster(
+            at(makeTree(rand, this.treeMats!, "pine"), 0, 0, 3.4),
+            at(makeTree(rand, this.treeMats!, "pine"), 14, 9, 4.2),
+            at(makeTree(rand, this.treeMats!, "pine"), -12, 14, 3.0),
+            at(rock("rockB", 7), 9, -7, 1),
+          ), frac, side, 56, false);
+        }
+        break;
+      }
+      case "mirage": {
+        // the glass skyline, brought in off the horizon so it actually passes
+        for (const [frac, side, off] of [[0.22, 1, 150], [0.55, -1, 175], [0.84, 1, 160]] as const) {
+          drop(cluster(
+            at(makeSkyscraper(rand), 0, 0, 1.9),
+            at(makeSkyscraper(rand), 46, 34, 2.6),
+            at(makeSkyscraper(rand), -40, 52, 1.5),
+            at(makeSkyscraper(rand), 18, 86, 3.1),
+          ), frac, side, off, false);
+        }
+        break;
+      }
+      case "basin": {
+        // mesas, and the water tower every desert highway has one of
+        for (const [frac, side, off] of [[0.2, -1, 120], [0.47, 1, 145], [0.76, -1, 132]] as const) {
+          drop(cluster(
+            at(rock("rockA", 26), 0, 0, 1),
+            at(rock("rockB", 17), 34, 22, 1),
+            at(rock("rockA", 12), -26, 30, 1),
+          ), frac, side, off, false);
+        }
+        drop(at(makeWaterTower(rand), 0, 0, 1.5), 0.62, 1, 48, false);
+        drop(at(makeBillboard(rand), 0, 0, 1.3), 0.34, -1, 34, true);
+        break;
+      }
+      case "cape": {
+        // cypress on the headland and the light at the point — no monuments,
+        // because on this road the drop IS the view
+        for (const [frac, side] of [[0.3, -1], [0.64, -1], [0.9, -1]] as const) {
+          drop(cluster(
+            at(makeTree(rand, this.treeMats!, "tall"), 0, 0, 2.6),
+            at(makeTree(rand, this.treeMats!, "tall"), 11, 8, 3.2),
+            at(rock("rockB", 9), -9, 6, 1),
+          ), frac, side, 44, false);
+        }
+        drop(at(makeTower(rand), 0, 0, 0.85), 0.47, 1, 70, false);
+        break;
+      }
+      case "hills": {
+        // houses on stilts hanging off the canyon side, and the mast on the ridge
+        for (const [frac, side, off] of [[0.24, 1, 58], [0.52, -1, 64], [0.79, 1, 55]] as const) {
+          drop(cluster(
+            at(makeBrownstone(rand), 0, 0, 1.2),
+            at(makeBrownstone(rand), 22, 18, 0.95),
+          ), frac, side, off, true);
+        }
+        drop(at(makeFloodlight(rand), 0, 0, 2.4), 0.4, -1, 88, false);
+        drop(at(makeBillboard(rand), 0, 0, 1.4), 0.68, 1, 30, true);
         break;
       }
     }

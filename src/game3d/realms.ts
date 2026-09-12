@@ -251,6 +251,13 @@ export interface RealmSpec {
   /** scales the global rolling-hill profile; <1 flattens (coastal causeways). */
   hillScale?: number;
   /**
+   * Place the monumental waterfall (and the curtain you drive through) at this
+   * realm's river crossings. Off by default: the prop is a 74 x 42 m cliff
+   * authored for one specific gorge, and dropping it into every realm that
+   * happens to have a river is what made the new maps feel identical.
+   */
+  grandFall?: boolean;
+  /**
    * Coastal realms: the circuit is a strip of land with open sea beyond it.
    * Was hardcoded to the bay; a causeway and a clifftop road are the same
    * machinery with different numbers, so it's data now.
@@ -318,6 +325,7 @@ function loopTrack(
 export const REALMS: Record<RealmId, RealmSpec> = {
   forest: {
     id: "forest",
+    grandFall: true,
     name: "Enchanted Forest",
     blurb: "Moonlit woods, glowing mushrooms, gentle rolling hills.",
     // Enchanted Forest: a long back straight (S) charging into a tight pointed

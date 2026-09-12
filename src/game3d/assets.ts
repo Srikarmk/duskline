@@ -60,10 +60,23 @@ function relight(group: THREE.Group) {
       obj.material = new THREE.MeshStandardMaterial({
         color: src.color ?? new THREE.Color(0xffffff),
         map: src.map ?? null,
+        // A single shared bump at 0.25 applied to EVERY imported prop is a
+        // uniform fine grain at whatever size the prop happens to be — on a 2 m
+        // boulder it is sandpaper, and identical sandpaper on the rock next to
+        // it. That even micro-texture is most of why these read as moulded
+        // plastic rather than as stone and bark.
         bumpMap: bump,
-        bumpScale: 0.25,
-        metalness: 0.05,
-        roughness: 0.9,
+        bumpScale: 0.05,
+        metalness: 0,
+        roughness: 0.97,
+        // Stone and bark are near-lambertian. At the default intensity the sky
+        // probe lays a broad sheen over everything, which is the other half of
+        // the plastic look.
+        envMapIntensity: 0.3,
+        // These models are low-poly, and smoothing their normals rounds every
+        // facet into a blob. Faceted reads as carved rock; smoothed reads as
+        // vacuum-formed.
+        flatShading: true,
       });
       obj.castShadow = false;
       obj.receiveShadow = false;
