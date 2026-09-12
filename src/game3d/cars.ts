@@ -1406,6 +1406,10 @@ type WingKind = "none" | "straked" | "basket" | "whale" | "duck" | "blade";
 type LampKind = "popup" | "round4" | "round2" | "slim" | "wide";
 type TailKind = "bar" | "quad" | "twin" | "slats";
 type ScoopKind = "none" | "shaker" | "rally" | "bulge" | "roof";
+/** Every car shared one canopy profile, so from behind the grid was ten
+ *  identical greenhouses on ten different colours. This is the single biggest
+ *  silhouette cue after the wing. */
+type RoofKind = "canopy" | "fastback" | "notch" | "targa";
 
 /** zFrac, floorLift, wFloor, wMax, shoulderFrac, wDeck, deckFrac — all the
  *  width terms are fractions of the half-width, the height terms fractions of
@@ -1419,6 +1423,7 @@ interface RoadCarParams {
   sillY: number; shoulderY: number; deckY: number; roofY: number;
   ribs: RibRow[];
   cabF: number; cabR: number; cabW: number;   // cabin footprint, z-fracs + width frac
+  roof?: RoofKind;
   whF: number; whR: number;                   // wheel centres, z-fracs
   wing?: WingKind;
   lamps?: LampKind;
@@ -1501,62 +1506,62 @@ const ROAD_CARS: Record<CarId, RoadCarParams> = {
   f40: {
     L: 4.43, W: 1.98, R: 0.33, rearR: 1.08, clr: 0.12,
     sillY: 0.40, shoulderY: 0.78, deckY: 0.86, roofY: 1.24,
-    ribs: RIBS_MID_WEDGE, cabF: 0.34, cabR: -0.50, cabW: 0.78, whF: 0.62, whR: 0.60,
+    ribs: RIBS_MID_WEDGE, cabF: 0.34, cabR: -0.50, roof: "canopy", cabW: 0.78, whF: 0.62, whR: 0.60,
     wing: "straked", lamps: "popup", tail: "quad", louvres: 6, naca: true, pipes: 3,
   },
   tauro: {
     L: 4.16, W: 2.02, R: 0.33, rearR: 1.12, clr: 0.11,
     sillY: 0.38, shoulderY: 0.74, deckY: 0.82, roofY: 1.16,
-    ribs: RIBS_MID_WEDGE, cabF: 0.40, cabR: -0.36, cabW: 0.7, whF: 0.60, whR: 0.62,
+    ribs: RIBS_MID_WEDGE, cabF: 0.40, cabR: -0.36, roof: "canopy", cabW: 0.7, whF: 0.60, whR: 0.62,
     wing: "basket", lamps: "popup", tail: "quad", louvres: 5, naca: true, pipes: 4,
   },
   meridian: {
     L: 4.29, W: 1.84, R: 0.32, rearR: 1.06, clr: 0.12,
     sillY: 0.42, shoulderY: 0.80, deckY: 0.90, roofY: 1.26,
-    ribs: RIBS_MID_CURVE, cabF: 0.36, cabR: -0.48, cabW: 0.8, whF: 0.62, whR: 0.60,
+    ribs: RIBS_MID_CURVE, cabF: 0.36, cabR: -0.48, roof: "canopy", cabW: 0.8, whF: 0.62, whR: 0.60,
     wing: "duck", lamps: "slim", tail: "bar", louvres: 7, scoop: "roof", pipes: 2,
   },
   veloce: {
     L: 4.46, W: 2.00, R: 0.34, rearR: 1.04, clr: 0.13,
     sillY: 0.44, shoulderY: 0.84, deckY: 0.94, roofY: 1.32,
-    ribs: RIBS_MID_CURVE, cabF: 0.30, cabR: -0.50, cabW: 0.82, whF: 0.62, whR: 0.60,
+    ribs: RIBS_MID_CURVE, cabF: 0.30, cabR: -0.50, roof: "canopy", cabW: 0.82, whF: 0.62, whR: 0.60,
     wing: "duck", lamps: "round2", tail: "bar", twoTone: true, scoop: "roof", pipes: 2,
   },
   testa: {
     L: 4.49, W: 1.98, R: 0.33, rearR: 1.10, clr: 0.12,
     sillY: 0.40, shoulderY: 0.76, deckY: 0.84, roofY: 1.22,
-    ribs: RIBS_MID_WEDGE, cabF: 0.34, cabR: -0.42, cabW: 0.76, whF: 0.62, whR: 0.60,
+    ribs: RIBS_MID_WEDGE, cabF: 0.34, cabR: -0.42, roof: "canopy", cabW: 0.76, whF: 0.62, whR: 0.60,
     wing: "none", lamps: "popup", tail: "slats", strakes: 5, pipes: 2,
   },
   zanza: {
     L: 4.43, W: 1.81, R: 0.32, rearR: 1.05, clr: 0.12,
     sillY: 0.40, shoulderY: 0.78, deckY: 0.86, roofY: 1.26,
-    ribs: RIBS_MID_CURVE, cabF: 0.34, cabR: -0.50, cabW: 0.82, whF: 0.62, whR: 0.60,
+    ribs: RIBS_MID_CURVE, cabF: 0.34, cabR: -0.50, roof: "canopy", cabW: 0.82, whF: 0.62, whR: 0.60,
     wing: "duck", lamps: "slim", tail: "bar", louvres: 4, pipes: 2,
   },
   imprez: {
     L: 4.34, W: 1.75, R: 0.32, clr: 0.20,
     sillY: 0.46, shoulderY: 0.88, deckY: 0.98, roofY: 1.46,
-    ribs: RIBS_SEDAN, cabF: 0.22, cabR: -0.46, cabW: 0.86, whF: 0.64, whR: 0.62,
+    ribs: RIBS_SEDAN, cabF: 0.22, cabR: -0.46, roof: "notch", cabW: 0.86, whF: 0.64, whR: 0.62,
     wing: "blade", lamps: "slim", tail: "twin", scoop: "rally", fogLamps: true, pipes: 2,
     rim: 0xc9a44a,   // the gold wheels are half of why you recognise this car
   },
   firehawk: {
     L: 4.98, W: 1.86, R: 0.35, rearR: 1.06, clr: 0.17,
     sillY: 0.44, shoulderY: 0.84, deckY: 0.92, roofY: 1.40,
-    ribs: RIBS_MUSCLE, cabF: 0.12, cabR: -0.60, cabW: 0.86, whF: 0.66, whR: 0.62,
+    ribs: RIBS_MUSCLE, cabF: 0.12, cabR: -0.60, roof: "targa", cabW: 0.86, whF: 0.66, whR: 0.62,
     wing: "whale", lamps: "slim", tail: "twin", scoop: "shaker", pipes: 2, rim: 0x8a8e96,
   },
   iroc: {
     L: 4.87, W: 1.85, R: 0.34, rearR: 1.06, clr: 0.16,
     sillY: 0.42, shoulderY: 0.82, deckY: 0.90, roofY: 1.38,
-    ribs: RIBS_MUSCLE, cabF: 0.14, cabR: -0.58, cabW: 0.86, whF: 0.66, whR: 0.62,
+    ribs: RIBS_MUSCLE, cabF: 0.14, cabR: -0.58, roof: "notch", cabW: 0.86, whF: 0.66, whR: 0.62,
     wing: "duck", lamps: "round4", tail: "quad", twoTone: true, scoop: "bulge", pipes: 2, rim: 0x8a8e96,
   },
   fairlady: {
     L: 4.14, W: 1.63, R: 0.31, clr: 0.16,
     sillY: 0.40, shoulderY: 0.78, deckY: 0.86, roofY: 1.32,
-    ribs: RIBS_FRONT_LONG, cabF: 0.10, cabR: -0.64, cabW: 0.82, whF: 0.64, whR: 0.62,
+    ribs: RIBS_FRONT_LONG, cabF: 0.10, cabR: -0.64, roof: "fastback", cabW: 0.82, whF: 0.64, whR: 0.62,
     wing: "none", lamps: "round2", tail: "twin", chrome: true, pipes: 1,
   },
 };
@@ -1624,8 +1629,8 @@ function buildRoadCar(color: number, p: RoadCarParams, num?: number): THREE.Grou
       // you actually see on one of these with the lights down
       g.add(box(W * 0.24, 0.03, L * 0.08, darkMat, sx * hw * 0.54, noseY + 0.015, hl * 0.62));
     } else if (lamps === "round4") {
-      for (const d of [0.42, 0.66]) {
-        const lg = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.05, 12), lensMat);
+      for (const d of [0.38, 0.6]) {
+        const lg = new THREE.Mesh(new THREE.CylinderGeometry(0.078, 0.078, 0.05, 12), lensMat);
         lg.rotation.x = Math.PI / 2;
         lg.position.set(sx * hw * d, noseY - 0.06, hl * 0.94);
         g.add(lg);
@@ -1680,10 +1685,14 @@ function buildRoadCar(color: number, p: RoadCarParams, num?: number): THREE.Grou
     g.add(box(W * 0.86, 0.085, 0.05, tailMat, 0, ty, tz));
     g.add(box(W * 0.88, 0.03, 0.06, darkMat, 0, deckY * 0.9, -hl - 0.012));
   } else if (tail === "quad") {
-    for (const sx of [-1.55, -0.55, 0.55, 1.55]) {
-      const l = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.115, 0.06, 14), tailMat);
+    // Two PAIRS, inboard. At 0.21W spacing the outer lamps sat right on the
+    // corners of the car and at 23 cm across they were the size of the wheels —
+    // four wide lights spanning the whole tail. On the cars this is modelled on
+    // they are small, and grouped either side of the centre.
+    for (const sx of [-1.42, -0.62, 0.62, 1.42]) {
+      const l = new THREE.Mesh(new THREE.CylinderGeometry(0.082, 0.082, 0.06, 14), tailMat);
       l.rotation.x = Math.PI / 2;
-      l.position.set(sx * W * 0.21, ty, tz - 0.01);
+      l.position.set(sx * W * 0.155, ty, tz - 0.01);
       g.add(l);
     }
   } else if (tail === "twin") {
@@ -1775,12 +1784,20 @@ function buildRoadCar(color: number, p: RoadCarParams, num?: number): THREE.Grou
   };
   const span = p.cabF - p.cabR;
   const zf = (k: number) => p.cabF - span * k;
+  const roof = p.roof ?? "canopy";
+  // How far back the roof stays up, and how hard the backlight then falls.
+  // A fastback carries the roof almost to the tail and drops it over a long
+  // rake; a notchback holds a square cabin and drops vertically onto a boot.
+  const roofEnd = roof === "fastback" ? 0.92 : roof === "notch" ? 0.66 : 0.8;
+  const tailH = roof === "fastback" ? 0.55 : roof === "notch" ? 0.02 : 0.2;
   const canopy: Rib[] = [
-    { z: hl * zf(0),     half: canopyHalf(cw * 0.8,  deckAtZ(zf(0)) - 0.03,    deckAtZ(zf(0))) },
-    { z: hl * zf(0.22),  half: canopyHalf(cw * 0.95, deckAtZ(zf(0.22)) - 0.02, roofY * 0.96) },
-    { z: hl * zf(0.52),  half: canopyHalf(cw,        deckAtZ(zf(0.52)) - 0.02, roofY) },
-    { z: hl * zf(0.8),   half: canopyHalf(cw * 0.9,  deckAtZ(zf(0.8)) - 0.02,  roofY * 0.93) },
-    { z: hl * zf(1),     half: canopyHalf(cw * 0.72, deckAtZ(zf(1)) - 0.02,    deckAtZ(zf(1)) + 0.02) },
+    { z: hl * zf(0),        half: canopyHalf(cw * 0.8,  deckAtZ(zf(0)) - 0.03,    deckAtZ(zf(0))) },
+    { z: hl * zf(0.22),     half: canopyHalf(cw * 0.95, deckAtZ(zf(0.22)) - 0.02, roofY * 0.96) },
+    { z: hl * zf(0.52),     half: canopyHalf(cw,        deckAtZ(zf(0.52)) - 0.02, roofY) },
+    { z: hl * zf(roofEnd),  half: canopyHalf(cw * 0.9,  deckAtZ(zf(roofEnd)) - 0.02,
+        roofY * (roof === "notch" ? 0.97 : 0.93)) },
+    { z: hl * zf(1),        half: canopyHalf(cw * 0.72, deckAtZ(zf(1)) - 0.02,
+        deckAtZ(zf(1)) + 0.02 + (roofY - deckY) * tailH) },
   ];
   g.add(loftBody(canopy, glass, 2));
   // A/B pillars in body colour. Without them the canopy is one dark blob and
@@ -1794,6 +1811,17 @@ function buildRoadCar(color: number, p: RoadCarParams, num?: number): THREE.Grou
   }
   // roof cap, so the top of the cabin is body and not more glass
   g.add(box(cw * 1.5, 0.045, Math.abs(hl * span) * 0.34, bodyPlain, 0, roofY, hl * zf(0.52)));
+  if (roof === "notch") {
+    // a real boot deck behind the cabin — the thing that makes a saloon or a
+    // notchback coupe read as one rather than as another fastback
+    const bz = (zf(roofEnd) + zf(1)) / 2;
+    g.add(box(W * 0.86, 0.06, Math.abs(hl * span) * 0.42, bodyPlain, 0, deckY + 0.02, hl * bz));
+  } else if (roof === "targa") {
+    // T-top: a body-colour spine down the centre and a bar across, so the roof
+    // reads as two removable panels either side
+    g.add(box(0.1, 0.05, Math.abs(hl * span) * 0.62, bodyPlain, 0, roofY + 0.005, hl * zf(0.5)));
+    g.add(box(cw * 1.9, 0.05, 0.1, bodyPlain, 0, roofY + 0.005, hl * zf(0.5)));
+  }
   const drv = makeDriver(0x14121c, false);
   drv.position.set(0, deckY - 0.16, hl * (p.cabF - span * 0.45));
   drv.scale.setScalar(0.86);

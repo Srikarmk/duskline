@@ -738,8 +738,12 @@ export class Game {
       const cz = (track.bounds.minZ + track.bounds.maxZ) / 2;
       const radius = Math.max(track.bounds.maxX - track.bounds.minX, track.bounds.maxZ - track.bounds.minZ) * 0.75 + 260;
       scene.add(makeMountainRing(pal, cx, cz, radius));
-      this.lightShafts = makeLightShafts(pal); // faint god-ray atmosphere
-      scene.add(this.lightShafts);
+      // NO god rays. These are vertical bright columns standing on the horizon,
+      // and at this scale they do not read as shafts of light through cloud —
+      // they read as searchlight beams, or as something descending from the
+      // sky. They were subtle against the old dark realms and are glaring
+      // against a clear one. Gone from every map.
+      this.lightShafts = null;
     }
 
     // lifted 1.45 -> 2.1: props were silhouetting to near-black, which is what
@@ -988,11 +992,20 @@ export class Game {
     // karts that pop in mid-race. Slot 0 = pole (front, fastest qualifier);
     // higher slots sit further back; the player is the backmost slot. Each rival
     // drives a different kart type for real variety.
-    const rowStep = 5.0;    // metres each grid slot sits ahead of the one behind
-    const colLane = 0.34;   // the two staggered columns, ± this in playerX units
+    // PAIRED ROWS, two cars abreast. This used to put one car every 5 m
+    // alternating sides, which is a single-file zigzag — it reads as a queue
+    // of traffic, not as a grid you are lined up on. A real standing grid is
+    // rows of two, staggered so the car on the right of a row sits slightly
+    // ahead of the one on its left, with a proper gap between rows.
+    const rowStep = 8.0;    // metres between ROWS
+    const stagger = 1.6;    // the right-hand slot of each row sits this far up
+    const colLane = 0.38;   // the two columns, ± this in playerX units
     const gridN = Math.min(OPPONENT_COUNT, OPPONENTS.length);
     const playerSlot = gridN;                 // player is last (behind every rival)
-    const slotDist = (slot: number) => (playerSlot - slot) * rowStep; // ahead > 0
+    const rowOf = (slot: number) => Math.floor(slot / 2);
+    const lastRow = rowOf(playerSlot);
+    const slotDist = (slot: number) =>
+      (lastRow - rowOf(slot)) * rowStep + (slot % 2 === 1 ? stagger : 0);
     const slotLane = (slot: number) => (slot % 2 === 0 ? -colLane : colLane);
 
     for (let i = 0; i < gridN; i++) {
@@ -2515,13 +2528,15 @@ export class Game {
         if (!straightAt(at)) continue;                      // no straight here — skip it
         d = at;
         const kind = rampKinds[rk % rampKinds.length];
-        // CENTRE LANE, always. Side-lane ramps measured as almost unhittable:
-        // the pure-pursuit steering assist is constantly pulling you back to the
-        // centreline, so it actively steers you OFF a ramp parked in lane 1 or 3
-        // (2 of 4 never even launched in testing). They're gentle and one lane
-        // wide now, and they land you back on the road, so sitting on the racing
-        // line makes them a feature you get to use rather than an obstacle.
-        const lane = LANE_CENTERS[1];
+        // Cycle the lanes. These used to be centre-lane ALWAYS, because the
+        // pure-pursuit steering assist pulls you back to the centreline and so
+        // actively steers you off a ramp parked out wide — 2 of 4 never
+        // launched in testing. But every ramp on the racing line reads as a
+        // conveyor belt, which is the real complaint. Cycling puts two thirds
+        // of them off-centre; the assist only holds the wheel when YOU are not
+        // steering, so aiming for one still works, and the centre-lane third
+        // keeps them from being missable by accident.
+        const lane = LANE_CENTERS[rk % 3];
         this.addEntity("ramp", d, lane, makeRamp(kind, this.realm.style === "void"), 0, RAMP_SPECS[kind].power);
         // The ride-up physics reads `this.ramps`, which NOTHING was populating —
         // so before this the ramps were pure decoration you drove straight
@@ -4198,6 +4213,12 @@ export class Game {
       // look ahead of it. FOV kicks with speed/boost; banks slightly with steer.
       const preset = CAMERA_PRESETS[this.cameraIndex];
       const spd = this.speed / MAX_SPEED;
+      // HOOD is a bonnet cam: it sits AHEAD of the car's centre and just above
+      // the bodywork, so there is nothing useful to see of your own car from
+      // it — and plenty to see wrong. Hiding the model removes a whole class of
+      // bug at once, including looking straight into the inside of the shell.
+      const hood = preset.name === "HOOD";
+      if (this.carModel) this.carModel.visible = !hood;
       // auto-follow: the camera yaw eases toward the car's heading instead of
       // snapping to it, so flicking the wheel swings the view in smoothly behind
       // you (much easier to place the car). Snap it on a hard cut (start/camera cycle).
@@ -4234,7 +4255,11 @@ export class Game {
 
       const camAnchor = new THREE.Vector3(
         this.freeDrive.x - fx * preset.back,
-        groundY + preset.height + this.alt * 0.55,
+        // Track the car's jump altitude almost fully. At 0.55 the car climbed
+        // past the camera on every launch while the camera lagged below it —
+        // which on the bonnet cam put the viewpoint INSIDE the shell, looking
+        // at its back faces. 0.92 keeps the camera with the car.
+        groundY + preset.height + this.alt * 0.92,
         this.freeDrive.z - fz * preset.back,
       );
       if (this.camSnap) { this.camPos.copy(camAnchor); this.camSnap = false; }
@@ -4247,7 +4272,7 @@ export class Game {
       }
       const lookAt = new THREE.Vector3(
         this.freeDrive.x + fx * preset.ahead,
-        groundY + preset.lookHeight + this.alt * 0.8,
+        groundY + preset.lookHeight + this.alt * 0.92,
         this.freeDrive.z + fz * preset.ahead,
       );
       this.camera.lookAt(lookAt);

@@ -647,7 +647,12 @@ export function makePosterSky(pal: RealmPalette): THREE.Mesh {
           // was one giant smeared blob. 2.4 puts a cell at about 23 degrees up
           // there, which is roughly what a cumulus actually subtends.
           vec2 cp = d.xz / max(d.y, 0.02) * 2.4 + vec2(uTime * 0.02, uTime * 0.007);
-          float detail = smoothstep(26.0, 7.0, length(cp));
+          // Detail has to survive much further out than this was letting it.
+          // Fading the fine octaves by 26 units killed the structure over most
+          // of the visible sky, which is why the clouds came back as soft
+          // blobs — the LOD is only there to stop sub-pixel crawl right down
+          // at the horizon, not to smooth the whole deck.
+          float detail = smoothstep(150.0, 40.0, length(cp));
 
           float n = fbm(cp, detail);
           // Second sample stepped TOWARD the sun. Where density falls off in
@@ -658,7 +663,10 @@ export function makePosterSky(pal: RealmPalette): THREE.Mesh {
           float ns = fbm(cp + sunXZ * 0.5, detail);
           float lit = clamp((n - ns) * 3.4 + 0.5, 0.0, 1.0);
 
-          float dens = smoothstep(coverage, coverage + 0.24, n);
+          // A 0.24-wide ramp means every cloud edge is a long gradient, i.e.
+          // every cloud is blurry. 0.09 gives a defined edge that is still
+          // soft enough to be vapour rather than cut paper.
+          float dens = smoothstep(coverage, coverage + 0.09, n);
           // fade into the horizon haze rather than stopping dead, and over a
           // wider band than before so the stretched region never shows
           dens *= smoothstep(0.04, 0.24, d.y);
