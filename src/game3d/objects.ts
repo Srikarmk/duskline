@@ -522,19 +522,21 @@ export function makeSkyDome(pal: RealmPalette): THREE.Mesh {
 /**
  * The poster sky, COMPUTED rather than painted.
  *
- * This is why it kept coming back blurry however the canvas art was drawn. The
- * dome is a 2048-wide equirect; the camera sees 72 degrees of it, i.e. 20% =
- * 410 texels — and it stretches those across a 2560-pixel device buffer. A 6x
- * magnification. Mipmaps were on with anisotropy 1 on top of that, so near the
- * horizon the GPU picked its LOD from the long axis of a stretched footprint
- * and blurred the sharp axis as well. Matching the screen with texels would
- * need a dome about 12,000 px wide, which is 500 MB of texture.
+ * Why it is a shader and not a canvas: the dome is an equirect sphere, the
+ * camera sees ~72 degrees of it — 20%, or 410 texels at 2048 wide — and
+ * stretches those across a 2560-pixel device buffer. A 6x magnification, with
+ * mipmaps picking their LOD off the long axis of a stretched footprint on top.
+ * Nothing drawn into that canvas could arrive sharp, and matching the screen
+ * with texels needs a dome about 12,000 px wide. Evaluated per fragment there
+ * is no resolution at all.
  *
- * Everything in this sky is analytic, so there is no resolution at all: the
- * gradient, the band steps and the sun's edge are evaluated per fragment and
- * are exactly as crisp as the display. The clouds stay a texture (see
- * makeCloudLayer) because shapes that irregular are not worth an SDF, but they
- * get 4096 and no mip chain.
+ * Why it is SMOOTH and not banded: sharpness and posterisation are not the
+ * same thing, and I conflated them. Quantising the gradient into flat steps
+ * made a striped sky, and drawing clouds as flat filled shapes made paper
+ * cut-outs — neither of which is what a sky looks like. The gradient runs
+ * continuous (a shader has no banding to hide), and the clouds are a noise
+ * field lit from the sun's direction so they have a bright side, a shaded side
+ * and soft edges — volume, not outline.
  */
 export function makePosterSky(pal: RealmPalette): THREE.Mesh {
   const lin = (c: string | number) => new THREE.Color(c).convertSRGBToLinear();
@@ -543,14 +545,17 @@ export function makePosterSky(pal: RealmPalette): THREE.Mesh {
   const c4 = c3.clone().lerp(fog, 0.7);
   const c5 = fog.clone().lerp(new THREE.Color(0, 0, 0), 0.45);
 
-  // Matches where the canvas version put it — 13.5 degrees up, and the azimuth
-  // SphereGeometry's UV mapping puts at u = 0.62, so the light and the disc
-  // still agree. Its uv is x = -cos(phi)sin(theta), z = sin(phi)sin(theta).
+  // 13.5 degrees up, at the azimuth SphereGeometry's UV mapping puts at
+  // u = 0.62, so the disc still lands where the old canvas one did and the
+  // scene's key light still agrees with it.
   const el = (13.5 * Math.PI) / 180, az = 0.62 * Math.PI * 2;
   const sunDir = new THREE.Vector3(
     -Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el)
   ).normalize();
-  const SUN_DEG = 9, HALO_DEG = 22;
+
+  // clouds pick up the sun's warmth on top and the sky's colour underneath
+  const litCol = lin(pal.sun).lerp(new THREE.Color(1, 1, 1).convertSRGBToLinear(), 0.45);
+  const shadeCol = c2.clone().lerp(c1, 0.45).multiplyScalar(0.85);
 
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
@@ -561,9 +566,12 @@ export function makePosterSky(pal: RealmPalette): THREE.Mesh {
       c3: { value: c3 }, c4: { value: c4 }, c5: { value: c5 },
       sunCol: { value: lin(pal.sun) },
       sunDir: { value: sunDir },
-      cosSun: { value: Math.cos((SUN_DEG * Math.PI) / 180) },
-      cosHalo: { value: Math.cos((HALO_DEG * Math.PI) / 180) },
-      bands: { value: 26 },
+      litCol: { value: litCol },
+      shadeCol: { value: shadeCol },
+      cosSun: { value: Math.cos((7.5 * Math.PI) / 180) },
+      cosHalo: { value: Math.cos((26 * Math.PI) / 180) },
+      uTime: { value: 0 },
+      coverage: { value: 0.46 },
     },
     vertexShader: `
       varying vec3 vDir;
@@ -576,10 +584,37 @@ export function makePosterSky(pal: RealmPalette): THREE.Mesh {
       precision highp float;
       varying vec3 vDir;
       uniform vec3 c0, c1, c2, c3, c4, c5;
-      uniform vec3 sunCol, sunDir;
-      uniform float cosSun, cosHalo, bands;
+      uniform vec3 sunCol, sunDir, litCol, shadeCol;
+      uniform float cosSun, cosHalo, uTime, coverage;
 
-      // the same stops the canvas gradient used, re-expressed against
+      float hash(vec2 p) {
+        p = fract(p * vec2(123.34, 456.21));
+        p += dot(p, p + 45.32);
+        return fract(p.x * p.y);
+      }
+      float vnoise(vec2 p) {
+        vec2 i = floor(p), f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        float a = hash(i), b = hash(i + vec2(1.0, 0.0));
+        float c = hash(i + vec2(0.0, 1.0)), d = hash(i + vec2(1.0, 1.0));
+        return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+      }
+      // detail fades the fine octaves out with distance. Near the horizon the
+      // deck projection stretches enormously, so full-detail noise out there is
+      // sub-pixel and crawls; this is a cheap LOD that kills it.
+      float fbm(vec2 p, float detail) {
+        float v = 0.0, a = 0.5, norm = 0.0;
+        for (int i = 0; i < 5; i++) {
+          float w = a * (i < 2 ? 1.0 : detail);
+          v += w * vnoise(p);
+          norm += w;
+          p = p * 2.03 + 17.3;
+          a *= 0.5;
+        }
+        return v / max(norm, 1e-4) * 0.94;
+      }
+
+      // continuous, using the same stops the palette always had, against
       // t = 1 at the zenith, 0 at the horizon, -1 straight down
       vec3 grad(float t) {
         if (t >= 0.4)  return mix(c1, c0, (t - 0.4) / 0.6);
@@ -592,30 +627,54 @@ export function makePosterSky(pal: RealmPalette): THREE.Mesh {
       void main() {
         vec3 d = normalize(vDir);
         float t = asin(clamp(d.y, -1.0, 1.0)) / 1.5707963;
+        vec3 col = grad(t);
 
-        // Flat bands above the horizon. The top fifth stays smooth: an
-        // equirect's latitude lines converge at the pole, and a hard edge up
-        // there reads as concentric rings around a target.
-        float q = t;
-        if (t > 0.0) {
-          float stepped = (floor(t * bands) + 0.5) / bands;
-          q = mix(stepped, t, smoothstep(0.80, 1.0, t));
+        // sun disc: hard edge, anti-aliased across one pixel by the
+        // screen-space derivative so it is crisp without stair-stepping
+        float cs = dot(d, sunDir);
+        float aa = max(fwidth(cs) * 1.2, 1e-5);
+        col = mix(col, sunCol, smoothstep(cosSun - aa, cosSun + aa, cs));
+        col += sunCol * smoothstep(cosHalo, cosSun, cs) * 0.22;
+
+        if (d.y > 0.015) {
+          // Project the view ray onto a flat cloud deck overhead. This is what
+          // gives real perspective for free: the same noise compresses toward
+          // the horizon exactly the way a cloud layer does, instead of being
+          // pasted on at a fixed size.
+          // Scale matters more than it looks. At 0.55 one noise cell spanned
+          // 61 degrees of sky directly overhead, because a flat deck collapses
+          // to a single point at the zenith — which is why the top of the sky
+          // was one giant smeared blob. 2.4 puts a cell at about 23 degrees up
+          // there, which is roughly what a cumulus actually subtends.
+          vec2 cp = d.xz / max(d.y, 0.02) * 2.4 + vec2(uTime * 0.02, uTime * 0.007);
+          float detail = smoothstep(26.0, 7.0, length(cp));
+
+          float n = fbm(cp, detail);
+          // Second sample stepped TOWARD the sun. Where density falls off in
+          // that direction the cloud is facing the light, where it rises the
+          // cloud is in its own shadow — cheap self-shadowing, and it is the
+          // whole reason these read as solid rather than as cut paper.
+          vec2 sunXZ = normalize(sunDir.xz + 1e-5);
+          float ns = fbm(cp + sunXZ * 0.5, detail);
+          float lit = clamp((n - ns) * 3.4 + 0.5, 0.0, 1.0);
+
+          float dens = smoothstep(coverage, coverage + 0.24, n);
+          // fade into the horizon haze rather than stopping dead, and over a
+          // wider band than before so the stretched region never shows
+          dens *= smoothstep(0.04, 0.24, d.y);
+          dens *= 0.96;
+
+          vec3 cc = mix(shadeCol, litCol, lit * lit);
+          // rim: the thinnest part of a cloud transmits the sun through it
+          cc += sunCol * smoothstep(0.55, 0.95, 1.0 - abs(dens - 0.5) * 2.0) * 0.1;
+          col = mix(col, cc, dens);
         }
-        vec3 col = grad(q);
-
-        // hard-edged disc, anti-aliased across exactly one pixel via the
-        // screen-space derivative, so it is crisp without stair-stepping
-        float c = dot(d, sunDir);
-        float aa = max(fwidth(c) * 1.2, 1e-5);
-        col = mix(col, sunCol, smoothstep(cosSun - aa, cosSun + aa, c));
-        col += sunCol * smoothstep(cosHalo, cosSun, c) * 0.26;
 
         gl_FragColor = vec4(col, 1.0);
         // A raw ShaderMaterial does NOT get three's output stages for free the
-        // way a built-in material does, so writing linear colour straight out
-        // lands it on screen un-encoded — 0.023 linear displayed as if it were
-        // sRGB is black, which is what the zenith turned into. These two
-        // chunks are exactly what every built-in material appends.
+        // way a built-in material does. Writing linear colour straight out
+        // lands it on screen un-encoded, and 0.023 linear shown as sRGB is
+        // black — which is what the zenith turned into.
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }

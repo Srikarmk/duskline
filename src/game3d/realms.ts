@@ -919,7 +919,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       // Big Sur in late summer is straw and olive, not a fairway — the bright
       // green was coming back off the hemisphere as a golf course.
       groundBase: "#7d7a52", groundSpeck: "#8e8a5e", groundDark: "#43472f",
-      groundTint: 0xa8a274,
+      groundTint: 0xd6c184,
       road: "#3c3f45", roadDark: "#2f3238", rumbleA: "#f2f2ee", rumbleB: "#c8a24a",
       laneLine: "#fffaf0", edgeLine: "#ffffff", roadFinish: "gloss",
       crystalColors: [0xffd9a8, 0x9db9c9, 0xffffff],

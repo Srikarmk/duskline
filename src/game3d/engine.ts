@@ -338,6 +338,7 @@ export class Game {
   private camYaw = 0; // smoothed camera heading — eases toward the car so the view swings in behind you instead of snapping with every steer
   private coast: { x: number; z: number; r: number; far: number; band: number; drop: number; side: number } | null = null;
   private clouds: THREE.Mesh | null = null;
+  private skyMat: THREE.ShaderMaterial | null = null;
   private seaY = -11; // coastal realms: land inside r, sea beyond
   private reliefAmp = 0; // per-realm amplitude of the rolling hills the ground rises into away from the road
   private sun!: THREE.DirectionalLight; // shadow-casting key light; its frustum follows the car
@@ -630,7 +631,10 @@ export class Game {
       // deserts came out mossy. Pick the closest shipped albedo per realm and
       // let the tint do the last 20%.
       hokkai: "ground_peaks",   // pale rock, tints to snow
-      cape: "ground_peaks",     // dry headland grass over rock
+      // peaks is bare pale rock, and tinting it straw made the headland read
+      // as desert sand. Big Sur in late summer is dry GRASS over scrub, so the
+      // forest albedo with its grass structure, tinted warm, is the closer set.
+      cape: "ground_forest",
       hills: "ground_ember",    // scorched chaparral
       basin: "ground_ember",    // red desert rock
       mirage: "ground_peaks",   // pale sand
@@ -698,14 +702,20 @@ export class Game {
     // equirect can never be sharp here, because 72 degrees of a 2048-wide
     // texture is 410 texels stretched over a 2560-pixel buffer. Realms with
     // stars or moons still need the canvas, which is where those are drawn.
-    const sky = pal.posterSun && !pal.stars && pal.moons.length === 0
-      ? makePosterSky(pal)
-      : makeSkyDome(pal);
+    const analytic = pal.posterSun && !pal.stars && pal.moons.length === 0;
+    const sky = analytic ? makePosterSky(pal) : makeSkyDome(pal);
     sky.userData.noShadow = true; // the sky must never cast/receive shadows
     scene.add(sky);
-    // the cloud deck rides its own dome so it can drift (see makeCloudLayer)
-    this.clouds = makeCloudLayer(pal);
-    scene.add(this.clouds);
+    // The analytic sky draws its own clouds, lit and drifting, so it needs no
+    // dome — which also drops a 4096 texture and a draw call. Only the canvas
+    // realms still get the separate cloud layer.
+    this.skyMat = analytic ? (sky.material as THREE.ShaderMaterial) : null;
+    if (!analytic) {
+      this.clouds = makeCloudLayer(pal);
+      scene.add(this.clouds);
+    } else {
+      this.clouds = null;
+    }
 
     if (!isVoid) {
       // terrain that RISES with the road near the track (roads sit grounded in
@@ -775,7 +785,14 @@ export class Game {
     // either side at y=0, which sits on top of the carved beach and is exactly
     // the wide brown plain hiding the water. Coastal realms get a shore apron
     // instead — same job, but it follows the ground down under the waterline.
-    if (this.coast) scene.add(this.buildCoastApron(makeSandTexture(pal)));
+    // The apron's texture was always the beach cross-section — dry sand, a foam
+    // line, wet sand, seabed — which is right for a causeway and wrong for a
+    // clifftop, where it painted a 50 m strip of beach along the top of a
+    // 150 m cliff. A sided coast is a cliff; it wears the realm's own ground.
+    if (this.coast) {
+      const beach = this.coast.side === 0;
+      scene.add(this.buildCoastApron(beach ? makeSandTexture(pal) : makeGrassTexture(pal), beach));
+    }
     else if (!isVoid) scene.add(track.buildVergeMesh(makeGrassTexture(pal)));
     scene.add(track.buildRoadMesh(makeRoadTexture(pal), pal.roadFinish));
     this.buildPuddles(pal); // reflective puddles on wet/icy tracks
@@ -2201,7 +2218,7 @@ export class Game {
    * edge are actually shaped. The coarse mesh chords BELOW the true curve
    * through the drop (it is concave down), so it stays hidden underneath.
    */
-  private buildCoastApron(tex: THREE.Texture): THREE.Mesh {
+  private buildCoastApron(tex: THREE.Texture, beach = true): THREE.Mesh {
     const c = this.coast!;
     const inner = ROAD_HALF_WIDTH * 1.25 - 0.8; // tucks under the road edge
     const lats = [inner, c.r * 0.5, c.r * 0.8, c.r, c.r + 3, c.r + 6, c.r + 10, c.r + 16, c.r + 28];
@@ -2217,7 +2234,11 @@ export class Game {
         for (let k = 0; k < cols; k++) {
           this.track.pointAt(d, side * lats[k], p, true);
           pos.push(p.x, this.groundHeightAtXZ(p.x, p.z) + 0.02, p.z);
-          uv.push(k / (cols - 1), d / 12);
+          // A beach texture is a CROSS-SECTION: u spans the strip exactly once so
+          // one column of pixels paints sand-to-seabed. A ground texture is a
+          // tile and has to repeat, or a single tile stretches 50 m sideways.
+          if (beach) uv.push(k / (cols - 1), d / 12);
+          else uv.push(lats[k] / 9, d / 9);
         }
       }
       for (let i = 0; i < count; i++) for (let k = 0; k < cols - 1; k++) {
@@ -3099,6 +3120,9 @@ export class Game {
     // sky is alive when you look at it, slow enough that it never pulls the eye
     // off the road.
     if (this.clouds) this.clouds.rotation.y += 0.0085 * dt;
+    // Drift the analytic cloud deck. Slow enough that it never pulls the eye
+    // off the road, fast enough that the sky is alive if you look at it.
+    if (this.skyMat) this.skyMat.uniforms.uTime.value += dt;
 
     this.time += dt;
     for (const t of this.toasts) t.t -= dt;
