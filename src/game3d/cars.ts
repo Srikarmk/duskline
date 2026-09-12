@@ -1659,10 +1659,23 @@ function buildRoadCar(color: number, p: RoadCarParams, num?: number): THREE.Grou
   // two surfaces a hundredth of a metre apart, and that z-fight is the glitchy
   // flicker across the back of the car. Front face buried inside, rear face
   // clearly proud.
-  g.add(box(W * 0.9, 0.27, 0.06, grilleMat, 0, ty, -hl - 0.008));
-  // body-colour lip above the recess, so the tail is BANDED (lip / black panel
-  // / undercut / diffuser) instead of one continuous painted face
-  g.add(box(W * 0.95, 0.06, 0.08, bodyPlain, 0, ty + 0.17, -hl - 0.004));
+  // The recess has to FIT THE LAMPS. One 0.9-width, 0.27-tall black band on
+  // every car made the whole grid read the same from behind — a black slab
+  // with some colour around it — and on the cars whose lamps are small it was
+  // most of the rear end. Only the slatted tail actually wants a full-width
+  // panel; that one is a Testarossa and the panel IS the design.
+  if (tail === "slats") {
+    g.add(box(W * 0.9, 0.27, 0.06, grilleMat, 0, ty, -hl - 0.008));
+  } else if (tail === "twin") {
+    for (const sx of [-1, 1]) g.add(box(W * 0.36, 0.17, 0.06, grilleMat, sx * hw * 0.6, ty, -hl - 0.008));
+  } else if (tail === "quad") {
+    g.add(box(W * 0.74, 0.2, 0.06, grilleMat, 0, ty, -hl - 0.008));
+  } else {
+    g.add(box(W * 0.9, 0.13, 0.06, grilleMat, 0, ty, -hl - 0.008));
+  }
+  // body-colour lip above the recess, so the tail is BANDED (lip / recess /
+  // undercut / diffuser) instead of one continuous painted face
+  g.add(box(W * 0.95, 0.055, 0.08, bodyPlain, 0, ty + 0.13, -hl - 0.004));
   if (tail === "bar") {
     g.add(box(W * 0.86, 0.085, 0.05, tailMat, 0, ty, tz));
     g.add(box(W * 0.88, 0.03, 0.06, darkMat, 0, deckY * 0.9, -hl - 0.012));
