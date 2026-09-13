@@ -52,7 +52,7 @@ import { REALMS, pickScenery, REALM_WEATHER, REALM_WEATHER_POOL, REALM_AMBIENCE,
 import { makePyramid, makeObelisk, makeSphinx, makePalm, makeSandRock } from "./props/egyptian";
 import { makeTower, makeGatehouse, makeCastleWall, makeBanner, makeTorch } from "./props/castle";
 import { makeGrandstand, makeTyreStack, makeFloodlight, makePitBuilding, makeMarshalBoard } from "./props/circuit";
-import { makeSkyscraper, makeBrownstone, makeStreetlight, makeBillboard, makeWaterTower, makeOverheadLight, makeNeonSign, makeNeoTower } from "./props/metro";
+import { makeSkyscraper, makeBrownstone, makeStreetlight, makeBillboard, makeWaterTower, makeOverheadLight, makeNeonSign, makeNeoTower, makeLightWash, washMaterial } from "./props/metro";
 import { makeHogwartsCastle, makeHogwartsExpress, makeQuidditchHoop, makeFloatingCandle, makeGoldenSnitch, makeWhompingWillow } from "./props/hogwarts";
 import { makeWaterfall, makeRiverBridge } from "./props/water";
 import { Opponent } from "./ai";
@@ -3025,17 +3025,66 @@ export class Game {
         // make the buildings feel occupied, and they are the light source the
         // reference keeps insisting on. Hung at varying heights and facing the
         // traffic, so they sweep past at eye level as you drive.
-        for (let k = 0; k < 120; k++) {
+        // 260 over a 16 km lap is a sign every 60 m on average. Neo-Tokyo is
+        // papered in them; 120 left long dark stretches between.
+        //
+        // The spill quads are collected rather than added one by one: 520 of
+        // them all share the wash material and none of them ever move, so they
+        // become ONE mesh. This renderer is draw-call bound and 520 extra
+        // objects to cull and submit is exactly the kind of thing that has hurt
+        // it before.
+        const washGeos: THREE.BufferGeometry[] = [];
+        const collect = (m: THREE.Mesh) => {
+          m.updateMatrix();
+          const gm = m.geometry.clone();
+          gm.applyMatrix4(m.matrix);
+          washGeos.push(gm);
+        };
+        for (let k = 0; k < 260; k++) {
           const d = track.wrap(rand() * len);
           const side: 1 | -1 = rand() < 0.5 ? 1 : -1;
           const off = side * (34 + rand() * 46);
           const pt = track.pointAt(d, off);
           const sign = makeNeonSign(rand);
-          sign.scale.multiplyScalar(1.3 + rand() * 1.9);
-          sign.position.set(pt.x, this.terrainYAt(d, off) + 6 + rand() * 26, pt.z);
+          const sc = 1.3 + rand() * 1.9;
+          sign.scale.multiplyScalar(sc);
+          const signY = this.terrainYAt(d, off) + 6 + rand() * 26;
+          sign.position.set(pt.x, signY, pt.z);
           const road = track.pointAt(d, 0);
           sign.rotation.y = Math.atan2(road.x - pt.x, road.z - pt.z);
           this.scene.add(sign);
+
+          // THE LIGHT IT THROWS. A sign that only lights itself is a sticker on
+          // a black wall; in the reference a sign across the street puts its
+          // colour on the block opposite and on the wet road underneath, and
+          // that spill is most of what makes the city feel lit rather than
+          // decorated. Two washes, both additive and both falling off softly.
+          const hue = sign.userData.signColor as number;
+
+          // on the road below, stretched along it the way a real throw is
+          const poolD = track.wrap(d + (rand() - 0.5) * 20);
+          const poolP = track.pointAt(poolD, side * (rand() * 6));
+          const pool = makeLightWash(hue, 34 + rand() * 22, 0.22);
+          pool.rotation.x = -Math.PI / 2;
+          pool.rotation.z = rand() * Math.PI;
+          pool.position.set(poolP.x, this.terrainYAt(poolD, 0) + 0.05, poolP.z);
+          collect(pool);
+
+          // and on the block across the road, facing back the way the sign does
+          const farOff = -side * (30 + rand() * 34);
+          const farP = track.pointAt(d, farOff);
+          const far = makeLightWash(hue, 26 + rand() * 30, 0.17);
+          far.position.set(farP.x, signY + (rand() - 0.4) * 16, farP.z);
+          far.rotation.y = Math.atan2(pt.x - farP.x, pt.z - farP.z);
+          collect(far);
+        }
+        if (washGeos.length) {
+          const merged = mergeGeometries(washGeos, false);
+          if (merged) {
+            const m = new THREE.Mesh(merged, washMaterial());
+            m.renderOrder = 3;
+            this.scene.add(m);
+          }
         }
         break;
       }

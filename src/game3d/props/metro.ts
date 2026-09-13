@@ -375,6 +375,55 @@ export function makeBrownstone(rand: () => number): THREE.Group {
  * along +X, so mirror the group for the other verge.
  */
 /**
+ * Shared soft radial falloff, used as the alpha for every light wash.
+ *
+ * A wash has to be a GRADIENT, not a quad of flat opacity — a rectangle of
+ * even colour additively blended onto a wall reads as a rectangle, which is
+ * the same mistake the lamp cones made. One texture serves every sign; the
+ * colour comes from vertex colours so they can all share one material.
+ */
+let _washTex: THREE.Texture | null = null;
+function washTexture(): THREE.Texture {
+  if (_washTex) return _washTex;
+  const R = 128;
+  const c = document.createElement("canvas");
+  c.width = R; c.height = R;
+  const x = c.getContext("2d")!;
+  const g = x.createRadialGradient(R / 2, R / 2, 0, R / 2, R / 2, R / 2);
+  g.addColorStop(0, "rgba(255,255,255,1)");
+  g.addColorStop(0.35, "rgba(255,255,255,0.5)");
+  g.addColorStop(0.7, "rgba(255,255,255,0.13)");
+  g.addColorStop(1, "rgba(255,255,255,0)");
+  x.fillStyle = g;
+  x.fillRect(0, 0, R, R);
+  _washTex = new THREE.CanvasTexture(c);
+  return _washTex;
+}
+
+/** One material for every light wash in the realm — colour rides on the
+ *  vertices, so 120 signs cost one material and can be merged. */
+let _washMat: THREE.MeshBasicMaterial | null = null;
+export function washMaterial(): THREE.MeshBasicMaterial {
+  return (_washMat ??= new THREE.MeshBasicMaterial({
+    map: washTexture(), vertexColors: true, transparent: true,
+    blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+  }));
+}
+
+/** A wash quad of `size`, tinted `hex` at `strength`, ready to be positioned. */
+export function makeLightWash(hex: number, size: number, strength: number): THREE.Mesh {
+  const geo = new THREE.PlaneGeometry(size, size);
+  const c = new THREE.Color(hex).multiplyScalar(strength);
+  const n = geo.getAttribute("position").count;
+  const col = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+  geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  const m = new THREE.Mesh(geo, washMaterial());
+  m.renderOrder = 3;
+  return m;
+}
+
+/**
  * A neon sign: a stack of lit bars hung on a building face.
  *
  * The reference is emphatic that Neo-Tokyo's light is MOTIVATED — it comes
@@ -526,14 +575,15 @@ export function makeNeonSign(rand: () => number): THREE.Group {
     );
     g.add(bar);
   }
-  // the glow it throws back onto its own board
-  const halo = new THREE.Mesh(new THREE.PlaneGeometry(w * 1.7, h * 1.5),
-    new THREE.MeshBasicMaterial({
-      color: col, transparent: true, opacity: 0.16,
-      blending: THREE.AdditiveBlending, depthWrite: false,
-    }));
-  halo.position.z = 0.2;
-  g.add(halo);
+  // The light it throws onto the wall it is bolted to. This used to be a flat
+  // 0.16-opacity rectangle, which additively blended reads as a rectangle of
+  // slightly paler wall. A sign lights a soft pool around itself, so the wash
+  // is a radial falloff several times the sign's own size.
+  const wash = makeLightWash(col, Math.max(w, h) * 4.6, 0.62);
+  wash.position.z = 0.24;
+  g.add(wash);
+  // let the caller light the road and the block opposite with the same hue
+  g.userData.signColor = col;
   return g;
 }
 
