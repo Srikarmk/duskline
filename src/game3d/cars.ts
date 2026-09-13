@@ -217,6 +217,22 @@ function box(
   return m;
 }
 
+/** Vented brake disc, and the caliper clamped over it. Shared across the whole
+ *  grid: four wheels on ten cars is eighty of each, and the colour never
+ *  varies. */
+let _discMat: THREE.MeshStandardMaterial | null = null;
+function discMat(): THREE.MeshStandardMaterial {
+  return (_discMat ??= new THREE.MeshStandardMaterial({ color: 0x2a2c31, metalness: 0.85, roughness: 0.42 }));
+}
+let _calMat: THREE.MeshStandardMaterial | null = null;
+function caliperMat(): THREE.MeshStandardMaterial {
+  return (_calMat ??= new THREE.MeshStandardMaterial({ color: 0xb2231d, metalness: 0.4, roughness: 0.5 }));
+}
+let _chromeShared: THREE.MeshStandardMaterial | null = null;
+function chromeShared(): THREE.MeshStandardMaterial {
+  return (_chromeShared ??= new THREE.MeshStandardMaterial({ color: 0xc8cdd6, metalness: 0.95, roughness: 0.22 }));
+}
+
 /** Shared dark hub/lug material sitting behind the alloy spokes. One instance
  *  for every car — the colour is constant, so sharing keeps setup cheap. */
 let _hubMat: THREE.MeshStandardMaterial | null = null;
@@ -304,8 +320,28 @@ function makeWheel(
   const lip = new THREE.Mesh(new THREE.TorusGeometry(radius * 0.86, radius * 0.09, 4, 18), rimMat);
   lip.rotation.y = Math.PI / 2;
   face.add(lip);
+  // lug nuts around the hub — tiny, but they are the thing that reads as a
+  // wheel rather than a disc with lines on it
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2;
+    const nut = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.03, 6), chromeShared());
+    nut.rotation.z = Math.PI / 2;
+    nut.position.set(0.028, Math.cos(a) * radius * 0.15, Math.sin(a) * radius * 0.15);
+    face.add(nut);
+  }
   face.position.x = outSign * (treadW / 2 + 0.01);
   g.add(face);
+
+  // BRAKES, seen through the spokes. A wheel with nothing behind it reads as a
+  // sticker; a disc and a caliper give the arch depth, and on a car this size
+  // they are the most visible mechanical detail there is.
+  const disc = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.62, radius * 0.62, 0.035, 16), discMat());
+  disc.rotation.z = Math.PI / 2;
+  disc.position.x = outSign * treadW * 0.18;
+  g.add(disc);
+  const cal = new THREE.Mesh(new THREE.BoxGeometry(0.07, radius * 0.46, radius * 0.2), caliperMat());
+  cal.position.set(outSign * treadW * 0.18, radius * 0.42, -radius * 0.24);
+  g.add(cal);
   g.position.set(x, radius, z);
   // tag so the engine can spin (X) and steer (Y) it; YXZ = steer then spin
   g.rotation.order = "YXZ";
@@ -1893,6 +1929,52 @@ function buildRoadCar(color: number, p: RoadCarParams, num?: number): THREE.Grou
   drv.position.set(0, deckY - 0.16, hl * (p.cabF - span * 0.45));
   drv.scale.setScalar(0.86);
   g.add(drv);
+
+  // --- the details that make it read as a car rather than a shape -----------
+  // Everything below is small. That is the point: a body with no shut-line, no
+  // mirror, no window frame and no plate reads as a lofted solid however good
+  // its section is, because those are the things the eye uses to size a car.
+  const chrome2 = chromeShared();
+  for (const sx of [-1, 1]) {
+    // wing mirror on a stalk at the base of the A-pillar, dark glass outboard
+    const mz = hl * zf(0.14);
+    const my = deckAtZ(zf(0.14)) + 0.06;
+    g.add(box(0.11, 0.03, 0.03, darkMat, sx * (cw * 0.98 + 0.06), my, mz));
+    const pod = box(0.07, 0.075, 0.17, bodyPlain, sx * (cw * 0.98 + 0.14), my + 0.02, mz);
+    g.add(pod);
+    g.add(box(0.02, 0.055, 0.13, glass, sx * (cw * 0.98 + 0.178), my + 0.02, mz - 0.01));
+
+    // door shut-line and handle. The shut-line is a dark inset sliver, not a
+    // painted stripe, so it catches shadow the way a panel gap does.
+    const dz = hl * (p.cabF - span * 0.62);
+    g.add(box(0.012, shoulderY - sillY * 0.7, 0.022, darkMat, sx * hw * 0.995, (shoulderY + sillY) / 2, dz));
+    g.add(box(0.035, 0.045, 0.16, chrome2, sx * hw * 1.0, shoulderY - 0.11, dz + L * 0.07));
+
+    // window surround: a thin frame following the glass along the belt line
+    g.add(box(0.025, 0.03, Math.abs(hl * span) * 0.86, darkMat, sx * cw * 0.97,
+      deckAtZ(zf(0.5)) - 0.01, hl * zf(0.5)));
+
+    // side intake ahead of the rear arch — a recessed dark mouth with a body
+    // lip over it, which is where a mid-engine car actually breathes
+    if (p.louvres || p.naca || p.strakes) {
+      const iz = -hl * 0.46;
+      g.add(box(0.05, 0.17, L * 0.13, grilleMat, sx * hw * 0.99, sillY + 0.16, iz));
+      g.add(box(0.06, 0.035, L * 0.14, bodyPlain, sx * hw * 0.985, sillY + 0.26, iz));
+    }
+  }
+
+  // front bumper ducts either side of the grille, and a number plate recess
+  for (const sx of [-1, 1]) {
+    g.add(box(W * 0.16, 0.11, 0.05, grilleMat, sx * hw * 0.6, clr + 0.16, hl * 0.955));
+  }
+  g.add(box(W * 0.22, 0.1, 0.03, chrome2, 0, ty - 0.18, -hl - 0.02));       // plate
+  g.add(box(0.11, 0.05, 0.03, chrome2, 0, ty + 0.13, -hl - 0.02));          // badge
+
+  // rear diffuser fins — vertical strakes in the undertray. On a chase camera
+  // this is dead centre of frame for the whole race.
+  for (const sx of [-2, -1, 0, 1, 2]) {
+    g.add(box(0.035, 0.19, L * 0.05, bodyPlain, sx * W * 0.13, clr + 0.1, -hl * 0.93));
+  }
 
   // --- wheels + arches ------------------------------------------------------
   // 0.80 of the half-width buried the tyres INSIDE the bodywork: the flank is a
