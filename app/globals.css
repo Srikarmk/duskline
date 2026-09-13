@@ -333,6 +333,43 @@ main {
   margin-inline: auto;
 }
 
+/* DRIVE NOW — the one-click path straight into a race on the current
+   selection. Deliberately the loudest control on the page: the four-step
+   wizard is there for people who want to choose, and this is for everyone
+   else. */
+.quick-race {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 1.4rem auto 0;
+  padding: 0.85rem 2.6rem;
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  background: linear-gradient(100deg, #7c3aed 0%, #c026d3 48%, #f43f5e 100%);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 0 0 6px rgba(192, 38, 211, 0.12), 0 14px 38px -12px rgba(192, 38, 211, 0.85);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+.quick-race:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.08);
+  box-shadow: 0 0 0 8px rgba(192, 38, 211, 0.16), 0 20px 46px -12px rgba(192, 38, 211, 0.95);
+}
+.quick-race:active { transform: translateY(0); }
+.quick-race .qr-go {
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+.quick-race .qr-sub {
+  font-size: 0.7rem;
+  letter-spacing: 0.2em;
+  opacity: 0.82;
+  text-transform: uppercase;
+}
+
 .hero-tags {
   display: flex;
   flex-wrap: wrap;

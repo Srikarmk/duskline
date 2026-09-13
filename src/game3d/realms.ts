@@ -40,6 +40,7 @@ export const REALM_WEATHER: Record<RealmId, WeatherKind> = {
   basin: "none",
   cape: "mist",
   hills: "none",
+  neon: "none",
 };
 
 /** Plausible weather each realm can cycle through mid-race. Kept per-realm on
@@ -63,6 +64,7 @@ export const REALM_WEATHER_POOL: Record<RealmId, WeatherKind[]> = {
   basin:  ["none", "sand"],
   cape:   ["mist", "rain", "none"],     // Pacific fog off the headland
   hills:  ["none", "mist"],
+  neon: ["none"],
 };
 
 /** Per-realm ambient sound bed (procedural). */
@@ -84,6 +86,7 @@ export const REALM_AMBIENCE: Record<RealmId, AmbienceKind> = {
   basin: "wind",
   cape: "wind",
   hills: "city",
+  neon: "city",
 };
 
 /** Tunnel set-pieces per realm: `at` is a fraction (0..1) of the lap where the
@@ -113,6 +116,7 @@ export const REALM_TUNNELS: Record<RealmId, { at: number; len: number }[]> = {
   basin: [{ at: 0.58, len: 70 }],                            // cut through a mesa
   cape: [{ at: 0.34, len: 88 }],                             // headland bore
   hills: [{ at: 0.7, len: 74 }],
+  neon: [{ at: 0.17, len: 190 }, { at: 0.67, len: 190 }],
 };
 
 /** River crossings per realm: fractions (0..1) of the lap where the track
@@ -134,6 +138,7 @@ export const REALM_RIVERS: Record<RealmId, number[]> = {
   basin: [],
   cape: [0.62],      // the creek that comes off the ridge to the sea
   hills: [],
+  neon: [],
 };
 
 /** Fork zones per realm: the road splits around a central island into a LEFT
@@ -159,6 +164,7 @@ export const REALM_SPLITS: Record<RealmId, { at: number; len: number }[]> = {
   basin: [{ at: 0.42, len: 150 }],
   cape: [],                          // a clifftop road has one lane of options
   hills: [{ at: 0.14, len: 120 }],
+  neon: [],
 };
 
 /** A line of flavour for each world — shown on the loadout before a race. */
@@ -193,7 +199,8 @@ export const REALM_LORE: Record<RealmId, string> = {
   cape:
     "The road was cut into the cliff by men with dynamite and no safety line. On the right, hills. On the left, a two-hundred-foot drop and the Pacific.",
   hills:
-    "Up above the grid of lights, where the canyon roads switch back on themselves. Locals only after dark, and everyone here is a local."
+    "Up above the grid of lights, where the canyon roads switch back on themselves. Locals only after dark, and everyone here is a local.",
+  neon: "Nobody knows how long it is. The locals say it doesn't end, and nobody has ever come back to argue.",
 };
 
 export interface RealmPalette {
@@ -974,6 +981,45 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       { kind: "billboard", weight: 2 }, { kind: "streetlight", weight: 2 },
       { kind: "rockA", weight: 2 },
     ],
+  },
+  // NEON RUN's world. Not on the realm picker — the endless mode selects it.
+  //
+  // It is a closed loop because the whole engine is built on one, but it is
+  // shaped so you never feel that: two 5.3 km straights joined by sweepers
+  // wide enough that you barely turn the wheel. At racing speed a straight
+  // lasts the better part of a minute, which reads as a highway rather than
+  // as a circuit you are going round.
+  neon: {
+    id: "neon",
+    name: "Neon Run",
+    blurb: "An infinite wet highway under a dead city. No rivals, no finish line, no reason to stop.",
+    hidden: true,
+    hillScale: 0.22,
+    controlPoints: [
+      [-1700, 6, 600], [-1275, 6, 600], [-850, 6, 600], [-425, 6, 600], [0, 6, 600],
+      [425, 6, 600], [850, 6, 600], [1275, 6, 600], [1930, 6, 554], [2124, 6, 424],
+      [2254, 6, 230], [2300, 6, 0], [2254, 6, -230], [2124, 6, -424], [1930, 6, -554],
+      [1700, 6, -600], [1275, 6, -600], [850, 6, -600], [425, 6, -600], [0, 6, -600],
+      [-425, 6, -600], [-850, 6, -600], [-1275, 6, -600], [-1930, 6, -554], [-2124, 6, -424],
+      [-2254, 6, -230], [-2300, 6, 0], [-2254, 6, 230], [-2124, 6, 424], [-1930, 6, 554],
+    ],
+    palette: {
+      // night, and the only light in it is manufactured
+      sky: ["#05060f", "#0a0a1e", "#141033", "#2a1147"],
+      stars: false,
+      moons: [],
+      fog: 0x120a24, fogNear: 110, fogFar: 900,
+      hemiSky: 0x5a3aff, hemiGround: 0x120a24, hemiInt: 0.5,
+      sun: 0xff3fae, sunInt: 0.35,
+      groundBase: "#0c0a16", groundSpeck: "#151024", groundDark: "#05040b",
+      groundTint: 0x3a3050,
+      // wet asphalt: the reflections ARE the lighting here
+      road: "#0a0a12", roadDark: "#06060c", rumbleA: "#ff2d95", rumbleB: "#00e5ff",
+      laneLine: "#d8f6ff", edgeLine: "#ff2d95", roadFinish: "wet",
+      crystalColors: [0xff2d95, 0x00e5ff, 0xb14bff],
+      mountain: 0x161029, mountainDark: 0x0a0714, clutter: 0x1b1430, gem: 0x00e5ff,
+    },
+    scenery: [{ kind: "skyscraper", weight: 1 }],
   },
 };
 

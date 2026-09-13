@@ -52,7 +52,7 @@ import { REALMS, pickScenery, REALM_WEATHER, REALM_WEATHER_POOL, REALM_AMBIENCE,
 import { makePyramid, makeObelisk, makeSphinx, makePalm, makeSandRock } from "./props/egyptian";
 import { makeTower, makeGatehouse, makeCastleWall, makeBanner, makeTorch } from "./props/castle";
 import { makeGrandstand, makeTyreStack, makeFloodlight, makePitBuilding, makeMarshalBoard } from "./props/circuit";
-import { makeSkyscraper, makeBrownstone, makeStreetlight, makeBillboard, makeWaterTower } from "./props/metro";
+import { makeSkyscraper, makeBrownstone, makeStreetlight, makeBillboard, makeWaterTower, makeOverheadLight } from "./props/metro";
 import { makeHogwartsCastle, makeHogwartsExpress, makeQuidditchHoop, makeFloatingCandle, makeGoldenSnitch, makeWhompingWillow } from "./props/hogwarts";
 import { makeWaterfall, makeRiverBridge } from "./props/water";
 import { Opponent } from "./ai";
@@ -156,6 +156,51 @@ const SMK_GREY = new THREE.Color(0xd7d9e2);
 
 /** Screen-space heat-haze: wobbles the image toward the horizon band, strongest
  *  low on screen and fading up — the rising-hot-air shimmer over the ember flats. */
+/**
+ * Radial blur, strength driven by speed.
+ *
+ * At 190 mph the roadside is a stroboscope: every post, rock and tree crosses
+ * the frame in two or three frames, and because nothing smears, each one is a
+ * separate hard-edged flash. That is what makes fast driving unreadable — not
+ * that things move quickly, but that they TELEPORT. Smearing the periphery
+ * along the direction of travel is what a camera does and what the eye
+ * expects, and it has the useful side effect of leaving the centre of the
+ * frame — the road you are aiming at — untouched and sharp.
+ *
+ * Cheap on purpose: 6 taps along the vector from the vanishing point, with the
+ * strength falling to zero well before the middle of the screen.
+ */
+const RadialBlurShader = {
+  uniforms: {
+    tDiffuse: { value: null as THREE.Texture | null },
+    amount: { value: 0 },      // 0..1, from speed
+    centre: { value: new THREE.Vector2(0.5, 0.52) },
+  },
+  vertexShader: `
+    varying vec2 vUv;
+    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+  `,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform float amount;
+    uniform vec2 centre;
+    varying vec2 vUv;
+    void main() {
+      vec2 d = vUv - centre;
+      float r = length(d);
+      // nothing at all within ~28% of the vanishing point, ramping up outward
+      float k = smoothstep(0.16, 0.62, r) * amount;
+      if (k <= 0.001) { gl_FragColor = texture2D(tDiffuse, vUv); return; }
+      vec4 sum = vec4(0.0);
+      for (int i = 0; i < 6; i++) {
+        float t = float(i) / 5.0;
+        sum += texture2D(tDiffuse, vUv - d * (t * 0.085 * k));
+      }
+      gl_FragColor = sum / 6.0;
+    }
+  `,
+};
+
 /** Final filmic grade. Runs AFTER OutputPass, i.e. on tone-mapped display-space
  *  colour, because grain and chromatic aberration are display effects — doing
  *  them in linear HDR gives the wrong response curve entirely.
@@ -242,6 +287,7 @@ export class Game {
   private bloomPass!: UnrealBloomPass;
   private gtao!: GTAOPass;
   private heatHaze: ShaderPass | null = null;
+  private radialBlur: ShaderPass | null = null;
   private filmGrade: ShaderPass | null = null;
   private lightShafts: THREE.Group | null = null;
   private hudCtx: CanvasRenderingContext2D;
@@ -434,6 +480,12 @@ export class Game {
     // the two battle tubes (the 2nd, "nebula", is otherwise hidden)
     if (options.mode === "spacewars") {
       this.realm = Math.random() < 0.5 ? REALMS.void : REALMS.nebula;
+    } else if (options.mode === "endless") {
+      // NEON RUN has its own world and ignores the realm pick, the same way
+      // Space Wars does. Running it on a normal circuit was the problem: a
+      // 3 km lap with corners is a RACE TRACK, and driving it forever with no
+      // rivals just makes it an empty race track.
+      this.realm = REALMS.neon;
     } else {
       this.realm = REALMS[options.realm ?? "forest"];
     }
@@ -449,6 +501,7 @@ export class Game {
       // becomes, so the cliff road has a hillside to have been cut into rather
       // than a flat shelf: 70 m of relief on the cape, 90 in the canyon.
       azur: 46, hokkai: 74, mirage: 12, basin: 40, cape: 70, hills: 90,
+      neon: 4,   // a highway is graded flat; the city does the vertical
     } as Record<string, number>)[this.realm.id] ?? 18;
     this.minimap = new Minimap(this.track);
     this.onFinish = options.onFinish;
@@ -550,6 +603,11 @@ export class Game {
     haze.uniforms.amount.value = this.realm.id === "ember" ? 1 : 0;
     haze.enabled = this.realm.id === "ember";
     this.composer.addPass(haze);
+
+    // speed smear, between the haze and the output grade
+    const rblur = new ShaderPass(RadialBlurShader);
+    this.composer.addPass(rblur);
+    this.radialBlur = rblur;
     this.heatHaze = haze;
 
     // final pass applies tone mapping + sRGB so the composed image is graded
@@ -641,6 +699,7 @@ export class Game {
       mirage: "ground_peaks",   // pale sand
       azur: "ground_peaks",     // dusty stone waterfront
       bay: "ground_peaks",
+      neon: "ground_peaks",   // barely seen; the city and the wet road carry it
     };
     const groundName = GROUND[this.realm.id] ?? "ground_forest";
     const [library] = await Promise.all([loadModels(), loadPBR(groundName)]);
@@ -2533,6 +2592,10 @@ export class Game {
         while (!straightAt(at) && tries++ < 30) at += 12;   // slide to the next straight
         if (!straightAt(at)) continue;                      // no straight here — skip it
         d = at;
+        // No ramps on the endless cruise. Being thrown into the air every few
+        // hundred metres is the opposite of what that mode is for — it is meant
+        // to be a drive, not a stunt course.
+        if (this.cfg.endless) continue;
         const kind = rampKinds[rk % rampKinds.length];
         // Cycle the lanes. These used to be centre-lane ALWAYS, because the
         // pure-pursuit steering assist pulls you back to the centreline and so
@@ -2845,6 +2908,46 @@ export class Game {
           ), frac, side, 44, false);
         }
         drop(at(makeTower(rand), 0, 0, 0.85), 0.47, 1, 70, false);
+        break;
+      }
+      case "neon": {
+        // Overhead lighting down the whole highway, alternating verges so the
+        // lamps pass over your head in a steady rhythm. This is the single
+        // biggest thing that makes a night road read as a ROAD rather than as
+        // a dark strip with glowing edges.
+        {
+          const spacing = 78;
+          const n = Math.floor(len / spacing);
+          for (let k = 0; k < n; k++) {
+            const d = k * spacing + 20;
+            const side: 1 | -1 = k % 2 === 0 ? 1 : -1;
+            const off = side * (ROAD_HALF_WIDTH + 2.6);
+            const pt = track.pointAt(track.wrap(d), off);
+            const lamp = makeOverheadLight(rand, 0x9fd8ff, ROAD_HALF_WIDTH + 1.4);
+            lamp.position.set(pt.x, this.terrainYAt(d, off), pt.z);
+            // aim the boom across the carriageway
+            const mid = track.pointAt(track.wrap(d), 0);
+            lamp.rotation.y = Math.atan2(mid.x - pt.x, mid.z - pt.z) + Math.PI / 2;
+            this.scene.add(lamp);
+          }
+        }
+        // The city IS the scenery here: slabs of tower marching down both sides
+        // of the highway, close enough to feel like walls of light, plus
+        // billboards turned to face the traffic.
+        for (let k = 0; k < 14; k++) {
+          const frac = k / 14 + 0.012;
+          const side: 1 | -1 = k % 2 === 0 ? 1 : -1;
+          drop(cluster(
+            at(makeSkyscraper(rand), 0, 0, 2.2 + rand() * 1.6),
+            at(makeSkyscraper(rand), 52, 38, 1.6 + rand() * 1.9),
+            at(makeSkyscraper(rand), -44, 64, 2.0 + rand() * 1.4),
+            at(makeSkyscraper(rand), 20, 104, 2.8 + rand() * 1.8),
+          ), frac, side, 74 + rand() * 40, false);
+        }
+        for (let k = 0; k < 8; k++) {
+          drop(at(makeBillboard(rand), 0, 0, 1.5 + rand() * 0.5),
+            k / 8 + 0.06, k % 2 === 0 ? -1 : 1, 26 + rand() * 8, true);
+        }
         break;
       }
       case "hills": {
@@ -4336,7 +4439,18 @@ export class Game {
       else this.camYaw += dyaw * 0.17; // settle faster so the view leads the corner instead of trailing it
       const fx = Math.sin(this.camYaw), fz = Math.cos(this.camYaw);
 
-      const targetFov = preset.fov + spd * 9 + (boosting ? 12 : 0); // speed-rush FOV kick, harder on boost
+      // Drive the speed smear from the SAME number as the FOV kick, so the
+      // periphery blurs exactly when it starts moving fast enough to strobe.
+      if (this.radialBlur) {
+        const want = Math.max(0, spd - 0.45) / 0.55 * (boosting ? 1.35 : 1);
+        const u = this.radialBlur.uniforms.amount;
+        u.value += (Math.min(1.15, want) - u.value) * 0.1;
+      }
+      // FOV kick, eased back from 9/12. A wide lens at speed stretches the
+      // periphery, which makes the same roadside object cross the frame faster
+      // AND arrive distorted — the opposite of legible. The smear now carries
+      // the sense of speed, so the lens doesn't have to shout.
+      const targetFov = preset.fov + spd * 5 + (boosting ? 8 : 0);
       this.camera.fov += (targetFov - this.camera.fov) * (boosting ? 0.14 : 0.08); // snappier kick, gentle relax
       this.camera.updateProjectionMatrix();
 
@@ -4421,16 +4535,23 @@ export class Game {
       distanceM: this.playerProgress(),
     }, vw, vh);
 
-    // minimap bottom-right (out of the driving sightline)
-    const size = Math.round(Math.min(150, Math.max(112, vw * 0.11)));
-    this.minimap.draw(
-      ctx,
-      vw - size - 18,
-      vh - size - 18,
-      size,
-      { x: this.playerRoot.position.x, z: this.playerRoot.position.z, color: "#67e8f9" },
-      this.opponents.map((o) => ({ x: o.obj.position.x, z: o.obj.position.z, color: `#${o.color.toString(16).padStart(6, "0")}` }))
-    );
+    // NO MINIMAP in endless. A map of the circuit is useless on a road with no
+    // junctions and no rivals to track — and worse, it draws the loop, which is
+    // the one thing the whole realm is shaped to stop you noticing. Scoped to
+    // the minimap only: an early return here would also drop the toasts, the
+    // callouts and the countdown lights, which endless still uses.
+    if (!this.cfg.endless) {
+      // minimap bottom-right (out of the driving sightline)
+      const size = Math.round(Math.min(150, Math.max(112, vw * 0.11)));
+      this.minimap.draw(
+        ctx,
+        vw - size - 18,
+        vh - size - 18,
+        size,
+        { x: this.playerRoot.position.x, z: this.playerRoot.position.z, color: "#67e8f9" },
+        this.opponents.map((o) => ({ x: o.obj.position.x, z: o.obj.position.z, color: `#${o.color.toString(16).padStart(6, "0")}` }))
+      );
+    }
 
     drawToasts(ctx, this.toasts, vw);
     // race-drama callout (overtake / final lap) sits above the toasts; hide it

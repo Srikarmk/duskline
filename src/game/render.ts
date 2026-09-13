@@ -782,7 +782,9 @@ export function drawSpeedFx(
 
   // radial streaks converging on the vanishing point, re-seeded slowly (~5 Hz)
   // so they don't strobe. Denser, longer and brighter under boost.
-  const n = Math.round(amt * (boost ? 30 : 16));
+  // Fewer, because the 3D radial blur now carries the smear. Thirty hard 2D
+  // streaks ON TOP of a blurred periphery is just noise over noise.
+  const n = Math.round(amt * (boost ? 14 : 7));
   let seed = (Math.floor(time * 5) % 4096) + 1;
   const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
   const rad = Math.max(vw, vh);

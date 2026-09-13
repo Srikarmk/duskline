@@ -31,43 +31,45 @@ function Pips({ n }: { n: number }) {
   );
 }
 
+/**
+ * The modes offered on the picker.
+ *
+ * Time Trial and Nitro Sprint are gone, and Transformer Rush is archived —
+ * all three still exist in GameMode and MODE_CONFIG, so a saved score or a
+ * direct call still resolves, they just aren't offered. Four strong modes read
+ * better on the shelf than seven where three are thin variations.
+ */
 const MODES: { id: GameMode; name: string; blurb: string; tags: string[]; accent: string }[] = [
   {
-    id: "endless",
-    name: "NEON RUN",
-    blurb: "No finish line. Cruise a neon-drenched city forever \u2014 pick Neon Metro and just drive.",
-    tags: ["ENDLESS", "NO LAPS", "CYBERPUNK"],
-    accent: "#22d3ee",
-  },
-  {
     id: "classic",
-    name: "CLASSIC CIRCUIT",
-    blurb: "Seven AI rivals, gems, stunts, nitro and power-ups. The full-fat race.",
-    tags: ["8 RACERS", "POWER-UPS", "THE CLASSIC"],
+    name: "CIRCUIT",
+    blurb: "Nine rivals on a standing grid. Gems, ramps, nitro — the full race.",
+    tags: ["10 CARS", "3 LAPS", "THE MAIN EVENT"],
     accent: "#c084fc",
   },
   {
-    id: "timetrial",
-    name: "TIME TRIAL",
-    blurb: "Just you and the clock. No traffic, no excuses — hunt a clean lap.",
-    tags: ["SOLO", "CLEAN LAPS", "THE CLOCK"],
+    id: "endless",
+    name: "NEON RUN",
+    blurb: "No circuit, no rivals, no finish. One infinite neon highway and the music.",
+    tags: ["ENDLESS", "SOLO", "CYBERPUNK"],
     accent: "#22d3ee",
   },
   {
-    id: "nitro",
-    name: "NITRO SPRINT",
-    blurb: "One lap. Full nitro from the lights. Blink and it's over.",
-    tags: ["1 LAP", "FULL BOOST", "CHAOS"],
-    accent: "#fb7185",
+    id: "grandprix",
+    name: "GRAND PRIX",
+    blurb: "Three rounds, points after each. Consistency wins championships.",
+    tags: ["3 ROUNDS", "POINTS", "CHAMPIONSHIP"],
+    accent: "#f59e0b",
   },
   {
-    id: "transform",
-    name: "TRANSFORMER RUSH",
-    blurb: "Morph into a sword-mech mid-race — slash monsters, then take flight.",
-    tags: ["MECH", "FLIGHT", "COMBAT"],
-    accent: "#fbbf24",
+    id: "spacewars",
+    name: "SPACE WARS",
+    blurb: "Anti-gravity tube, live ordnance. Missiles, mines, shields — take them out.",
+    tags: ["COMBAT", "DEEP SPACE", "ORDNANCE"],
+    accent: "#fb7185",
   },
 ];
+
 
 const MODE_LABEL: Record<GameMode, string> = {
   classic: "CIRCUIT", timetrial: "TRIAL", nitro: "SPRINT", transform: "RUSH", grandprix: "GP", spacewars: "WARS",
@@ -75,10 +77,10 @@ const MODE_LABEL: Record<GameMode, string> = {
 };
 
 const STEPS: { n: number; label: string; hint: string }[] = [
-  { n: 1, label: "REALM", hint: "Eight worlds, eight completely different rides. Pick your playground." },
-  { n: 2, label: "MACHINE", hint: "Ten karts on the floor. Speed, grip, launch — choose your weapon." },
-  { n: 3, label: "MODE", hint: "Clean laps, full contact, or a sword-mech. How do you want to win?" },
-  { n: 4, label: "RACE", hint: "Name on the door, laps on the board. Lights out." },
+  { n: 1, label: "WORLD", hint: "Twelve places to drive. Pick one." },
+  { n: 2, label: "CAR", hint: "Ten road cars. Speed, grip, launch — pick your weapon." },
+  { n: 3, label: "MODE", hint: "A race, an endless cruise, a championship, or a firefight." },
+  { n: 4, label: "GO", hint: "Name on the door. Lights out." },
 ];
 
 function formatTime(ms: number) {
@@ -111,8 +113,12 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
   const [car, setCar] = useState<CarId>("f40");
   const [laps, setLaps] = useState(3);
   const [step, setStep] = useState(1);
-  const [realmPicked, setRealmPicked] = useState(false);
-  const [carPicked, setCarPicked] = useState(false);
+  // These start TRUE. A world and a car are already selected and shown as
+  // selected from the first render, so gating navigation on an explicit click
+  // meant NEXT sat disabled with nothing on screen explaining why — the single
+  // worst moment in the flow, and one I walked into myself repeatedly.
+  const [realmPicked, setRealmPicked] = useState(true);
+  const [carPicked, setCarPicked] = useState(true);
   const [localScores, setLocalScores] = useState<ScoreEntry[]>([]);
   const [globalScores, setGlobalScores] = useState<ScoreEntry[] | null>(null);
   const [isGlobal, setIsGlobal] = useState(false);
@@ -136,25 +142,31 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
 
   const realmIds = (Object.keys(REALMS) as RealmId[]).filter((id) => !REALMS[id].hidden);
   const isSpace = mode === "spacewars";
+  // Both of these modes bring their own world and ignore the realm pick, so the
+  // summary must not promise the player the realm they chose.
+  const isNeon = mode === "endless";
+  const ownWorld = isSpace ? "DEEP SPACE" : isNeon ? "NEON RUN" : null;
   const shownScores = board === "global" ? globalScores ?? [] : localScores;
-  const canStart = name.trim().length > 0 && realmPicked && carPicked;
+  // A blank name is not a reason to refuse to start a single-player game. It
+  // defaults, and the field explains that it is what goes on the board.
+  const racerName = name.trim() || "PLAYER";
+  const canStart = true;
   const raceLaps = mode === "nitro" ? 1 : laps;
 
   // Which steps the breadcrumb lets you jump to (mode always has a default).
-  const reachable = (n: number) =>
-    n === 1 ||
-    (n === 2 && realmPicked) ||
-    (n >= 3 && realmPicked && carPicked);
+  // Every step is reachable. There is a valid selection for all of them from
+  // the first render, so locking the breadcrumb only ever hid the way forward.
+  const reachable = (_n: number) => true;
 
   const goStep = (n: number) => {
     if (reachable(n)) setStep(n);
   };
 
-  const launch = () => {
-    if (canStart) onStart(name.trim(), mode, realm, car, laps);
-  };
+  const launch = () => onStart(racerName, mode, realm, car, laps);
+  /** Straight into a race on whatever is currently selected. */
+  const quickRace = () => onStart(racerName, mode, realm, car, laps);
 
-  const nextDisabled = (step === 1 && !realmPicked) || (step === 2 && !carPicked);
+  const nextDisabled = false;
   const livery = carColorHex(car);
   const liveryUI = carUIHex(car);   // legible even for the black and white cars
 
@@ -168,10 +180,20 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
         <p className="subtitle">drift · boost · jump · blast</p>
         <ul className="hero-tags">
           <li><b>{realmIds.length}</b> WORLDS</li>
-          <li><b>{CAR_IDS.length}</b> KARTS</li>
+          <li><b>{CAR_IDS.length}</b> CARS</li>
           <li><b>{MODES.length}</b> MODES</li>
           <li><b>∞</b> BRAGGING RIGHTS</li>
         </ul>
+        {/* One click to drive. Four steps is the right amount of choice for
+            someone who wants to make choices, and three steps too many for
+            someone who just wants to play — so both paths exist, and this one
+            is first because it is the one most people want. */}
+        <button type="button" className="quick-race" onClick={quickRace}>
+          <span className="qr-go">▸ DRIVE NOW</span>
+          <span className="qr-sub">
+            {ownWorld ?? REALMS[realm].name} · {CAR_SPECS[car].name} · {MODE_LABEL[mode]}
+          </span>
+        </button>
       </header>
 
       {lastResult && (
@@ -353,9 +375,16 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
 
               {isSpace && (
                 <div className="gp-note">
-                  Space Wars is fought in deep space — your realm pick is swapped
+                  Space Wars is fought in deep space — your world pick is swapped
                   for one of two battle tubes. You start armed; item boxes and
                   enemy mines are everywhere. Press <b>E</b> to fire.
+                </div>
+              )}
+              {isNeon && (
+                <div className="gp-note">
+                  Neon Run has its own world — an infinite wet highway under a
+                  dead city, so your world pick is set aside. No rivals, no laps,
+                  no finish line. Drive until you feel like stopping.
                 </div>
               )}
             </div>
@@ -370,13 +399,15 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
                     style={
                       isSpace
                         ? { background: realmFallback("void") }
-                        : { backgroundImage: `url(/previews/realm-${realm}.jpg), ${realmFallback(realm)}` }
+                        : isNeon
+                          ? { background: realmFallback("neon") }
+                          : { backgroundImage: `url(/previews/realm-${realm}.jpg), ${realmFallback(realm)}` }
                     }
                     aria-hidden="true"
                   />
                   <span className="loadout-txt">
                     <em>REALM</em>
-                    <b>{isSpace ? "DEEP SPACE" : REALMS[realm].name}</b>
+                    <b>{ownWorld ?? REALMS[realm].name}</b>
                   </span>
                   <span className="swap" aria-hidden="true">SWAP</span>
                 </button>
@@ -411,7 +442,7 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
               </div>
 
               <div className="realm-lore">
-                <em>{isSpace ? "DEEP SPACE" : REALMS[realm].name.toUpperCase()}</em>
+                <em>{ownWorld ?? REALMS[realm].name.toUpperCase()}</em>
                 <p>{isSpace ? REALM_LORE.void : REALM_LORE[realm]}</p>
               </div>
 
@@ -453,9 +484,11 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
               </div>
 
               <button type="button" className="start" disabled={!canStart} onClick={launch}>
-                {canStart
-                  ? (isSpace ? "▸ START SPACE WARS" : `▸ START RACE — ${raceLaps} LAP${raceLaps > 1 ? "S" : ""}`)
-                  : "ENTER A RACER NAME"}
+                {isSpace
+                  ? "▸ START SPACE WARS"
+                  : isNeon
+                    ? "▸ START NEON RUN"
+                    : `▸ START RACE — ${raceLaps} LAP${raceLaps > 1 ? "S" : ""}`}
               </button>
 
               <p className="controls-help">

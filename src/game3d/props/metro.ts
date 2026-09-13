@@ -361,6 +361,66 @@ export function makeBrownstone(rand: () => number): THREE.Group {
 /** A curved-arm street lamp: a stepped base, a tapered post, a gooseneck arm
  *  and a downward amber lamp head. The head is a soft warm accent, not a flare.
  *  ~4-5 units. */
+/**
+ * A proper highway light: a tall pole with a long boom arching OVER the
+ * carriageway and a lamp head hanging above the lane.
+ *
+ * makeStreetlight is a 4-5 m urban pole with a 1 m gooseneck — beside the road
+ * and barely above the roofline of a car, which from the driver's seat reads
+ * as a small bar on the verge rather than as lighting. Motorway lighting is
+ * 10-12 m up with a 5-6 m reach, so the lamps pass over your head, and that
+ * overhead rhythm is most of what makes a night highway look like one.
+ *
+ * `reach` is how far the boom extends toward the road; positive values point
+ * along +X, so mirror the group for the other verge.
+ */
+export function makeOverheadLight(rand: () => number, glow: number, reach = 6.2): THREE.Group {
+  const g = new THREE.Group();
+  const steel = new THREE.MeshStandardMaterial({ color: 0x33373f, metalness: 0.55, roughness: 0.45, flatShading: true });
+  const h = 10.5 + rand() * 2.2;
+
+  const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.44, 0.55, 8), steel);
+  foot.position.y = 0.27;
+  g.add(foot);
+  const poleH = h - 0.55;
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.2, poleH, 8), steel);
+  mast.position.y = 0.55 + poleH / 2;
+  g.add(mast);
+
+  // the boom: a long shallow arc out over the road, not a tight gooseneck
+  const topY = 0.55 + poleH;
+  const pts: THREE.Vector3[] = [];
+  const seg = 10;
+  for (let i = 0; i <= seg; i++) {
+    const t = i / seg;
+    // rises quickly then flattens, so the lamp hangs level above the lane
+    pts.push(new THREE.Vector3(reach * t, topY + 1.5 * Math.sin(t * Math.PI * 0.5), 0));
+  }
+  g.add(new THREE.Mesh(
+    new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 14, 0.085, 6, false), steel
+  ));
+
+  // lamp head, and the hot emissive lens on its underside
+  const end = pts[pts.length - 1];
+  const head = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.2, 0.62), steel);
+  head.position.set(end.x - 0.45, end.y - 0.12, 0);
+  g.add(head);
+  const lensMat = new THREE.MeshBasicMaterial({ color: glow });
+  const lens = new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.06, 0.46), lensMat);
+  lens.position.set(end.x - 0.45, end.y - 0.24, 0);
+  g.add(lens);
+  // a soft cone of light hanging under it, so the lamp reads as lighting
+  // something rather than as a lit object
+  const coneMat = new THREE.MeshBasicMaterial({
+    color: glow, transparent: true, opacity: 0.075, depthWrite: false, side: THREE.DoubleSide,
+  });
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(2.9, end.y - 0.4, 12, 1, true), coneMat);
+  cone.position.set(end.x - 0.45, (end.y - 0.4) / 2, 0);
+  cone.rotation.x = Math.PI;
+  g.add(cone);
+  return g;
+}
+
 export function makeStreetlight(rand: () => number): THREE.Group {
   const g = new THREE.Group();
   const h = 4 + rand(); // 4 - 5

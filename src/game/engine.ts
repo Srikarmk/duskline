@@ -31,7 +31,9 @@ export type RealmId =
   | "mirage"
   | "basin"
   | "cape"
-  | "hills";
+  | "hills"
+  // NEON RUN's own world: not on the picker, the endless mode selects it
+  | "neon";
 export type CarId =
   | "f40" | "tauro" | "meridian" | "veloce" | "testa"
   | "fairlady" | "firehawk" | "iroc" | "imprez" | "zanza";
