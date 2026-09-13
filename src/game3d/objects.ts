@@ -491,8 +491,18 @@ export function makeSkyDome(pal: RealmPalette): THREE.Mesh {
   const hazeK = pal.posterSun ? 0.25 : 1;
   const lum3 = (0.299 * sky3[0] + 0.587 * sky3[1] + 0.114 * sky3[2]) / 255;
   const hazeCol = mixRgb(sky3, [255, 255, 255], (pal.stars ? 0.22 : 0.42) * (1 - lum3));
-  const hA = (pal.stars ? 0.42 : 0.62) * (1 - 0.72 * lum3) * hazeK;
-  const y0 = HZ - H * 0.22, y1 = HZ + H * 0.18;
+  // The alpha term rises as the palette darkens — which is right for a hazy
+  // dusk and exactly backwards for a night city. On a near-black sky it laid a
+  // wash across 40% of the dome, and since the camera mostly looks near the
+  // horizon that wash WAS the sky: one flat mid-purple from the rooftops to
+  // the top of the screen, with the crushed blacks nowhere to be seen.
+  //
+  // Dark skies get a TIGHT band instead. Light pollution over a city is a glow
+  // sitting ON the rooftops that falls away fast, not an even fill.
+  const night = lum3 < 0.3;
+  const hA = (pal.stars ? 0.42 : 0.62) * (night ? 0.5 : 1 - 0.72 * lum3) * hazeK;
+  const band = night ? 0.07 : 0.22;
+  const y0 = HZ - H * band, y1 = HZ + H * band * 0.82;
   const hg = ctx.createLinearGradient(0, y0, 0, y1);
   hg.addColorStop(0.00, rgbaCss(hazeCol, 0));
   hg.addColorStop(0.45, rgbaCss(hazeCol, hA * 0.32));

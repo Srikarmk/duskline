@@ -1004,20 +1004,30 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       [-2254, 6, -230], [-2300, 6, 0], [-2254, 6, 230], [-2124, 6, 424], [-1930, 6, 554],
     ],
     palette: {
-      // night, and the only light in it is manufactured
-      sky: ["#05060f", "#0a0a1e", "#141033", "#2a1147"],
-      stars: false,
+      // Neo-Tokyo at night, and the reference is emphatic about how that
+      // works: the blacks stay CRUSHED and dense, and every bit of colour is
+      // motivated — signs, streetlamps, headlights. The old palette was a flat
+      // mid-purple from the zenith to the ground, which is why the sky read as
+      // one colour: there was no black in it anywhere, and no glow either.
+      // Now it is near-black overhead, falling through deep indigo to a dirty
+      // magenta band of light pollution sitting on the rooftops.
+      sky: ["#01010a", "#050418", "#150a33", "#4a1145"],
+      stars: true,
       moons: [],
-      fog: 0x120a24, fogNear: 110, fogFar: 900,
-      hemiSky: 0x5a3aff, hemiGround: 0x120a24, hemiInt: 0.5,
-      sun: 0xff3fae, sunInt: 0.35,
-      groundBase: "#0c0a16", groundSpeck: "#151024", groundDark: "#05040b",
-      groundTint: 0x3a3050,
+      // Fog pulled IN hard. Distance haze the colour of the city glow is what
+      // stacks the towers into layers instead of one flat wall.
+      fog: 0x1a0b2e, fogNear: 60, fogFar: 620,
+      // cyan key, deep violet bounce, and kept low — the lamps and the signs
+      // are supposed to be the light, not an ambient wash
+      hemiSky: 0x4aa8ff, hemiGround: 0x0a0618, hemiInt: 0.34,
+      sun: 0xff2d95, sunInt: 0.22,
+      groundBase: "#07060e", groundSpeck: "#0e0b1a", groundDark: "#020207",
+      groundTint: 0x241e38,
       // wet asphalt: the reflections ARE the lighting here
-      road: "#0a0a12", roadDark: "#06060c", rumbleA: "#ff2d95", rumbleB: "#00e5ff",
+      road: "#07070e", roadDark: "#040409", rumbleA: "#ff2d95", rumbleB: "#00e5ff",
       laneLine: "#d8f6ff", edgeLine: "#ff2d95", roadFinish: "wet",
       crystalColors: [0xff2d95, 0x00e5ff, 0xb14bff],
-      mountain: 0x161029, mountainDark: 0x0a0714, clutter: 0x1b1430, gem: 0x00e5ff,
+      mountain: 0x0b0818, mountainDark: 0x050310, clutter: 0x140f26, gem: 0x00e5ff,
     },
     scenery: [{ kind: "skyscraper", weight: 1 }],
   },

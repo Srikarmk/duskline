@@ -374,6 +374,55 @@ export function makeBrownstone(rand: () => number): THREE.Group {
  * `reach` is how far the boom extends toward the road; positive values point
  * along +X, so mirror the group for the other verge.
  */
+/**
+ * A neon sign: a stack of lit bars hung on a building face.
+ *
+ * The reference is emphatic that Neo-Tokyo's light is MOTIVATED — it comes
+ * from signs, streetlamps and headlights, never from an ambient wash. Towers
+ * with nothing but window squares give the eye nothing to read as a city, and
+ * the signs are what make the buildings feel occupied. Unlit material on
+ * purpose: these are light sources, so they must not dim with distance or take
+ * the scene's ambient.
+ */
+export function makeNeonSign(rand: () => number): THREE.Group {
+  const g = new THREE.Group();
+  const palette = [0xff2d95, 0x00e5ff, 0x7cff4a, 0xffd426, 0xb14bff, 0xff4d3d];
+  const vertical = rand() < 0.62;
+  const n = 2 + Math.floor(rand() * 4);
+  const col = palette[Math.floor(rand() * palette.length)];
+
+  // the backing board, dark so the bars read against it
+  const w = vertical ? 1.1 + rand() * 0.7 : 3.4 + rand() * 2.6;
+  const h = vertical ? 4.5 + rand() * 3.5 : 1.3 + rand() * 0.8;
+  const board = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.22),
+    new THREE.MeshBasicMaterial({ color: 0x0a0812 }));
+  g.add(board);
+
+  // the lit elements: bars of a single hue, the way a sign of one word is
+  for (let i = 0; i < n; i++) {
+    const t = (i + 0.5) / n;
+    const bw = vertical ? w * (0.42 + rand() * 0.34) : w * (0.1 + rand() * 0.2);
+    const bh = vertical ? h * (0.1 + rand() * 0.12) : h * (0.42 + rand() * 0.34);
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, 0.07),
+      new THREE.MeshBasicMaterial({ color: col }));
+    bar.position.set(
+      vertical ? (rand() - 0.5) * w * 0.18 : (t - 0.5) * w * 0.82,
+      vertical ? (0.5 - t) * h * 0.82 : (rand() - 0.5) * h * 0.18,
+      0.15
+    );
+    g.add(bar);
+  }
+  // the glow it throws back onto its own board
+  const halo = new THREE.Mesh(new THREE.PlaneGeometry(w * 1.7, h * 1.5),
+    new THREE.MeshBasicMaterial({
+      color: col, transparent: true, opacity: 0.16,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+  halo.position.z = 0.2;
+  g.add(halo);
+  return g;
+}
+
 export function makeOverheadLight(rand: () => number, glow: number, reach = 6.2): THREE.Group {
   const g = new THREE.Group();
   const steel = new THREE.MeshStandardMaterial({ color: 0x33373f, metalness: 0.55, roughness: 0.45, flatShading: true });
@@ -409,15 +458,43 @@ export function makeOverheadLight(rand: () => number, glow: number, reach = 6.2)
   const lens = new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.06, 0.46), lensMat);
   lens.position.set(end.x - 0.45, end.y - 0.24, 0);
   g.add(lens);
-  // a soft cone of light hanging under it, so the lamp reads as lighting
-  // something rather than as a lit object
-  const coneMat = new THREE.MeshBasicMaterial({
-    color: glow, transparent: true, opacity: 0.075, depthWrite: false, side: THREE.DoubleSide,
-  });
-  const cone = new THREE.Mesh(new THREE.ConeGeometry(2.9, end.y - 0.4, 12, 1, true), coneMat);
-  cone.position.set(end.x - 0.45, (end.y - 0.4) / 2, 0);
-  cone.rotation.x = Math.PI;
-  g.add(cone);
+  // The light it casts, as two pieces of MOTIVATED light rather than a solid
+  // shape. A flat-opacity cone reads as a cyan triangle hanging in the air —
+  // which is what it looked like — because a real beam is invisible except
+  // where it hits something, and fades with distance from the lamp. So:
+  // vertex-darkened downward and additively blended, plus the pool it throws
+  // on the road, which is the part the eye actually reads as lighting.
+  const beamH = end.y - 0.5;
+  const beam = new THREE.ConeGeometry(2.6, beamH, 14, 1, true);
+  {
+    const pos = beam.getAttribute("position");
+    const col = new Float32Array(pos.count * 3);
+    const c = new THREE.Color(glow);
+    for (let i = 0; i < pos.count; i++) {
+      // cone apex is at +h/2 in local space: brightest at the lamp, gone by
+      // the time it reaches the tarmac
+      const t = Math.max(0, Math.min(1, (pos.getY(i) + beamH / 2) / beamH));
+      const k = Math.pow(t, 2.2) * 0.5;
+      col[i * 3] = c.r * k; col[i * 3 + 1] = c.g * k; col[i * 3 + 2] = c.b * k;
+    }
+    beam.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  }
+  const bm = new THREE.Mesh(beam, new THREE.MeshBasicMaterial({
+    vertexColors: true, transparent: true, opacity: 0.5,
+    blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+  }));
+  bm.position.set(end.x - 0.45, beamH / 2 + 0.1, 0);
+  g.add(bm);
+
+  // the pool on the tarmac
+  const pool = new THREE.Mesh(new THREE.CircleGeometry(4.2, 20), new THREE.MeshBasicMaterial({
+    color: glow, transparent: true, opacity: 0.11,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  }));
+  pool.rotation.x = -Math.PI / 2;
+  pool.position.set(end.x - 0.45, 0.03, 0);
+  pool.scale.set(1, 1, 1.5);   // stretched along the road, as a real throw is
+  g.add(pool);
   return g;
 }
 

@@ -52,7 +52,7 @@ import { REALMS, pickScenery, REALM_WEATHER, REALM_WEATHER_POOL, REALM_AMBIENCE,
 import { makePyramid, makeObelisk, makeSphinx, makePalm, makeSandRock } from "./props/egyptian";
 import { makeTower, makeGatehouse, makeCastleWall, makeBanner, makeTorch } from "./props/castle";
 import { makeGrandstand, makeTyreStack, makeFloodlight, makePitBuilding, makeMarshalBoard } from "./props/circuit";
-import { makeSkyscraper, makeBrownstone, makeStreetlight, makeBillboard, makeWaterTower, makeOverheadLight } from "./props/metro";
+import { makeSkyscraper, makeBrownstone, makeStreetlight, makeBillboard, makeWaterTower, makeOverheadLight, makeNeonSign } from "./props/metro";
 import { makeHogwartsCastle, makeHogwartsExpress, makeQuidditchHoop, makeFloatingCandle, makeGoldenSnitch, makeWhompingWillow } from "./props/hogwarts";
 import { makeWaterfall, makeRiverBridge } from "./props/water";
 import { Opponent } from "./ai";
@@ -384,6 +384,7 @@ export class Game {
   private camYaw = 0; // smoothed camera heading — eases toward the car so the view swings in behind you instead of snapping with every steer
   private coast: { x: number; z: number; r: number; far: number; band: number; drop: number; side: number } | null = null;
   private clouds: THREE.Mesh | null = null;
+  private skyMesh: THREE.Mesh | null = null;
   private skyMat: THREE.ShaderMaterial | null = null;
   private seaY = -11; // coastal realms: land inside r, sea beyond
   private reliefAmp = 0; // per-realm amplitude of the rolling hills the ground rises into away from the road
@@ -764,13 +765,25 @@ export class Game {
     // stars or moons still need the canvas, which is where those are drawn.
     const analytic = pal.posterSun && !pal.stars && pal.moons.length === 0;
     const sky = analytic ? makePosterSky(pal) : makeSkyDome(pal);
+    // The dome has to FOLLOW THE CAMERA. It is a radius-900 BackSide sphere
+    // and it used to sit at the world origin, which is fine for a lap that
+    // fits inside it — every realm until now did. The Neon Run stadium spans
+    // 7 km, so you drive straight out through the wall, and from outside a
+    // BackSide sphere is invisible: the sky vanishes and you are looking at
+    // the clear colour, with the dome's rim cutting a dark arc across it.
+    // That is the flat purple and the strange shape in the corner.
+    this.skyMesh = sky;
     sky.userData.noShadow = true; // the sky must never cast/receive shadows
     scene.add(sky);
     // The analytic sky draws its own clouds, lit and drifting, so it needs no
     // dome — which also drops a 4096 texture and a draw call. Only the canvas
     // realms still get the separate cloud layer.
     this.skyMat = analytic ? (sky.material as THREE.ShaderMaterial) : null;
-    if (!analytic) {
+    // No cloud deck over the night city: an fbm overcast on a near-black sky
+    // renders as grey smears with nothing lighting them, and it competes with
+    // the one thing that should be legible up there, which is the glow coming
+    // off the rooftops.
+    if (!analytic && realm.id !== "neon") {
       this.clouds = makeCloudLayer(pal);
       scene.add(this.clouds);
     } else {
@@ -793,11 +806,27 @@ export class Game {
       groundMat.needsUpdate = true;
       flatGround.geometry.dispose();
       scene.add(this.buildGroundTerrain(groundMat));
-      // horizon-filling mountain ring
+      // Horizon-filling mountain ring — but NOT for the night city. An 11 km
+      // ring of 120 m peaks around a highway through Neo-Tokyo is a mountain
+      // standing over the skyline, which is the big dark mass with cloud
+      // smeared across it. A city's horizon is more city.
       const cx = (track.bounds.minX + track.bounds.maxX) / 2;
       const cz = (track.bounds.minZ + track.bounds.maxZ) / 2;
       const radius = Math.max(track.bounds.maxX - track.bounds.minX, track.bounds.maxZ - track.bounds.minZ) * 0.75 + 260;
-      scene.add(makeMountainRing(pal, cx, cz, radius));
+      if (realm.id !== "neon") {
+        scene.add(makeMountainRing(pal, cx, cz, radius));
+      } else {
+        // a far-shore style cut-out skyline instead, ringing the whole lap so
+        // the city never runs out whichever way you are pointed
+        for (let i = 0; i < 10; i++) {
+          const ang = (i / 10) * Math.PI * 2;
+          const R = radius * 0.72;
+          const sk = makeSkyline(mulberry32(7700 + i), pal, 2600);
+          sk.position.set(cx + Math.cos(ang) * R, 0, cz + Math.sin(ang) * R);
+          sk.rotation.y = -ang + Math.PI / 2;
+          scene.add(sk);
+        }
+      }
       // NO god rays. These are vertical bright columns standing on the horizon,
       // and at this scale they do not read as shafts of light through cloud —
       // they read as searchlight beams, or as something descending from the
@@ -2948,6 +2977,23 @@ export class Game {
           drop(at(makeBillboard(rand), 0, 0, 1.5 + rand() * 0.5),
             k / 8 + 0.06, k % 2 === 0 ? -1 : 1, 26 + rand() * 8, true);
         }
+        // SIGNAGE, thick along both sides. Towers with nothing but window
+        // squares give the eye nothing to read as a city — the signs are what
+        // make the buildings feel occupied, and they are the light source the
+        // reference keeps insisting on. Hung at varying heights and facing the
+        // traffic, so they sweep past at eye level as you drive.
+        for (let k = 0; k < 120; k++) {
+          const d = track.wrap(rand() * len);
+          const side: 1 | -1 = rand() < 0.5 ? 1 : -1;
+          const off = side * (34 + rand() * 46);
+          const pt = track.pointAt(d, off);
+          const sign = makeNeonSign(rand);
+          sign.scale.multiplyScalar(1.3 + rand() * 1.9);
+          sign.position.set(pt.x, this.terrainYAt(d, off) + 6 + rand() * 26, pt.z);
+          const road = track.pointAt(d, 0);
+          sign.rotation.y = Math.atan2(road.x - pt.x, road.z - pt.z);
+          this.scene.add(sign);
+        }
         break;
       }
       case "hills": {
@@ -4284,6 +4330,11 @@ export class Game {
   // --- render ----------------------------------------------------------------
 
   private render() {
+    // Keep the sky (and its cloud deck) centred on the camera — see makeSkyDome
+    // above. Only the horizontal position matters for the illusion, but moving
+    // all three axes is simplest and costs nothing.
+    if (this.skyMesh) this.skyMesh.position.copy(this.camera.position);
+    if (this.clouds) this.clouds.position.copy(this.camera.position);
     const { track } = this;
 
     if (this.phase !== "loading") {
