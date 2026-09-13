@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { CarId } from "../game/engine";
 import { metalDetail, pbr } from "./textures";
 
@@ -1936,13 +1937,27 @@ function buildRoadCar(color: number, p: RoadCarParams, num?: number): THREE.Grou
   // its section is, because those are the things the eye uses to size a car.
   const chrome2 = chromeShared();
   for (const sx of [-1, 1]) {
-    // wing mirror on a stalk at the base of the A-pillar, dark glass outboard
+    // Wing mirror. The first version was a stick with a block on it, which at
+    // speed reads as a red peg bolted to the door. A real one is a rounded
+    // housing on a short arm that rakes up and out, with the glass set into
+    // its trailing face — so: a tapered arm, a housing built from a scaled
+    // sphere (round in plan, flattened in section, which is the actual shape),
+    // and a glass panel angled back toward where the driver's eyes are.
     const mz = hl * zf(0.14);
-    const my = deckAtZ(zf(0.14)) + 0.06;
-    g.add(box(0.11, 0.03, 0.03, darkMat, sx * (cw * 0.98 + 0.06), my, mz));
-    const pod = box(0.07, 0.075, 0.17, bodyPlain, sx * (cw * 0.98 + 0.14), my + 0.02, mz);
-    g.add(pod);
-    g.add(box(0.02, 0.055, 0.13, glass, sx * (cw * 0.98 + 0.178), my + 0.02, mz - 0.01));
+    const my = deckAtZ(zf(0.14)) + 0.05;
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.024, 0.1, 6), darkMat);
+    arm.rotation.z = Math.PI / 2 - sx * 0.35;      // rakes outward and up
+    arm.position.set(sx * (cw * 0.98 + 0.05), my + 0.01, mz);
+    g.add(arm);
+    const housing = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 7), bodyPlain);
+    housing.scale.set(0.62, 0.78, 1.25);           // narrow, shallow, long
+    housing.position.set(sx * (cw * 0.98 + 0.115), my + 0.035, mz - 0.01);
+    g.add(housing);
+    const face = new THREE.Mesh(new THREE.CircleGeometry(0.052, 12), glass);
+    face.scale.set(1, 0.78, 1);
+    face.rotation.y = -sx * (Math.PI / 2 - 0.28);  // angled back at the driver
+    face.position.set(sx * (cw * 0.98 + 0.152), my + 0.035, mz - 0.02);
+    g.add(face);
 
     // door shut-line and handle. The shut-line is a dark inset sliver, not a
     // painted stripe, so it catches shadow the way a panel gap does.
@@ -1997,7 +2012,66 @@ function buildRoadCar(color: number, p: RoadCarParams, num?: number): THREE.Grou
   return g;
 }
 
+/**
+ * Collapse every static part of a built car into one mesh PER MATERIAL.
+ *
+ * The detail pass took a car from ~130 meshes to 167, which across a ten-car
+ * grid is 1,670 objects for the renderer to cull and sort every frame — and
+ * this renderer has been draw-call bound before. None of that detail moves
+ * relative to the shell, so it does not need to be separate objects: a mirror
+ * housing and a diffuser fin in the same body-colour paint can be one buffer.
+ *
+ * Wheels are excluded because they spin and steer, and anything flagged
+ * noMerge is left alone. Merging is attempted per material and falls back to
+ * leaving that material's meshes as they were, because mergeGeometries refuses
+ * a set whose attributes do not match exactly — which is a real risk here,
+ * with a UV-mapped lofted body sitting alongside primitives.
+ */
+function mergeStaticParts(root: THREE.Group): void {
+  const byMat = new Map<THREE.Material, THREE.Mesh[]>();
+  const skip = new Set<THREE.Object3D>();
+  root.traverse((o) => {
+    if (o.userData.wheel || o.userData.noMerge) o.traverse((c) => skip.add(c));
+  });
+  root.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh || skip.has(m) || Array.isArray(m.material)) return;
+    const mat = m.material as THREE.Material;
+    const list = byMat.get(mat);
+    if (list) list.push(m); else byMat.set(mat, [m]);
+  });
+
+  root.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  for (const [mat, meshes] of byMat) {
+    if (meshes.length < 2) continue;
+    const geos: THREE.BufferGeometry[] = [];
+    let ok = true;
+    for (const m of meshes) {
+      const gm = m.geometry.clone();
+      // bake the mesh's placement, expressed in the car root's frame
+      gm.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld));
+      // strip anything not shared by all of them, so the attribute sets line up
+      for (const name of Object.keys(gm.attributes)) {
+        if (name !== "position" && name !== "normal" && name !== "uv") gm.deleteAttribute(name);
+      }
+      if (!gm.getAttribute("uv")) {
+        const n = gm.getAttribute("position").count;
+        gm.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(n * 2), 2));
+      }
+      geos.push(gm.index ? gm.toNonIndexed() : gm);
+    }
+    let merged: THREE.BufferGeometry | null = null;
+    try { merged = mergeGeometries(geos, false); } catch { ok = false; }
+    if (!ok || !merged) continue;
+    for (const m of meshes) m.removeFromParent();
+    root.add(new THREE.Mesh(merged, mat));
+  }
+}
+
 /** Build the drivable mesh for a car type in a given livery color. */
 export function makeKart(id: CarId, color: number): THREE.Group {
-  return buildRoadCar(color, ROAD_CARS[id], RACE_NUM[id]);
+  const g = buildRoadCar(color, ROAD_CARS[id], RACE_NUM[id]);
+  mergeStaticParts(g);
+  return g;
 }
