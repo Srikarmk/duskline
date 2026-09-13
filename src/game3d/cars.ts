@@ -1440,128 +1440,195 @@ interface RoadCarParams {
   rim?: number;              // exhaust tip count
 }
 
-// --- section profiles, shared between cars of the same architecture ---------
-// A wedge and a long-bonnet classic differ mostly HERE: the wedge's front deck
-// sits far below its rear deck, the classic's bonnet runs flat for half the car.
-const RIBS_MID_WEDGE: RibRow[] = [
-  // Blunter, wider nose. A 0.14 floor width tapering to a 0.36 shoulder is a
-  // prototype's needle; a road wedge has a squared-off nose with a splitter
-  // under it, and the difference is most of why the old profile read as a Le
-  // Mans car rather than a road car.
+// --- section profiles, one per car ------------------------------------------
+// These used to be five tables shared ten ways, so F40 / TAURO / TESTA were
+// literally the same body under different appendages, as were MERIDIAN /
+// VELOCE / ZANZA and FIREHAWK / IROC. No amount of wing and lamp work
+// separates cars that are the same shape; the section IS the silhouette.
+//
+// Row = [zFrac, floorLift, wFloor, wMax, shoulderFrac, wDeck, deckFrac].
+// z runs 1 at the nose to -1 at the tail; widths are fractions of the
+// half-width, heights fractions of the named landmark.
+
+/** Blunt splitter nose, flat low bonnet, waist pinched at the door, enormous
+ *  rear haunches, kamm tail tucked under. */
+const RIBS_F40: RibRow[] = [
   [ 1.00, 0.05, 0.34, 0.56, 0.42, 0.46, 0.46],
-  [ 0.88, 0.00, 0.50, 0.76, 0.48, 0.54, 0.52],
-  [ 0.62, 0.00, 0.64, 0.96, 0.60, 0.82, 0.62],
-  [ 0.32, 0.00, 0.70, 0.93, 0.72, 0.74, 0.74],
-  [-0.02, 0.00, 0.72, 0.94, 1.00, 0.70, 1.00],
-  [-0.40, 0.00, 0.74, 1.00, 1.00, 0.80, 1.00],
-  [-0.74, 0.02, 0.70, 0.99, 1.00, 0.88, 1.00],
-  // Tuck the tail UNDER. A kamm cut that runs from the floor to the deck is a
-  // 0.73 m x 1.86 m flat plate aimed straight at the chase camera — the "red
-  // slab" read. Lifting the floor and pulling the bottom width in gives the
-  // undercut every mid-engine car has, and leaves room for a diffuser.
+  [ 0.86, 0.00, 0.54, 0.80, 0.50, 0.62, 0.54],
+  [ 0.60, 0.00, 0.66, 0.97, 0.60, 0.86, 0.60],
+  [ 0.30, 0.00, 0.70, 0.90, 0.72, 0.72, 0.74],
+  [-0.04, 0.00, 0.72, 0.93, 1.00, 0.70, 1.00],
+  [-0.42, 0.00, 0.76, 1.00, 1.00, 0.84, 1.00],
+  [-0.76, 0.02, 0.72, 0.99, 1.00, 0.90, 1.00],
   [-1.00, 0.17, 0.50, 0.95, 0.98, 0.92, 0.99],
 ];
-const RIBS_MID_CURVE: RibRow[] = [
-  [ 1.00, 0.05, 0.18, 0.42, 0.44, 0.30, 0.50],
-  [ 0.86, 0.00, 0.54, 0.80, 0.54, 0.58, 0.62],
-  [ 0.60, 0.00, 0.68, 0.96, 0.66, 0.70, 0.72],
-  [ 0.30, 0.00, 0.72, 0.94, 0.80, 0.60, 0.84],
-  [-0.02, 0.00, 0.74, 0.96, 0.96, 0.58, 1.00],
-  [-0.38, 0.00, 0.74, 1.00, 1.00, 0.66, 1.00],
-  [-0.72, 0.02, 0.70, 0.97, 0.98, 0.74, 0.98],
-  [-1.00, 0.04, 0.58, 0.90, 0.92, 0.78, 0.94],
+/** The extreme wedge: nose almost on the floor and a dead-straight climb to
+ *  the roof, cab well forward, slab sides, very wide flat tail. */
+const RIBS_TAURO: RibRow[] = [
+  [ 1.00, 0.02, 0.40, 0.62, 0.34, 0.56, 0.34],
+  [ 0.86, 0.00, 0.58, 0.84, 0.42, 0.74, 0.42],
+  [ 0.62, 0.00, 0.70, 0.96, 0.52, 0.92, 0.52],
+  [ 0.34, 0.00, 0.74, 0.96, 0.66, 0.88, 0.66],
+  [ 0.02, 0.00, 0.76, 0.97, 0.88, 0.80, 0.88],
+  [-0.36, 0.00, 0.80, 1.00, 1.00, 0.92, 1.00],
+  [-0.72, 0.02, 0.80, 1.00, 1.00, 0.96, 1.00],
+  [-1.00, 0.12, 0.62, 0.98, 1.00, 0.96, 1.00],
 ];
-const RIBS_FRONT_LONG: RibRow[] = [
-  [ 1.00, 0.06, 0.20, 0.44, 0.46, 0.34, 0.52],
-  [ 0.84, 0.00, 0.56, 0.82, 0.58, 0.72, 0.64],
-  [ 0.54, 0.00, 0.66, 0.94, 0.66, 0.84, 0.70],
-  [ 0.22, 0.00, 0.70, 0.94, 0.74, 0.86, 0.76],
-  [-0.10, 0.00, 0.72, 0.96, 0.94, 0.78, 0.98],
-  [-0.46, 0.00, 0.72, 0.98, 1.00, 0.82, 1.00],
-  [-0.78, 0.02, 0.66, 0.92, 0.98, 0.84, 0.98],
-  [-1.00, 0.05, 0.54, 0.82, 0.90, 0.76, 0.90],
+/** Narrow at the nose and widening hard down the flanks to the widest rear
+ *  track here — the strakes are feeding those intakes. Full-width flat tail. */
+const RIBS_TESTA: RibRow[] = [
+  [ 1.00, 0.04, 0.30, 0.48, 0.40, 0.40, 0.42],
+  [ 0.86, 0.00, 0.46, 0.68, 0.48, 0.58, 0.50],
+  [ 0.60, 0.00, 0.56, 0.80, 0.56, 0.74, 0.56],
+  [ 0.30, 0.00, 0.64, 0.86, 0.70, 0.76, 0.70],
+  [-0.02, 0.00, 0.72, 0.94, 0.96, 0.80, 0.98],
+  [-0.40, 0.00, 0.80, 1.00, 1.00, 0.92, 1.00],
+  [-0.76, 0.02, 0.82, 1.00, 1.00, 0.98, 1.00],
+  [-1.00, 0.14, 0.70, 1.00, 1.00, 1.00, 1.00],
 ];
-const RIBS_MUSCLE: RibRow[] = [
-  [ 1.00, 0.05, 0.26, 0.54, 0.48, 0.44, 0.54],
-  [ 0.86, 0.00, 0.62, 0.88, 0.58, 0.82, 0.64],
-  [ 0.56, 0.00, 0.72, 0.96, 0.68, 0.92, 0.70],
-  [ 0.24, 0.00, 0.74, 0.97, 0.78, 0.92, 0.80],
-  [-0.08, 0.00, 0.76, 0.98, 0.96, 0.86, 0.98],
-  [-0.44, 0.00, 0.76, 1.00, 1.00, 0.90, 1.00],
-  [-0.76, 0.02, 0.74, 0.98, 1.00, 0.94, 1.00],
-  [-1.00, 0.04, 0.68, 0.94, 0.98, 0.94, 0.99],
+/** A teardrop: narrow rounded nose, widest at the cabin, tapering away to a
+ *  small tail. The only car here that gets NARROWER toward the back. */
+const RIBS_MERIDIAN: RibRow[] = [
+  [ 1.00, 0.06, 0.22, 0.40, 0.46, 0.30, 0.52],
+  [ 0.86, 0.00, 0.48, 0.72, 0.56, 0.52, 0.64],
+  [ 0.60, 0.00, 0.62, 0.90, 0.68, 0.62, 0.76],
+  [ 0.30, 0.00, 0.68, 0.94, 0.82, 0.56, 0.88],
+  [-0.02, 0.00, 0.72, 0.98, 0.98, 0.54, 1.00],
+  [-0.38, 0.00, 0.70, 0.96, 1.00, 0.60, 1.00],
+  [-0.72, 0.02, 0.62, 0.86, 0.94, 0.64, 0.94],
+  [-1.00, 0.08, 0.48, 0.70, 0.84, 0.62, 0.86],
 ];
-const RIBS_SEDAN: RibRow[] = [
-  [ 1.00, 0.05, 0.28, 0.56, 0.50, 0.48, 0.58],
-  [ 0.86, 0.00, 0.64, 0.88, 0.62, 0.84, 0.70],
-  [ 0.58, 0.00, 0.74, 0.96, 0.72, 0.92, 0.78],
-  [ 0.28, 0.00, 0.78, 0.98, 0.86, 0.90, 0.90],
-  [-0.06, 0.00, 0.78, 0.99, 1.00, 0.88, 1.00],
-  [-0.40, 0.00, 0.78, 1.00, 1.00, 0.92, 1.00],
-  [-0.74, 0.02, 0.74, 0.97, 1.00, 0.94, 1.00],
-  [-1.00, 0.04, 0.68, 0.92, 0.98, 0.92, 0.99],
+/** Heavy and rounded: a high blunt nose, an arched roofline and shoulders that
+ *  roll home instead of creasing. Nothing on it is sharp. */
+const RIBS_VELOCE: RibRow[] = [
+  [ 1.00, 0.06, 0.36, 0.58, 0.56, 0.48, 0.64],
+  [ 0.86, 0.00, 0.58, 0.84, 0.66, 0.72, 0.76],
+  [ 0.60, 0.00, 0.70, 0.96, 0.76, 0.80, 0.86],
+  [ 0.30, 0.00, 0.74, 0.98, 0.88, 0.72, 0.94],
+  [-0.02, 0.00, 0.76, 1.00, 1.00, 0.68, 1.00],
+  [-0.38, 0.00, 0.76, 1.00, 1.00, 0.76, 1.00],
+  [-0.72, 0.02, 0.70, 0.94, 0.96, 0.80, 0.96],
+  [-1.00, 0.10, 0.58, 0.82, 0.88, 0.80, 0.90],
+];
+/** Low, narrow and crisp — a shallow wedge with none of the F40's bulk. */
+const RIBS_ZANZA: RibRow[] = [
+  [ 1.00, 0.04, 0.30, 0.50, 0.40, 0.40, 0.46],
+  [ 0.86, 0.00, 0.52, 0.76, 0.50, 0.60, 0.56],
+  [ 0.60, 0.00, 0.64, 0.92, 0.60, 0.74, 0.64],
+  [ 0.30, 0.00, 0.70, 0.92, 0.74, 0.68, 0.78],
+  [-0.02, 0.00, 0.72, 0.95, 0.96, 0.64, 1.00],
+  [-0.40, 0.00, 0.74, 0.99, 1.00, 0.76, 1.00],
+  [-0.74, 0.02, 0.70, 0.94, 0.98, 0.84, 0.98],
+  [-1.00, 0.14, 0.56, 0.86, 0.92, 0.86, 0.94],
+];
+/** Upright and narrow, flat-sided, with a tall cabin — a road saloon. */
+const RIBS_IMPREZ: RibRow[] = [
+  [ 1.00, 0.05, 0.32, 0.60, 0.54, 0.52, 0.62],
+  [ 0.86, 0.00, 0.66, 0.90, 0.66, 0.86, 0.74],
+  [ 0.58, 0.00, 0.76, 0.97, 0.76, 0.94, 0.82],
+  [ 0.28, 0.00, 0.80, 0.99, 0.90, 0.92, 0.92],
+  [-0.06, 0.00, 0.80, 1.00, 1.00, 0.90, 1.00],
+  [-0.40, 0.00, 0.80, 1.00, 1.00, 0.94, 1.00],
+  [-0.74, 0.02, 0.76, 0.98, 1.00, 0.96, 1.00],
+  [-1.00, 0.06, 0.68, 0.92, 0.98, 0.94, 0.99],
+];
+/** An enormously long FLAT bonnet running most of the car before the screen
+ *  even starts — the whole point of the shape. */
+const RIBS_FIREHAWK: RibRow[] = [
+  [ 1.00, 0.04, 0.30, 0.58, 0.44, 0.50, 0.48],
+  [ 0.88, 0.00, 0.64, 0.88, 0.52, 0.84, 0.56],
+  [ 0.64, 0.00, 0.74, 0.97, 0.60, 0.94, 0.62],
+  [ 0.36, 0.00, 0.76, 0.98, 0.66, 0.96, 0.66],
+  [ 0.06, 0.00, 0.78, 0.99, 0.90, 0.92, 0.94],
+  [-0.34, 0.00, 0.78, 1.00, 1.00, 0.90, 1.00],
+  [-0.72, 0.02, 0.76, 0.99, 1.00, 0.94, 1.00],
+  [-1.00, 0.06, 0.70, 0.95, 0.98, 0.94, 0.99],
+];
+/** Squarer and blunter than the Firehawk: a near-vertical front face and a
+ *  short deck, so it reads as stocky where the other reads as long. */
+const RIBS_IROC: RibRow[] = [
+  [ 1.00, 0.04, 0.44, 0.70, 0.56, 0.64, 0.60],
+  [ 0.88, 0.00, 0.70, 0.92, 0.62, 0.90, 0.66],
+  [ 0.62, 0.00, 0.78, 0.98, 0.68, 0.96, 0.70],
+  [ 0.32, 0.00, 0.80, 0.99, 0.76, 0.96, 0.78],
+  [ 0.00, 0.00, 0.80, 1.00, 0.96, 0.92, 0.98],
+  [-0.38, 0.00, 0.80, 1.00, 1.00, 0.94, 1.00],
+  [-0.74, 0.02, 0.78, 0.99, 1.00, 0.96, 1.00],
+  [-1.00, 0.05, 0.72, 0.96, 0.99, 0.96, 1.00],
+];
+/** Long slim bonnet, high rounded rear hips, and a tail that falls away — the
+ *  classic fastback. Narrowest car on the grid. */
+const RIBS_FAIRLADY: RibRow[] = [
+  [ 1.00, 0.06, 0.26, 0.46, 0.48, 0.36, 0.54],
+  [ 0.86, 0.00, 0.54, 0.78, 0.58, 0.68, 0.64],
+  [ 0.58, 0.00, 0.62, 0.88, 0.64, 0.80, 0.68],
+  [ 0.26, 0.00, 0.66, 0.90, 0.72, 0.84, 0.74],
+  [-0.08, 0.00, 0.70, 0.94, 0.92, 0.80, 0.96],
+  [-0.44, 0.00, 0.74, 1.00, 1.00, 0.84, 1.00],
+  [-0.78, 0.02, 0.68, 0.92, 0.98, 0.84, 0.98],
+  [-1.00, 0.06, 0.56, 0.80, 0.90, 0.76, 0.90],
 ];
 
 const ROAD_CARS: Record<CarId, RoadCarParams> = {
   f40: {
     L: 4.43, W: 1.98, R: 0.33, rearR: 1.08, clr: 0.12,
     sillY: 0.40, shoulderY: 0.78, deckY: 0.86, roofY: 1.24,
-    ribs: RIBS_MID_WEDGE, cabF: 0.34, cabR: -0.50, roof: "canopy", cabW: 0.78, whF: 0.62, whR: 0.60,
+    ribs: RIBS_F40, cabF: 0.34, cabR: -0.50, roof: "canopy", cabW: 0.78, whF: 0.62, whR: 0.60,
     wing: "straked", lamps: "popup", tail: "quad", louvres: 6, naca: true, pipes: 3,
   },
   tauro: {
     L: 4.16, W: 2.02, R: 0.33, rearR: 1.12, clr: 0.11,
     sillY: 0.38, shoulderY: 0.74, deckY: 0.82, roofY: 1.16,
-    ribs: RIBS_MID_WEDGE, cabF: 0.40, cabR: -0.36, roof: "canopy", cabW: 0.7, whF: 0.60, whR: 0.62,
+    ribs: RIBS_TAURO, cabF: 0.40, cabR: -0.36, roof: "canopy", cabW: 0.7, whF: 0.60, whR: 0.62,
     wing: "basket", lamps: "popup", tail: "quad", louvres: 5, naca: true, pipes: 4,
   },
   meridian: {
     L: 4.29, W: 1.84, R: 0.32, rearR: 1.06, clr: 0.12,
     sillY: 0.42, shoulderY: 0.80, deckY: 0.90, roofY: 1.26,
-    ribs: RIBS_MID_CURVE, cabF: 0.36, cabR: -0.48, roof: "canopy", cabW: 0.8, whF: 0.62, whR: 0.60,
+    ribs: RIBS_MERIDIAN, cabF: 0.36, cabR: -0.48, roof: "canopy", cabW: 0.8, whF: 0.62, whR: 0.60,
     wing: "duck", lamps: "slim", tail: "bar", louvres: 7, scoop: "roof", pipes: 2,
   },
   veloce: {
     L: 4.46, W: 2.00, R: 0.34, rearR: 1.04, clr: 0.13,
     sillY: 0.44, shoulderY: 0.84, deckY: 0.94, roofY: 1.32,
-    ribs: RIBS_MID_CURVE, cabF: 0.30, cabR: -0.50, roof: "canopy", cabW: 0.82, whF: 0.62, whR: 0.60,
+    ribs: RIBS_VELOCE, cabF: 0.30, cabR: -0.50, roof: "canopy", cabW: 0.82, whF: 0.62, whR: 0.60,
     wing: "duck", lamps: "round2", tail: "bar", twoTone: true, scoop: "roof", pipes: 2,
   },
   testa: {
     L: 4.49, W: 1.98, R: 0.33, rearR: 1.10, clr: 0.12,
     sillY: 0.40, shoulderY: 0.76, deckY: 0.84, roofY: 1.22,
-    ribs: RIBS_MID_WEDGE, cabF: 0.34, cabR: -0.42, roof: "canopy", cabW: 0.76, whF: 0.62, whR: 0.60,
+    ribs: RIBS_TESTA, cabF: 0.34, cabR: -0.42, roof: "canopy", cabW: 0.76, whF: 0.62, whR: 0.60,
     wing: "none", lamps: "popup", tail: "slats", strakes: 5, pipes: 2,
   },
   zanza: {
     L: 4.43, W: 1.81, R: 0.32, rearR: 1.05, clr: 0.12,
     sillY: 0.40, shoulderY: 0.78, deckY: 0.86, roofY: 1.26,
-    ribs: RIBS_MID_CURVE, cabF: 0.34, cabR: -0.50, roof: "canopy", cabW: 0.82, whF: 0.62, whR: 0.60,
+    ribs: RIBS_ZANZA, cabF: 0.34, cabR: -0.50, roof: "canopy", cabW: 0.82, whF: 0.62, whR: 0.60,
     wing: "duck", lamps: "slim", tail: "bar", louvres: 4, pipes: 2,
   },
   imprez: {
     L: 4.34, W: 1.75, R: 0.32, clr: 0.20,
     sillY: 0.46, shoulderY: 0.88, deckY: 0.98, roofY: 1.46,
-    ribs: RIBS_SEDAN, cabF: 0.22, cabR: -0.46, roof: "notch", cabW: 0.86, whF: 0.64, whR: 0.62,
+    ribs: RIBS_IMPREZ, cabF: 0.22, cabR: -0.46, roof: "notch", cabW: 0.86, whF: 0.64, whR: 0.62,
     wing: "blade", lamps: "slim", tail: "twin", scoop: "rally", fogLamps: true, pipes: 2,
     rim: 0xc9a44a,   // the gold wheels are half of why you recognise this car
   },
   firehawk: {
     L: 4.98, W: 1.86, R: 0.35, rearR: 1.06, clr: 0.17,
     sillY: 0.44, shoulderY: 0.84, deckY: 0.92, roofY: 1.40,
-    ribs: RIBS_MUSCLE, cabF: 0.12, cabR: -0.60, roof: "targa", cabW: 0.86, whF: 0.66, whR: 0.62,
+    ribs: RIBS_FIREHAWK, cabF: 0.12, cabR: -0.60, roof: "targa", cabW: 0.86, whF: 0.66, whR: 0.62,
     wing: "whale", lamps: "slim", tail: "twin", scoop: "shaker", pipes: 2, rim: 0x8a8e96,
   },
   iroc: {
     L: 4.87, W: 1.85, R: 0.34, rearR: 1.06, clr: 0.16,
     sillY: 0.42, shoulderY: 0.82, deckY: 0.90, roofY: 1.38,
-    ribs: RIBS_MUSCLE, cabF: 0.14, cabR: -0.58, roof: "notch", cabW: 0.86, whF: 0.66, whR: 0.62,
+    ribs: RIBS_IROC, cabF: 0.14, cabR: -0.58, roof: "notch", cabW: 0.86, whF: 0.66, whR: 0.62,
     wing: "duck", lamps: "round4", tail: "quad", twoTone: true, scoop: "bulge", pipes: 2, rim: 0x8a8e96,
   },
   fairlady: {
     L: 4.14, W: 1.63, R: 0.31, clr: 0.16,
     sillY: 0.40, shoulderY: 0.78, deckY: 0.86, roofY: 1.32,
-    ribs: RIBS_FRONT_LONG, cabF: 0.10, cabR: -0.64, roof: "fastback", cabW: 0.82, whF: 0.64, whR: 0.62,
+    ribs: RIBS_FAIRLADY, cabF: 0.10, cabR: -0.64, roof: "fastback", cabW: 0.82, whF: 0.64, whR: 0.62,
     wing: "none", lamps: "round2", tail: "twin", chrome: true, pipes: 1,
   },
 };

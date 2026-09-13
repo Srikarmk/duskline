@@ -631,10 +631,11 @@ export class Game {
       // deserts came out mossy. Pick the closest shipped albedo per realm and
       // let the tint do the last 20%.
       hokkai: "ground_peaks",   // pale rock, tints to snow
-      // peaks is bare pale rock, and tinting it straw made the headland read
-      // as desert sand. Big Sur in late summer is dry GRASS over scrub, so the
-      // forest albedo with its grass structure, tinted warm, is the closer set.
-      cape: "ground_forest",
+      // Neither set is right on its own. peaks tinted straw reads as desert
+      // sand; forest tinted straw stays GREEN, because a multiply cannot move
+      // a green albedo's hue — the base dominates. peaks it is, with a tint
+      // carrying just enough green to land on dry olive grass rather than sand.
+      cape: "ground_peaks",
       hills: "ground_ember",    // scorched chaparral
       basin: "ground_ember",    // red desert rock
       mirage: "ground_peaks",   // pale sand
