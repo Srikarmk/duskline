@@ -52,7 +52,7 @@ import { REALMS, pickScenery, REALM_WEATHER, REALM_WEATHER_POOL, REALM_AMBIENCE,
 import { makePyramid, makeObelisk, makeSphinx, makePalm, makeSandRock } from "./props/egyptian";
 import { makeTower, makeGatehouse, makeCastleWall, makeBanner, makeTorch } from "./props/castle";
 import { makeGrandstand, makeTyreStack, makeFloodlight, makePitBuilding, makeMarshalBoard } from "./props/circuit";
-import { makeSkyscraper, makeBrownstone, makeStreetlight, makeBillboard, makeWaterTower, makeOverheadLight, makeNeonSign } from "./props/metro";
+import { makeSkyscraper, makeBrownstone, makeStreetlight, makeBillboard, makeWaterTower, makeOverheadLight, makeNeonSign, makeNeoTower } from "./props/metro";
 import { makeHogwartsCastle, makeHogwartsExpress, makeQuidditchHoop, makeFloatingCandle, makeGoldenSnitch, makeWhompingWillow } from "./props/hogwarts";
 import { makeWaterfall, makeRiverBridge } from "./props/water";
 import { Opponent } from "./ai";
@@ -2557,9 +2557,14 @@ export class Game {
     }
 
     // gem runs — patterned (line / zigzag / lane-sweep) so they're a mini
-    // skill challenge, not just a straight line to hold
+    // skill challenge, not just a straight line to hold.
+    //
+    // NOTHING TO COLLECT on the endless cruise. Chips and nitro cans turn a
+    // drive into a route you are supposed to be optimising — you start weaving
+    // for pickups instead of just driving, which is the one thing that mode is
+    // for. The distance readout is the only score it needs.
     let gi = 0;
-    for (let d = 40; d < len - 40; d += 100) {
+    for (let d = 40; !this.cfg.endless && d < len - 40; d += 100) {
       const pattern = gi++ % 3;
       const startLane = lane();
       for (let k = 0; k < 6; k++) {
@@ -2580,7 +2585,7 @@ export class Game {
     // 145 m -> 300 m. Note the trap: 200 m looked like a 31% cut in density but
     // the 1.55x longer lap turned it into 24 cans per lap, MORE than the 20 you
     // had before. 300 m lands ~16 per lap — an actual trim, not a drought.
-    for (let d = 130; d < len - 40; d += 300) {
+    for (let d = 130; !this.cfg.endless && d < len - 40; d += 300) {
       const a = LANE_CENTERS[ni % 3];
       const b = LANE_CENTERS[(ni + 1) % 3];
       ni++;
@@ -2963,15 +2968,53 @@ export class Game {
         // The city IS the scenery here: slabs of tower marching down both sides
         // of the highway, close enough to feel like walls of light, plus
         // billboards turned to face the traffic.
-        for (let k = 0; k < 14; k++) {
-          const frac = k / 14 + 0.012;
+        // The city wall, both sides, all the way round. Stepped-massing towers
+        // rather than extruded boxes — see makeNeoTower: a city of plain boxes
+        // is a bar chart, and what carries the reference is the silhouette.
+        for (let k = 0; k < 44; k++) {
+          const frac = k / 44 + 0.006;
           const side: 1 | -1 = k % 2 === 0 ? 1 : -1;
+          const t = (n: number) => makeNeoTower(rand, 16 + rand() * 22, 14 + rand() * 20, n);
           drop(cluster(
-            at(makeSkyscraper(rand), 0, 0, 2.2 + rand() * 1.6),
-            at(makeSkyscraper(rand), 52, 38, 1.6 + rand() * 1.9),
-            at(makeSkyscraper(rand), -44, 64, 2.0 + rand() * 1.4),
-            at(makeSkyscraper(rand), 20, 104, 2.8 + rand() * 1.8),
-          ), frac, side, 74 + rand() * 40, false);
+            at(t(46 + rand() * 90), 0, 0, 1),
+            at(t(34 + rand() * 70), 44 + rand() * 26, 30 + rand() * 24, 1),
+            at(t(28 + rand() * 58), -38 - rand() * 24, 52 + rand() * 30, 1),
+            at(t(60 + rand() * 110), 14 + rand() * 30, 96 + rand() * 40, 1),
+          ), frac, side, 46 + rand() * 26, false);
+        }
+        // OVERPASSES crossing above the carriageway. Neo-Tokyo's roads run
+        // under other roads — it is the thing that makes the city feel stacked
+        // rather than lining a corridor, and from the seat it gives you
+        // something that passes OVER you, which nothing else here does.
+        for (let k = 0; k < 9; k++) {
+          const d = track.wrap((k / 9 + 0.05) * len);
+          const p0 = track.pointAt(d, 0);
+          const tan = track.tangentAt(d);
+          const deckY = this.terrainYAt(d, 0) + 11 + rand() * 5;
+          const span = new THREE.Group();
+          const conc = new THREE.MeshStandardMaterial({ color: 0x14121f, roughness: 0.95, flatShading: true });
+          const deck = new THREE.Mesh(new THREE.BoxGeometry(96, 1.9, 11 + rand() * 5), conc);
+          deck.position.y = deckY;
+          span.add(deck);
+          // parapets, and the lit underside strip that says "this is a road"
+          for (const sz of [-1, 1]) {
+            const par = new THREE.Mesh(new THREE.BoxGeometry(96, 1.5, 0.7), conc);
+            par.position.set(0, deckY + 1.5, sz * 5.6);
+            span.add(par);
+          }
+          const glowStrip = new THREE.Mesh(new THREE.BoxGeometry(96, 0.18, 0.5),
+            new THREE.MeshBasicMaterial({ color: 0x00e5ff }));
+          glowStrip.position.set(0, deckY - 1.05, 0);
+          span.add(glowStrip);
+          // piers, set well outside the carriageway
+          for (const sx of [-1, 1]) {
+            const pier = new THREE.Mesh(new THREE.BoxGeometry(3.4, deckY, 3.4), conc);
+            pier.position.set(sx * 26, deckY / 2, 0);
+            span.add(pier);
+          }
+          span.position.set(p0.x, 0, p0.z);
+          span.rotation.y = Math.atan2(tan.x, tan.z);   // deck runs ACROSS the road
+          this.scene.add(span);
         }
         for (let k = 0; k < 8; k++) {
           drop(at(makeBillboard(rand), 0, 0, 1.5 + rand() * 0.5),

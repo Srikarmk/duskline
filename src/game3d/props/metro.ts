@@ -384,6 +384,120 @@ export function makeBrownstone(rand: () => number): THREE.Group {
  * purpose: these are light sources, so they must not dim with distance or take
  * the scene's ambient.
  */
+/**
+ * A Neo-Tokyo tower.
+ *
+ * makeSkyscraper is one extruded box with a window grid, and a city of those
+ * is a bar chart. What gives the reference its density is SILHOUETTE: the
+ * massing steps back as it climbs, blocks of different heights are jammed hard
+ * against each other, and the roofline is a mess of tanks, vents, masts and
+ * aircraft warning lights. None of it is expensive — it is all boxes — but it
+ * is the difference between "buildings" and "a city".
+ *
+ * Built around the origin at its base, footprint roughly `w` by `d`.
+ */
+export function makeNeoTower(rand: () => number, w: number, d: number, h: number): THREE.Group {
+  const g = new THREE.Group();
+  const shell = new THREE.MeshStandardMaterial({
+    color: 0x0d0c18, metalness: 0.1, roughness: 0.92, flatShading: true,
+  });
+  const dark = new THREE.MeshStandardMaterial({
+    color: 0x07060e, metalness: 0.2, roughness: 0.85, flatShading: true,
+  });
+  const lit = new THREE.MeshBasicMaterial({ color: 0xffd98a });
+  const litCool = new THREE.MeshBasicMaterial({ color: 0x8fd8ff });
+  const box = (bw: number, bh: number, bd: number, m: THREE.Material, x: number, y: number, z: number) => {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), m);
+    b.position.set(x, y, z);
+    g.add(b);
+    return b;
+  };
+
+  // --- massing: a stack of slabs that step back and shift as it climbs ------
+  let y = 0;
+  let cw = w, cd = d;
+  let ox = 0, oz = 0;
+  const tiers = 2 + Math.floor(rand() * 3);
+  for (let t = 0; t < tiers; t++) {
+    const th = (h / tiers) * (0.6 + rand() * 0.8);
+    box(cw, th, cd, shell, ox, y + th / 2, oz);
+    // a service core or lift shaft riding up the side of this tier, which is
+    // what stops the profile being a clean rectangle
+    if (rand() < 0.55) {
+      const sw = cw * (0.16 + rand() * 0.14);
+      box(sw, th * (0.7 + rand() * 0.5), cd * 0.5, dark,
+        ox + (rand() < 0.5 ? -1 : 1) * (cw / 2 - sw / 2), y + th * 0.45, oz + cd * 0.3);
+    }
+    y += th;
+    // step back, and shift off-axis so the stack leans rather than telescoping
+    cw *= 0.62 + rand() * 0.26;
+    cd *= 0.62 + rand() * 0.26;
+    ox += (rand() - 0.5) * w * 0.2;
+    oz += (rand() - 0.5) * d * 0.2;
+  }
+  const topY = y;
+
+  // --- a neighbour jammed against it, at a different height ----------------
+  if (rand() < 0.75) {
+    const nw = w * (0.5 + rand() * 0.5), nd = d * (0.6 + rand() * 0.5);
+    const nh = h * (0.3 + rand() * 0.45);
+    box(nw, nh, nd, shell,
+      (w / 2 + nw / 2) * (rand() < 0.5 ? -1 : 1) * 0.92, nh / 2, (rand() - 0.5) * d * 0.5);
+  }
+
+  // --- roofline clutter ----------------------------------------------------
+  const tank = () => {
+    const r = cw * (0.12 + rand() * 0.12);
+    const t = new THREE.Mesh(new THREE.CylinderGeometry(r, r, r * (1.2 + rand()), 8), dark);
+    t.position.set(ox + (rand() - 0.5) * cw * 0.6, topY + r * 0.9, oz + (rand() - 0.5) * cd * 0.6);
+    g.add(t);
+  };
+  for (let i = 0; i < 1 + Math.floor(rand() * 3); i++) tank();
+  for (let i = 0; i < 2 + Math.floor(rand() * 3); i++) {
+    box(cw * (0.1 + rand() * 0.16), cw * (0.1 + rand() * 0.14), cd * (0.1 + rand() * 0.16), dark,
+      ox + (rand() - 0.5) * cw * 0.7, topY + cw * 0.08, oz + (rand() - 0.5) * cd * 0.7);
+  }
+  // masts, with the red aircraft lamp on top
+  for (let i = 0; i < 1 + Math.floor(rand() * 2); i++) {
+    const mh = h * (0.08 + rand() * 0.16);
+    const mx = ox + (rand() - 0.5) * cw * 0.5, mz = oz + (rand() - 0.5) * cd * 0.5;
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.2, mh, 5), dark);
+    mast.position.set(mx, topY + mh / 2, mz);
+    g.add(mast);
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.42, 6, 5),
+      new THREE.MeshBasicMaterial({ color: 0xff2b2b }));
+    lamp.position.set(mx, topY + mh, mz);
+    g.add(lamp);
+  }
+
+  // --- lit windows: irregular, in blocks, with whole dark floors -----------
+  // A perfect grid reads as wallpaper. Real towers have floors that are out,
+  // runs of lit offices, and the odd single window burning on its own.
+  const floors = Math.max(4, Math.round(h / 3.4));
+  for (let f = 1; f < floors; f++) {
+    if (rand() < 0.3) continue;                       // this floor is dark
+    const fy = (f / floors) * topY * 0.94;
+    if (fy > topY) break;
+    // width available at this height: shrink with the setbacks
+    const k = 1 - (fy / topY) * 0.45;
+    const runs = 1 + Math.floor(rand() * 3);
+    for (let r = 0; r < runs; r++) {
+      const ww = w * k * (0.06 + rand() * 0.2);
+      const wx = (rand() - 0.5) * w * k * 0.86;
+      const m = rand() < 0.22 ? litCool : lit;
+      box(ww, 1.1 + rand() * 0.7, 0.16, m, wx, fy, d * k * 0.5 + 0.02);
+      box(ww, 1.1 + rand() * 0.7, 0.16, m, wx, fy, -d * k * 0.5 - 0.02);
+    }
+    if (rand() < 0.5) {
+      const wd = d * k * (0.08 + rand() * 0.2);
+      const wz = (rand() - 0.5) * d * k * 0.8;
+      box(0.16, 1.1 + rand() * 0.6, wd, lit, w * k * 0.5 + 0.02, fy, wz);
+      box(0.16, 1.1 + rand() * 0.6, wd, lit, -w * k * 0.5 - 0.02, fy, wz);
+    }
+  }
+  return g;
+}
+
 export function makeNeonSign(rand: () => number): THREE.Group {
   const g = new THREE.Group();
   const palette = [0xff2d95, 0x00e5ff, 0x7cff4a, 0xffd426, 0xb14bff, 0xff4d3d];
