@@ -25,7 +25,10 @@ export const LANES = 3;
 export const CAR_LIFT = 0.05;
 export const LANE_CENTERS = [-2 / 3, 0, 2 / 3]; // in playerX units (1 = road edge)
 
-export const MAX_SPEED = 58;
+// 58 m/s base, with a fastest car at 1.22 and nitro at 1.35, stacked to a
+// displayed 297 mph — and at that rate the world does not pass you, it
+// disappears. 46 is a real 20% cut in how fast the scenery actually moves.
+export const MAX_SPEED = 46;
 export const ACCEL = MAX_SPEED / 3.6; // punchier off-the-line + out of corners
 export const BRAKING = -MAX_SPEED;
 export const DECEL = -MAX_SPEED / 5;
@@ -72,7 +75,7 @@ export const DRIFT_STEER_MULT = 1.5;
 
 /** seconds of drift before a boost is earned */
 export const DRIFT_MIN_CHARGE = 0.55;
-export const DRIFT_BOOST_FACTOR = 1.28;
+export const DRIFT_BOOST_FACTOR = 1.14;
 
 export const TOTAL_LAPS = 3;
 // |playerX| > 1 = a wheel on the grass; past this you're fully off the track
@@ -85,7 +88,9 @@ export const OUT_OF_BOUNDS_PENALTY = 100;
 export const OFFTRACK_GRACE = 5;
 
 export const NITRO_DURATION = 2.2;
-export const NITRO_SPEED_FACTOR = 1.35;
+// The boosts used to MULTIPLY together: car 1.22 x nitro 1.35 x item 1.4 was
+// 2.31x base. Compressed so the whole stack lands near 200 rather than 400.
+export const NITRO_SPEED_FACTOR = 1.18;
 
 // vertical physics (meters)
 export const GRAVITY = 14;
@@ -132,7 +137,7 @@ export const PAD_BOOST_DURATION = 1.1;
 
 // power-ups
 export const ITEM_BOOST_DURATION = 1.7;
-export const ITEM_BOOST_FACTOR = 1.4;
+export const ITEM_BOOST_FACTOR = 1.2;
 export const ITEM_SHIELD_DURATION = 6;
 export const MISSILE_SPEED = 100; // m/s along the track
 export const MISSILE_MAX_DIST = 240; // how far before it fizzles

@@ -29,6 +29,9 @@ export interface CarSpec {
   stat: CarStat;
 }
 
+// NOTE on `speed`: the spread is deliberately narrow (0.94-1.08). Ten
+// supercars do not differ by a third in top speed, and when they did, the
+// stacked multipliers pushed the readout past 400 mph.
 export const CAR_SPECS: Record<CarId, CarSpec> = {
   // The grid is now ten real-world supercar archetypes rather than fantasy
   // karts, because the reference art is photographs of actual cars. Stats keep
@@ -41,7 +44,7 @@ export const CAR_SPECS: Record<CarId, CarSpec> = {
     blurb: "Twin-turbo 80s wedge. No driver aids, no comfort, a straked wing and a red that means it.",
     color: 0xd0021b,
     stars: { speed: 5, accel: 4, handling: 4 },
-    stat: { speed: 1.14, accel: 1.05, grip: 1.1 },
+    stat: { speed: 1.043, accel: 1.05, grip: 1.1 },
   },
   meridian: {
     id: "meridian",
@@ -49,7 +52,7 @@ export const CAR_SPECS: Record<CarId, CarSpec> = {
     blurb: "Centre-seat road racer. Gold-lined V12 behind your head — the fastest thing here, and it knows.",
     color: 0xff6a13,
     stars: { speed: 5, accel: 4, handling: 5 },
-    stat: { speed: 1.2, accel: 1.05, grip: 1.15 },
+    stat: { speed: 1.071, accel: 1.05, grip: 1.15 },
   },
   veloce: {
     id: "veloce",
@@ -57,7 +60,7 @@ export const CAR_SPECS: Record<CarId, CarSpec> = {
     blurb: "Quad-turbo W16 in two-tone. Absurdly fast in a straight line, absurdly heavy everywhere else.",
     color: 0x1b3a8f,
     stars: { speed: 5, accel: 5, handling: 3 },
-    stat: { speed: 1.22, accel: 1.15, grip: 0.95 },
+    stat: { speed: 1.080, accel: 1.15, grip: 0.95 },
   },
   tauro: {
     id: "tauro",
@@ -65,7 +68,7 @@ export const CAR_SPECS: Record<CarId, CarSpec> = {
     blurb: "Pure wedge. A basket-handle wing, terrible visibility and the best poster of all time.",
     color: 0xf2f2ef,
     stars: { speed: 5, accel: 3, handling: 3 },
-    stat: { speed: 1.18, accel: 0.92, grip: 0.9 },
+    stat: { speed: 1.061, accel: 0.92, grip: 0.9 },
   },
   testa: {
     id: "testa",
@@ -73,7 +76,7 @@ export const CAR_SPECS: Record<CarId, CarSpec> = {
     blurb: "Flat-twelve grand tourer. Side strakes, a metre of rear track and a slatted tail.",
     color: 0xc81f24,
     stars: { speed: 4, accel: 3, handling: 3 },
-    stat: { speed: 1.1, accel: 0.95, grip: 0.95 },
+    stat: { speed: 1.024, accel: 0.95, grip: 0.95 },
   },
   zanza: {
     id: "zanza",
@@ -81,7 +84,7 @@ export const CAR_SPECS: Record<CarId, CarSpec> = {
     blurb: "All-alloy mid-engine scalpel. Glass canopy, fighter-jet visibility, surgical through a corner.",
     color: 0x101318,
     stars: { speed: 4, accel: 3, handling: 5 },
-    stat: { speed: 1.05, accel: 1.02, grip: 1.22 },
+    stat: { speed: 1.001, accel: 1.02, grip: 1.22 },
   },
   imprez: {
     id: "imprez",
@@ -89,7 +92,7 @@ export const CAR_SPECS: Record<CarId, CarSpec> = {
     blurb: "Turbo all-wheel-drive rally sedan. Gold wheels, a bonnet scoop and grip on anything.",
     color: 0x0b5fd0,
     stars: { speed: 3, accel: 5, handling: 5 },
-    stat: { speed: 0.96, accel: 1.18, grip: 1.28 },
+    stat: { speed: 0.959, accel: 1.18, grip: 1.28 },
   },
   firehawk: {
     id: "firehawk",
@@ -97,7 +100,7 @@ export const CAR_SPECS: Record<CarId, CarSpec> = {
     blurb: "Five litres of black T-top muscle. Shaker scoop, whale tail, and absolutely no interest in corners.",
     color: 0x14141a,
     stars: { speed: 3, accel: 4, handling: 2 },
-    stat: { speed: 1.0, accel: 1.12, grip: 0.8 },
+    stat: { speed: 0.977, accel: 1.12, grip: 0.8 },
   },
   iroc: {
     id: "iroc",
@@ -105,7 +108,7 @@ export const CAR_SPECS: Record<CarId, CarSpec> = {
     blurb: "Square-jawed race-series coupe. Deep front air dam, ducktail lip, four round lamps.",
     color: 0xe8e8ea,
     stars: { speed: 3, accel: 4, handling: 2 },
-    stat: { speed: 1.02, accel: 1.08, grip: 0.85 },
+    stat: { speed: 0.987, accel: 1.08, grip: 0.85 },
   },
   fairlady: {
     id: "fairlady",
@@ -113,7 +116,7 @@ export const CAR_SPECS: Record<CarId, CarSpec> = {
     blurb: "Long-bonnet fastback classic. Light, chrome-bumpered and far quicker than it looks.",
     color: 0xf07f13,
     stars: { speed: 2, accel: 3, handling: 4 },
-    stat: { speed: 0.92, accel: 0.98, grip: 1.12 },
+    stat: { speed: 0.940, accel: 0.98, grip: 1.12 },
   },
 };
 

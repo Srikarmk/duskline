@@ -92,7 +92,11 @@ export class FreeDrive {
     // steering induces some side-slip so hard cornering slides a touch
     vl += -steer * spd * 0.9 * dt * (input.handbrake ? 2.2 : 1);
     vl -= vl * Math.min(1, traction * dt);
-    this.drifting = Math.abs(vl) > 3.5 && spd > tuning.maxSpeed * 0.25;
+    // 3.5 m/s of side-slip is a big slide — you had to provoke it deliberately,
+    // which is why ordinary hard cornering left no marks on the road at all.
+    // 1.8 catches a car that is genuinely sliding without calling every corner
+    // a drift.
+    this.drifting = Math.abs(vl) > 1.8 && spd > tuning.maxSpeed * 0.18;
     this.slip = vl;
 
     // --- reassemble velocity + integrate ---------------------------------

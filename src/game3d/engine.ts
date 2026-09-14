@@ -1297,7 +1297,9 @@ export class Game {
   private spawnSkid(x: number, y: number, z: number, color: THREE.Color, alpha: number) {
     const m = this.skids[this.skidIdx];
     this.skidIdx = (this.skidIdx + 1) % this.skids.length;
-    m.position.set(x, y + 0.03, z);
+    // 5 cm, not 3. The road is banked now, and a flat quad laid at exactly the
+    // contact height sinks into a tilted surface along one edge.
+    m.position.set(x, y + 0.05, z);
     m.visible = true;
     const s = 0.85 + Math.random() * 0.4;
     m.scale.set(s, s, 1);
@@ -2313,8 +2315,14 @@ export class Game {
     // tarmac). Eased out over ~20 m, so it's far too gentle to feel while driving.
     // 0.12 was a z-fighting margin and nothing more. It has to also cover the
     // chord the ground mesh draws over a dip — see ensureTerrSamples.
-    const CLEAR = 0.12 + sag[bi] * 1.25, CLEAR_FAR = 26;
-    const fade = Math.max(0, dist - ROAD_HALF_WIDTH) / (CLEAR_FAR - ROAD_HALF_WIDTH);
+    const CLEAR = 0.12 + sag[bi] * 1.25;
+    // The clearance must be FULL under the ribbon and GONE by the time the
+    // verge is walkable, or there is a step at the road edge — and with the
+    // adaptive sag that step reached 0.84 m on Peaks, so putting a wheel on
+    // the verge dropped the car most of a metre. Full to 7.5 m (the ribbon is
+    // 6.25 m half-width), zero by 12.
+    const CLEAR_NEAR = 7.5, CLEAR_FAR = 12;
+    const fade = clamp((dist - CLEAR_NEAR) / (CLEAR_FAR - CLEAR_NEAR), 0, 1);
     // NO GORGE CARVE HERE. I added one so the bridge would span a valley, and it
     // caused every symptom at once: the bowl is centred ON the road, so the
     // ground beside the ribbon fell away and you dropped into a pit the moment
@@ -4493,9 +4501,15 @@ export class Game {
       // actually at — not the flat centreline. Passing flat = true here is what
       // made a banked road poke up through the car, which is why banking was
       // switched off in the first place.
-      const groundY = this.freeDrive.offRoad
-        ? this.groundHeightAtXZ(this.freeDrive.x, this.freeDrive.z)
-        : this.track.pointAt(this.position, this.freeDrive.lateral, undefined, false).y;
+      // Blend, do not switch. A hard handoff at |lateral| > ROAD_HALF_WIDTH put
+      // the car on the terrain the instant a wheel crossed the white line, and
+      // the terrain sits below the ribbon by design — so the car dropped
+      // through the road surface at the edge. This eases from the banked road
+      // height to the terrain over 6 m, which is the width of the verge.
+      const roadSurfaceY = this.track.pointAt(this.position, this.freeDrive.lateral, undefined, false).y;
+      const terrainY = this.groundHeightAtXZ(this.freeDrive.x, this.freeDrive.z);
+      const offK = clamp((Math.abs(this.freeDrive.lateral) - ROAD_HALF_WIDTH) / 6, 0, 1);
+      const groundY = roadSurfaceY * (1 - offK) + terrainY * offK;
       this.playerRoot.position.set(this.freeDrive.x, groundY + this.alt + CAR_LIFT, this.freeDrive.z);
       this.playerRoot.rotation.order = "YXZ";
       // keep the shadow-casting sun (and its tight frustum) centred slightly
@@ -4671,6 +4685,18 @@ export class Game {
       );
       if (this.camSnap) { this.camPos.copy(camAnchor); this.camSnap = false; }
       else this.camPos.lerp(camAnchor, 0.5);
+
+      // DO NOT LET THE CAMERA GO UNDER THE GROUND. Its height is taken from the
+      // road at the CAR's position, but it sits several metres behind — and on
+      // a steep decline the ground behind you is higher than the ground you are
+      // on, so that anchor puts the viewpoint underneath it. You end up looking
+      // at the underside of the road with the car nowhere in frame. Sample the
+      // ground where the camera actually IS and hold it clear.
+      {
+        const cgy = this.groundHeightAtXZ(this.camPos.x, this.camPos.z);
+        const floor = cgy + 1.1;
+        if (this.camPos.y < floor) this.camPos.y = floor;
+      }
       this.camera.position.copy(this.camPos);
       if (this.shake > 0.01) {
         const s = this.shake * 0.18;
@@ -4719,7 +4745,10 @@ export class Game {
       ? (this.phase === "finished" ? this.finalPosition : this.computePosition())
       : undefined;
     drawHud(ctx, {
-      mph: Math.round((this.speed / MAX_SPEED) * 180),
+      // Scaled so a flat-out lap in the quickest car reads ~165, and ~195 on
+      // nitro — a cap you can believe, not a 300 that makes every number
+      // meaningless.
+      mph: Math.round((this.speed / MAX_SPEED) * 155),
       score: Math.max(0, Math.round(this.score)),
       lap: Math.min(this.lap, this.cfg.laps),
       totalLaps: this.cfg.laps,
