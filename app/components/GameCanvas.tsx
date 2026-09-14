@@ -6,6 +6,7 @@ import type { GameMode, RealmId, CarId, GameResult } from "@/src/game/engine";
 import { checkCapability } from "@/src/game3d/capability";
 import PauseMenu from "./PauseMenu";
 import GameErrorBoundary from "./GameErrorBoundary";
+import TouchControls from "./TouchControls";
 
 interface Props {
   mode: GameMode;
@@ -27,6 +28,13 @@ export default function GameCanvas({ mode, realm, car, laps, onFinish, onQuit }:
   // machine that cannot run the engine just gets a black canvas.
   const [cap] = useState(() => checkCapability());
   const [fatal, setFatal] = useState<string | null>(null);
+  // Coarse pointer = no hover and a finger-sized hit target, i.e. a phone or a
+  // tablet. Feature detection rather than a user-agent string, so a touchscreen
+  // laptop gets the pads too and a desktop never does.
+  const [touch, setTouch] = useState(false);
+  useEffect(() => {
+    setTouch(window.matchMedia("(pointer: coarse)").matches);
+  }, []);
 
   // Errors thrown inside requestAnimationFrame never reach a React error
   // boundary, and the render loop is where this engine spends its life — so
@@ -114,6 +122,7 @@ export default function GameCanvas({ mode, realm, car, laps, onFinish, onQuit }:
     <GameErrorBoundary onQuit={onQuit}>
     <div className="game-stage">
       <div ref={mountRef} className="game-mount" />
+      {touch && !paused && <TouchControls onPause={() => { gameRef.current?.pause(); setPaused(true); }} />}
       {paused && (
         <PauseMenu
           onResume={() => {

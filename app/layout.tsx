@@ -27,7 +27,15 @@ export const metadata: Metadata = {
 };
 
 export const viewport = {
-  themeColor: "#0b0b1a",
+  themeColor: "#07070b",
+  // Lock the visual viewport. Without this a phone renders at a 980px layout
+  // width and scales down, so the HUD is unreadable; and pinch-zoom on a game
+  // canvas is never intentional, it is a mis-grab mid-corner.
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover" as const,
 };
 
 export default function RootLayout({

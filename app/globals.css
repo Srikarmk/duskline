@@ -2242,3 +2242,275 @@ main {
   opacity: 0.55;
   text-transform: uppercase;
 }
+
+/* ===========================================================================
+   SINGLE-SCREEN HOME  —  new palette
+   ---------------------------------------------------------------------------
+   The old scheme was purple-on-purple: a violet page, violet cards, violet
+   buttons, with the only contrast coming from the realm art. Everything read
+   as one surface and nothing looked clickable.
+   This is near-black with ONE accent (warm amber) for anything actionable and
+   a cool cyan for state. Two colours doing two jobs, on a dark ground that
+   lets the realm photography carry the colour instead of competing with it.
+   =========================================================================== */
+:root {
+  --ink:      #07070b;   /* page */
+  --ink-2:    #0e0e15;   /* raised surface */
+  --ink-3:    #16161f;   /* control */
+  --line:     rgba(255, 255, 255, 0.10);
+  --text:     #e9e9f0;
+  --text-dim: rgba(233, 233, 240, 0.55);
+  --accent:   #ffb020;   /* actions */
+  --accent-2: #38e0d0;   /* current state */
+}
+
+html, body { height: 100%; }
+body { background: var(--ink); color: var(--text); }
+
+/* The page itself never scrolls. Any overflow is handled inside a region that
+   owns it — see .fr-rail and .fr-board-list. */
+.fr-home.fr-single,
+.fr-home.fr-gate {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background:
+  .fr-home.fr-single radial-gradient(1200px 700px at 78% -10%, .fr-home.fr-gate radial-gradient(1200px 700px at 78% -10%, .fr-home.fr-single rgba(255, .fr-home.fr-gate rgba(255, .fr-home.fr-single 176, .fr-home.fr-gate 176, .fr-home.fr-single 32, .fr-home.fr-gate 32, .fr-home.fr-single 0.07), .fr-home.fr-gate 0.07), .fr-home.fr-single transparent 60%), .fr-home.fr-gate transparent 60%),
+  .fr-home.fr-single radial-gradient(900px 600px at 8% 108%, .fr-home.fr-gate radial-gradient(900px 600px at 8% 108%, .fr-home.fr-single rgba(56, .fr-home.fr-gate rgba(56, .fr-home.fr-single 224, .fr-home.fr-gate 224, .fr-home.fr-single 208, .fr-home.fr-gate 208, .fr-home.fr-single 0.06), .fr-home.fr-gate 0.06), .fr-home.fr-single transparent 60%), .fr-home.fr-gate transparent 60%),
+    var(--ink);
+}
+
+/* ---- sign-in gate ---- */
+.fr-home.fr-gate { align-items: center; justify-content: center; }
+.fr-home.fr-single .fr-gate-card, .fr-home.fr-gate .fr-gate-card {
+  width: min(92vw, 30rem);
+  padding: 2.4rem 2rem;
+  text-align: center;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--ink-2);
+}
+.fr-gate-sub { margin: 0.4rem 0 1.8rem; color: var(--text-dim); letter-spacing: 0.06em; }
+.fr-gate-actions { display: flex; flex-direction: column; gap: 0.7rem; }
+.fr-gate-note { margin: 1.1rem 0 0; font-size: 0.72rem; line-height: 1.5; color: var(--text-dim); }
+.fr-gate-note.error { color: #ff9f9f; }
+
+.fr-home.fr-single .fr-btn, .fr-home.fr-gate .fr-btn {
+  padding: 0.85rem 1.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--ink-3);
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  transition: transform 0.12s ease, filter 0.12s ease, border-color 0.12s ease;
+}
+.fr-btn:hover:not(:disabled) { transform: translateY(-1px); border-color: rgba(255, 255, 255, 0.24); }
+.fr-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.fr-btn.primary { background: var(--accent); color: #17130a; border-color: transparent; }
+.fr-btn.google { display: flex; align-items: center; justify-content: center; gap: 0.6rem; }
+.fr-home.fr-single .fr-g-mark, .fr-home.fr-gate .fr-g-mark {
+  display: grid; place-items: center;
+  width: 1.25rem; height: 1.25rem; border-radius: 50%;
+  background: #fff; color: #1a73e8; font-weight: 900; font-size: 0.8rem;
+}
+
+/* ---- top bar ---- */
+.fr-home.fr-single .fr-bar, .fr-home.fr-gate .fr-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; padding: 0.7rem 1.1rem;
+  border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+.fr-bar-left { display: flex; align-items: baseline; gap: 0.9rem; min-width: 0; }
+.title.sm { font-size: 1.05rem; letter-spacing: 0.22em; margin: 0; }
+.fr-last-run { font-size: 0.7rem; color: var(--text-dim); letter-spacing: 0.08em; white-space: nowrap; }
+.fr-bar-right { display: flex; align-items: center; gap: 0.5rem; }
+.fr-home.fr-single .fr-tab, .fr-home.fr-gate .fr-tab {
+  padding: 0.35rem 0.85rem; border-radius: 999px;
+  border: 1px solid transparent; background: transparent;
+  color: var(--text-dim); font: inherit; font-size: 0.72rem;
+  letter-spacing: 0.14em; cursor: pointer;
+}
+.fr-tab.on { color: var(--accent-2); border-color: rgba(56, 224, 208, 0.4); }
+.fr-who { display: flex; align-items: center; gap: 0.5rem; font-size: 0.76rem; letter-spacing: 0.08em; }
+.fr-who b { color: var(--accent); }
+.fr-home.fr-single .fr-link, .fr-home.fr-gate .fr-link {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  color: var(--text-dim); font: inherit; font-size: 0.68rem; text-decoration: underline;
+}
+
+/* ---- panels fill what is left, and do not grow past it ---- */
+.fr-panel { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.fr-race-panel { padding: 0.9rem 1.1rem 0; gap: 0.85rem; }
+
+/* WORLD RAIL — the only scrolling region on the page */
+.fr-home.fr-single .fr-rail, .fr-home.fr-gate .fr-rail {
+  flex: 0 0 auto;
+  display: flex; gap: 0.6rem;
+  overflow-x: auto; overflow-y: hidden;
+  padding-bottom: 0.4rem;
+  scrollbar-width: thin;
+}
+.fr-home.fr-single .fr-rail-item, .fr-home.fr-gate .fr-rail-item {
+  position: relative; flex: 0 0 auto;
+  width: 11.5rem; height: 6.5rem;
+  border-radius: 12px; border: 2px solid transparent;
+  background-size: cover; background-position: center;
+  cursor: pointer; overflow: hidden;
+  display: flex; align-items: flex-end;
+  padding: 0.5rem 0.6rem;
+  font: inherit; color: #fff; text-align: left;
+  transition: border-color 0.12s ease, transform 0.12s ease;
+}
+.fr-home.fr-single .fr-rail-item::after, .fr-home.fr-gate .fr-rail-item::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.82) 0%, transparent 58%);
+}
+.fr-rail-item span { position: relative; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.06em; }
+.fr-rail-item:hover { transform: translateY(-2px); }
+.fr-rail-item.on { border-color: var(--accent); }
+.fr-rail-item.muted { opacity: 0.32; }
+
+/* ---- choices ---- */
+.fr-choices { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 0.6rem; }
+.fr-row { display: flex; align-items: flex-start; gap: 0.85rem; }
+.fr-lbl { flex: 0 0 3rem; padding-top: 0.42rem; font-size: 0.66rem; letter-spacing: 0.16em; color: var(--text-dim); }
+.fr-pills { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.fr-home.fr-single .fr-pill, .fr-home.fr-gate .fr-pill {
+  padding: 0.38rem 0.8rem; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--ink-2);
+  color: var(--text-dim); font: inherit; font-size: 0.72rem;
+  letter-spacing: 0.1em; cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+.fr-pill:hover { color: var(--text); }
+.fr-pill.on { border-color: var(--accent-2); color: var(--accent-2); background: rgba(56, 224, 208, 0.08); }
+.fr-pill.tiny { padding: 0.32rem 0.7rem; }
+.fr-row.stats { align-items: center; gap: 0.85rem; flex-wrap: wrap; }
+.fr-statgrid { display: grid; grid-template-columns: auto auto; gap: 0.25rem 0.5rem; align-items: center; }
+.fr-statgrid span { font-size: 0.62rem; letter-spacing: 0.12em; color: var(--text-dim); }
+.fr-pips { display: inline-flex; gap: 3px; }
+.fr-pips i { width: 13px; height: 5px; border-radius: 2px; background: rgba(255, 255, 255, 0.14); }
+.fr-blurb { margin: 0; flex: 1 1 14rem; font-size: 0.74rem; line-height: 1.5; color: var(--text-dim); }
+
+/* ---- GO ---- */
+.fr-home.fr-single .fr-go-bar, .fr-home.fr-gate .fr-go-bar {
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: 0.75rem 0 1rem;
+  border-top: 1px solid var(--line);
+}
+.fr-summary { font-size: 0.74rem; letter-spacing: 0.1em; color: var(--text-dim); }
+.fr-btn.go { padding: 0.8rem 2.6rem; font-size: 0.95rem; }
+
+/* ---- board ---- */
+.fr-board-panel { padding: 1rem 1.1rem; gap: 0.8rem; }
+.fr-board-tabs { display: flex; gap: 0.4rem; flex: 0 0 auto; }
+.fr-home.fr-single .fr-board-tabs button, .fr-home.fr-gate .fr-board-tabs button {
+  padding: 0.35rem 0.9rem; border-radius: 999px;
+  border: 1px solid var(--line); background: transparent;
+  color: var(--text-dim); font: inherit; font-size: 0.7rem;
+  letter-spacing: 0.14em; cursor: pointer;
+}
+.fr-board-tabs button.on { color: var(--accent-2); border-color: rgba(56, 224, 208, 0.4); }
+.fr-board-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin: 0; padding: 0; list-style: none; }
+.fr-home.fr-single .fr-board-list li, .fr-home.fr-gate .fr-board-list li {
+  display: grid; grid-template-columns: 2rem 1fr auto;
+  gap: 0.8rem; align-items: center;
+  padding: 0.5rem 0.2rem; border-bottom: 1px solid var(--line);
+  font-size: 0.82rem;
+}
+.fr-board-list .rk { color: var(--text-dim); }
+.fr-board-list .sc { color: var(--accent); font-weight: 700; }
+.fr-hint { margin: 0; font-size: 0.74rem; color: var(--text-dim); }
+.fr-hint.tight { padding: 0 1.1rem 0.6rem; }
+
+/* ---------------------------------------------------------------------------
+   MOBILE. The layout is already one non-scrolling column, so this mostly
+   shrinks type and lets the rail take a full-width row. Touch controls for the
+   race itself live in TouchControls.
+   --------------------------------------------------------------------------- */
+@media (max-width: 720px) {
+  .fr-bar { padding: 0.55rem 0.7rem; }
+  .title.sm { font-size: 0.85rem; letter-spacing: 0.16em; }
+  .fr-last-run { display: none; }
+  .fr-race-panel { padding: 0.65rem 0.7rem 0; }
+  .fr-rail-item { width: 9rem; height: 5.4rem; }
+  .fr-row { flex-direction: column; gap: 0.3rem; }
+  .fr-lbl { padding-top: 0; }
+  .fr-blurb { display: none; }
+  .fr-go-bar { padding: 0.6rem 0 0.75rem; }
+  .fr-btn.go { flex: 1 1 auto; padding: 0.85rem 1rem; }
+  .fr-summary { display: none; }
+}
+@media (max-height: 560px) {
+  .fr-rail-item { height: 4.6rem; }
+  .fr-row.stats { display: none; }
+}
+
+/* ---------------------------------------------------------------------------
+   TOUCH CONTROLS. Thumbs at the bottom corners, nothing across the middle
+   where the road is. Sized against the safe-area insets so the home indicator
+   on a modern phone does not sit under the throttle.
+   --------------------------------------------------------------------------- */
+.touch { position: fixed; inset: 0; pointer-events: none; z-index: 40; }
+.fr-home.fr-single .touch-left, .fr-home.fr-gate .touch-left, .fr-home.fr-single .touch-right, .fr-home.fr-gate .touch-right {
+  position: absolute; bottom: calc(1rem + env(safe-area-inset-bottom));
+  display: flex; gap: 0.75rem; pointer-events: auto;
+}
+.touch-left { left: calc(1rem + env(safe-area-inset-left)); }
+.touch-right { right: calc(1rem + env(safe-area-inset-right)); align-items: flex-end; }
+.fr-home.fr-single .tpad, .fr-home.fr-gate .tpad {
+  display: grid; place-items: center;
+  width: 4.6rem; height: 4.6rem;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.22);
+  background: rgba(10, 10, 16, 0.42);
+  backdrop-filter: blur(3px);
+  color: #fff; font: inherit; font-weight: 800; font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: none;
+  user-select: none;
+}
+.tpad:active { background: rgba(255, 176, 32, 0.32); border-color: var(--accent); }
+.tpad.gas { width: 5.6rem; height: 5.6rem; border-color: rgba(255, 176, 32, 0.6); }
+.tpad.nos { width: 3.6rem; height: 3.6rem; border-color: rgba(56, 224, 208, 0.55); color: var(--accent-2); }
+.tpad.brake { width: 3.9rem; height: 3.9rem; }
+.fr-home.fr-single .touch-pause, .fr-home.fr-gate .touch-pause {
+  position: absolute; top: calc(0.7rem + env(safe-area-inset-top));
+  left: 50%; transform: translateX(-50%);
+  pointer-events: auto;
+  width: 2.4rem; height: 2.4rem; border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(10, 10, 16, 0.5); color: #fff;
+  font: inherit; font-size: 0.7rem; letter-spacing: 0.1em;
+}
+
+/* Nothing in the game should rubber-band or text-select under a finger. */
+html, body { overscroll-behavior: none; }
+.game-stage { touch-action: none; user-select: none; -webkit-user-select: none; }
+
+/* The hero title is sized for a full-width banner; inside the sign-in card it
+   overflowed and clipped to "FANTAS". Scale it to the card instead. */
+.fr-home.fr-single .fr-gate-card .title, .fr-home.fr-gate .fr-gate-card .title {
+  font-size: clamp(1.6rem, 6.5vw, 2.6rem);
+  line-height: 1.05;
+  letter-spacing: 0.1em;
+  margin: 0;
+  white-space: nowrap;
+}
+
+/* The choices block owns the space between the rail and the GO bar. Left at
+   flex-start it left a large dead gap that read as an unfinished page; centred,
+   the screen is balanced at any viewport height. */
+.fr-home.fr-single .fr-choices { justify-content: center; gap: 0.9rem; }
+.fr-home.fr-single .fr-rail-item { width: 13rem; height: 8rem; }
+@media (max-height: 700px) {
+  .fr-home.fr-single .fr-rail-item { height: 6.2rem; }
+}
