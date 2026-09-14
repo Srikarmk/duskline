@@ -2187,3 +2187,58 @@ main {
     transform: none;
   }
 }
+
+/* Failure screens — capability check and engine crash. These exist so a
+   machine that cannot run the game, or a crash mid-race, produces a sentence
+   and a way back rather than a black canvas and a frozen page. */
+.fatal {
+  max-width: 44rem;
+  margin: 12vh auto;
+  padding: 2rem 2.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: rgba(18, 12, 34, 0.86);
+  color: #e6e3f2;
+  text-align: center;
+}
+.fatal h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.5rem;
+  letter-spacing: 0.04em;
+}
+.fatal p { margin: 0 0 1rem; opacity: 0.82; line-height: 1.55; }
+.fatal-detail {
+  margin: 0 0 1.4rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.4);
+  color: #ff9f9f;
+  font-size: 0.78rem;
+  text-align: left;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.fatal-actions { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
+.fatal-actions button {
+  padding: 0.6rem 1.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: linear-gradient(100deg, #7c3aed, #c026d3);
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+}
+.fatal-actions button.ghost { background: transparent; font-weight: 600; }
+
+/* The line under the name field telling people the name goes on a public
+   board. Storing a user-entered name and publishing it without saying so is
+   the kind of thing that is trivially avoidable. */
+.privacy-note {
+  margin: 0.45rem 0 0;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  opacity: 0.55;
+  text-transform: uppercase;
+}

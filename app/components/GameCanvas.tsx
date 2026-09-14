@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Game } from "@/src/game3d/engine";
 import type { GameMode, RealmId, CarId, GameResult } from "@/src/game/engine";
+import { checkCapability } from "@/src/game3d/capability";
 import PauseMenu from "./PauseMenu";
+import GameErrorBoundary from "./GameErrorBoundary";
 
 interface Props {
   mode: GameMode;
@@ -21,9 +23,27 @@ export default function GameCanvas({ mode, realm, car, laps, onFinish, onQuit }:
   onFinishRef.current = onFinish;
   const [paused, setPaused] = useState(false);
   const [runId, setRunId] = useState(0);
+  // Checked once, before anything is built. See capability.ts — without this a
+  // machine that cannot run the engine just gets a black canvas.
+  const [cap] = useState(() => checkCapability());
+  const [fatal, setFatal] = useState<string | null>(null);
+
+  // Errors thrown inside requestAnimationFrame never reach a React error
+  // boundary, and the render loop is where this engine spends its life — so
+  // the window handler is the one that actually catches an engine crash.
+  useEffect(() => {
+    const onErr = (e: ErrorEvent) => {
+      if (fatal) return;
+      setFatal(e.message || "Unknown rendering error");
+      gameRef.current?.stop();
+    };
+    window.addEventListener("error", onErr);
+    return () => window.removeEventListener("error", onErr);
+  }, [fatal]);
 
   // (re)create the game when mode/realm change or on restart
   useEffect(() => {
+    if (!cap.ok || fatal) return;
     const mount = mountRef.current;
     if (!mount) return;
     const game = new Game(mount, {
@@ -40,7 +60,7 @@ export default function GameCanvas({ mode, realm, car, laps, onFinish, onQuit }:
       game.stop();
       gameRef.current = null;
     };
-  }, [mode, realm, car, laps, runId]);
+  }, [mode, realm, car, laps, runId, cap.ok, fatal]);
 
   // Esc / P toggles pause
   useEffect(() => {
@@ -59,7 +79,39 @@ export default function GameCanvas({ mode, realm, car, laps, onFinish, onQuit }:
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  if (!cap.ok) {
+    return (
+      <div className="fatal">
+        <h2>This device can&apos;t run the game.</h2>
+        <p>{cap.reason}</p>
+        <div className="fatal-actions">
+          <button type="button" className="ghost" onClick={onQuit}>◂ BACK TO MENU</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (fatal) {
+    return (
+      <div className="fatal">
+        <h2>The race stopped.</h2>
+        <p>
+          Something in the 3D engine failed mid-race. This is a bug, not
+          something you did.
+        </p>
+        <pre className="fatal-detail">{fatal}</pre>
+        <div className="fatal-actions">
+          <button type="button" onClick={() => { setFatal(null); setRunId((r) => r + 1); }}>
+            ▸ TRY AGAIN
+          </button>
+          <button type="button" className="ghost" onClick={onQuit}>◂ BACK TO MENU</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
+    <GameErrorBoundary onQuit={onQuit}>
     <div className="game-stage">
       <div ref={mountRef} className="game-mount" />
       {paused && (
@@ -77,5 +129,6 @@ export default function GameCanvas({ mode, realm, car, laps, onFinish, onQuit }:
         />
       )}
     </div>
+    </GameErrorBoundary>
   );
 }

@@ -13,8 +13,11 @@ interface Entry {
 
 const KEY = "fr:scores:v1";
 const MAX = 20;
+// Every mode that can reach this endpoint. "spacewars" and "endless" were
+// missing, so scores from them were silently relabelled "classic" — the board
+// was attributing Neon Run distances to circuit races.
 const VALID_MODES = new Set<GameMode>([
-  "classic", "timetrial", "nitro", "transform", "grandprix",
+  "classic", "timetrial", "nitro", "transform", "grandprix", "spacewars", "endless",
 ]);
 
 // Works with a Vercel KV / Upstash Redis store when its env vars are present;
@@ -89,6 +92,16 @@ export async function POST(req: NextRequest) {
     }
     const mode = VALID_MODES.has(body.mode as GameMode) ? (body.mode as GameMode) : "classic";
     const timeMs = Math.max(0, Math.round(Number(body.timeMs) || 0));
+    // Cheap plausibility gate. The client computes the score and would POST
+    // whatever it liked, and running the sim server-side is not worth it for
+    // this — but a result claiming a huge score in a couple of seconds is not a
+    // borderline call, and rejecting it costs nothing.
+    if (timeMs > 0 && timeMs < 8_000 && score > 5_000) {
+      return NextResponse.json({ error: "implausible" }, { status: 400 });
+    }
+    if (timeMs > 6 * 60 * 60 * 1000) {
+      return NextResponse.json({ error: "bad time" }, { status: 400 });
+    }
     await addEntry({ name, score, mode, timeMs, date: new Date().toISOString().slice(0, 10) });
     const scores = await topEntries();
     return NextResponse.json({ scores, global: hasKV });

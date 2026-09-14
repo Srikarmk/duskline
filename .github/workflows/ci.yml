@@ -1,0 +1,24 @@
+name: CI
+
+# Nothing ran on push before this, so a commit that does not compile reached
+# production the moment it landed. Typecheck and build are the two things that
+# would have caught every broken deploy in this project's history.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Build
+        run: npm run build

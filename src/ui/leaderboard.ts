@@ -10,12 +10,38 @@ export interface ScoreEntry {
 
 const KEY = "fantasy-racer-scores";
 const NAME_KEY = "fantasy-racer-name";
+
+/**
+ * Saved-data version. Bumped when an id in a saved payload stops existing.
+ *
+ * The car ids were renamed wholesale (comet -> f40 and so on) and the realm
+ * list has grown twice. A returning visitor's stored car resolves to
+ * CAR_SPECS[undefined], and their saved scores carry dead realm ids that
+ * render blank. There is no sensible remap — the cars are different cars — so
+ * anything from an older version is dropped rather than shown wrong.
+ */
+const SCHEMA_KEY = "fantasy-racer-schema";
+const SCHEMA = 2;
+
+function migrateIfStale(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const have = Number(window.localStorage.getItem(SCHEMA_KEY) ?? 0);
+    if (have >= SCHEMA) return;
+    window.localStorage.removeItem(KEY);
+    window.localStorage.removeItem(CAR_KEY);
+    window.localStorage.setItem(SCHEMA_KEY, String(SCHEMA));
+  } catch {
+    // storage unavailable (private mode, blocked) — nothing to migrate
+  }
+}
 const CAR_KEY = "fantasy-racer-car";
 const MAX_ENTRIES = 10;
 
 export function loadScores(): ScoreEntry[] {
   if (typeof window === "undefined") return [];
   try {
+    migrateIfStale();
     const raw = window.localStorage.getItem(KEY);
     return raw ? (JSON.parse(raw) as ScoreEntry[]) : [];
   } catch {
@@ -94,6 +120,7 @@ export function saveLastName(name: string) {
 
 export function loadLastCar(): CarId | null {
   if (typeof window === "undefined") return null;
+  migrateIfStale();
   return (window.localStorage.getItem(CAR_KEY) as CarId | null) ?? null;
 }
 

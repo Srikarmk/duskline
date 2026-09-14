@@ -14,6 +14,12 @@ import path from "node:path";
  * Refuses to run in production; nothing ships that can write to disk.
  */
 export async function POST(req: Request) {
+  // Belt and braces alongside the NODE_ENV check below: this endpoint writes to
+  // disk, and a disk-write endpoint reachable on a dev server bound to a public
+  // interface is a genuine hazard. It also requires an explicit opt-in env var.
+  if (process.env.FR_ALLOW_PREVIEW_WRITE !== "1") {
+    return new Response("disabled", { status: 403 });
+  }
   if (process.env.NODE_ENV === "production") {
     return new Response("disabled", { status: 403 });
   }

@@ -1,164 +1,154 @@
 # Fantasy Racer — what's left before this is public
 
-Written 2026-09-13. This is the honest list, not a wish list. Everything here
-is something that will bite when real people hit it, ordered by whether it
-*blocks* a public launch.
+Updated 2026-09-14. Ordered by whether it *blocks* a public launch.
 
 Legend: **[BLOCKER]** must be done first · **[SHIP-SOON]** days after launch is
-fine · **[LATER]** real work, not urgent.
+fine · **[LATER]** real work, not urgent · **[DONE]** cleared, kept for the record.
 
 ---
 
-## 1. Data and persistence
+## Corrections to the first draft of this file
 
-### [BLOCKER] The leaderboard is a lie across devices
-`src/ui/leaderboard.ts` keeps scores in `localStorage`. The home screen shows a
-**GLOBAL** tab next to **THIS DEVICE**, and Global currently shows the same
-local data. The moment two people compare scores, that's an obvious bug.
+Two items were listed as blockers and turned out not to exist. Recording that,
+because acting on a wrong list wastes as much time as having no list.
 
-Either wire up a real store or remove the Global tab before launch. A real
-store needs:
-
-- **Database.** Postgres is the default choice on Vercel (Neon/Supabase both
-  fine). One table is enough to start:
-  `scores(id, name, car, realm, mode, laps, time_ms, score, created_at)`.
-- **Write path.** `app/api/scores/route.ts` already exists as a stub — it needs
-  a real `POST` that validates and inserts, and a `GET` that returns a top-N
-  per (realm, mode).
-- **Anti-cheat, at least token effort.** The client currently computes the
-  score and would POST whatever it likes. Minimum viable: rate-limit by IP,
-  cap implausible values (a lap time below the theoretical minimum for the
-  car/realm, a score above what the pickup count allows), and reject
-  mismatched (time, score, laps) triples. Anything stronger means running the
-  sim server-side, which is not worth it for this.
-- **Name moderation.** Free-text names go on a public board. A blocklist and a
-  length cap at minimum.
-
-### [BLOCKER] No privacy notice, and we store a name
-Even a localStorage-only build stores a user-entered name. If the leaderboard
-goes server-side that's personal data leaving the device. Needs a one-page
-privacy note and a line on the name entry saying the name will be public.
-
-### [SHIP-SOON] No migration for saved data
-`fantasy-racer-car` in localStorage holds a `CarId`. The car IDs were renamed
-wholesale (`comet` → `f40` etc.) and the realm IDs have grown. An old visitor
-gets `CAR_SPECS[undefined]`. There's a guard on the car read but the saved
-*scores* still carry dead realm/car IDs and will render blank. Add a version
-key and drop or remap old entries.
+- **Music licensing** was listed as "the single easiest thing to get sued
+  over". There is no music to licence. All audio is generated at runtime by the
+  Web Audio API — oscillators, filtered noise and envelopes in
+  `src/game3d/sound.ts`. There is not a single audio file in the repository.
+- **"The leaderboard is a lie across devices"** overstated it. The API already
+  supports Vercel KV / Upstash via env vars and reports `global: hasKV`, and
+  the UI already says *"shared board activates once a KV store is connected"*
+  when it is false. It is not lying; it is unconfigured.
 
 ---
 
-## 2. Correctness and robustness
+## 1. Blockers
 
-### [BLOCKER] No error boundary
-If `Game.init()` throws — a bad GLTF, a WebGL context failure, an out-of-memory
-on a weak GPU — the canvas is black and nothing tells the user. Needs a React
-error boundary around `GameCanvas` and a "something broke, back to menu"
-screen.
+### [DONE] Error boundary and crash recovery
+`GameErrorBoundary` catches render-phase failures, and a window `error`
+listener in `GameCanvas` catches the ones thrown inside `requestAnimationFrame`
+— which is where this engine spends its life, and which a React boundary
+cannot see. Either way you get a message and a route back to the menu instead
+of a black canvas.
 
-### [BLOCKER] No WebGL capability check
-The engine assumes WebGL2, float render targets, and a working PMREM. On
-hardware without them it fails silently. Detect up front and show a plain
-message instead of a black screen.
+### [DONE] WebGL capability check
+`src/game3d/capability.ts` runs before the engine is constructed and
+distinguishes *no WebGL* from *WebGL 1 only* from *no float render targets*,
+because those have different fixes. It also reports a `lowPower` hint from the
+unmasked renderer string.
 
-### [SHIP-SOON] Unbounded memory across races
-Each race builds a new `Game`, new textures, new geometry. `stop()` exists but
-I have not audited that every texture/geometry/material is disposed. Play
-twenty races in one session and find out. Needs a leak test: race → menu →
-race ×20, watching `renderer.info.memory`.
+### [BLOCKER] Connect a KV store, or accept a device-only board
+The board works the moment `KV_REST_API_URL` + `KV_REST_API_TOKEN` (or the
+`UPSTASH_REDIS_REST_*` pair) exist in the Vercel project. Without them, scores
+live in per-instance memory, which on serverless means they effectively vanish.
 
-### [SHIP-SOON] The dev-only preview writer ships in the bundle
-`app/api/devpreview/route.ts` writes files to disk. It refuses when
-`NODE_ENV === "production"`, which is correct on Vercel, but it should not be
-in the production bundle at all. Move it behind a build-time exclusion or
-delete it and regenerate previews locally when needed.
+Decide: connect Upstash (free tier is ample), or ship with the GLOBAL tab
+removed so nobody expects one.
 
----
+### [BLOCKER] No error reporting or analytics
+Launching blind means never learning what broke. `GameErrorBoundary.componentDidCatch`
+and the `GameCanvas` window handler are where a reporter hooks in — both already
+log with a `[fantasy-racer]` prefix. Sentry's Next.js SDK is a ten-minute job.
 
-## 3. Performance
+### [BLOCKER] No measured performance floor
+Everything has been tuned on one machine. There is still **no frame-time
+number from any hardware**, because the preview pane throttles
+`requestAnimationFrame` whenever it is not fronted, so every sampling attempt
+returns a single frame. Object counts have been the proxy throughout.
 
-### [BLOCKER] No performance floor established
-Everything has been tuned on one machine. There is no data on a mid-range
-laptop, an integrated GPU, or a phone. Before launch: measure median frame
-time on at least a low-end integrated GPU, and add a quality toggle (shadow
-resolution, scenery density, the radial blur, bloom) that a user can drop.
+What is needed: open the deployed build on a mid-range laptop and an
+integrated GPU, and record median frame time on Neon Run (the heaviest realm —
+260 signs, 176 towers, ~200 overhead lamps, 9 overpasses) and on Forest.
 
-Known heavy spots, in order: scenery draw calls, the GTAO pass (off by
-default — keep it off), shadow map size, and now 108 meshes × 10 cars.
-
-### [SHIP-SOON] No frame-time telemetry
-There is no way to know whether real users are getting 60 fps. A simple
-opt-in counter posted with the score would answer it.
-
-### [LATER] Mobile is unhandled
-Touch controls do not exist, the HUD is laid out for a wide viewport, and the
-texture budget assumes desktop VRAM. Either commit to mobile properly or
-detect and tell the user it's desktop-only.
+`capability.ts` already returns `lowPower`; it is **not yet wired to anything**.
+The obvious use is to default the heavy settings off on weak hardware.
 
 ---
 
-## 4. Audio
+## 2. Ship-soon
 
-### [BLOCKER] Music is not licensed
-Whatever is playing needs to be either original, CC0, or properly licensed,
-with attribution recorded. This is the single easiest thing to get sued over.
-Same audit for every model and texture: `public/models/LICENSE-*` covers the
-Kenney assets, but the PBR textures in `public/textures/` need their source
-and licence written down in the repo.
+### [DONE] Saved-data migration
+Car ids were renamed wholesale (`comet` → `f40`) and the realm list grew twice,
+so a returning visitor's stored car resolved to `CAR_SPECS[undefined]` and old
+scores carried dead ids. `SCHEMA` in `src/ui/leaderboard.ts` drops anything
+older rather than rendering it wrong. Bump it whenever an id stops existing.
 
-### [SHIP-SOON] No audio autoplay handling
-Browsers block audio until a user gesture. If the first race starts silent
-there is no recovery and no prompt.
+### [DONE] Score validation
+`spacewars` and `endless` were missing from `VALID_MODES`, so their scores were
+silently relabelled `classic` — the board was filing Neon Run distances as
+circuit races. Also added plausibility gates (a huge score in under 8 seconds,
+or a time over six hours, is rejected).
 
----
+### [DONE] Share metadata
+Open Graph and Twitter card tags in `app/layout.tsx`, using the Sunset Bay
+preview as the share image. Every share link used to render as a bare URL.
 
-## 5. Content and polish
+### [DONE] Credits and licence audit
+`CREDITS.md`. Everything third-party is CC0 (Kenney models, Poly Haven
+textures) or MIT (three.js, Next, React). One flag: **Orbitron and Rajdhani are
+loaded from Google's CDN at runtime**, which sends every visitor's IP to Google
+— self-hosting via `next/font` removes that and speeds up first paint.
 
-### [SHIP-SOON] Three modes were removed, one archived
-Time Trial and Nitro Sprint are off the picker; Transformer Rush is archived.
-They still exist in `GameMode` and `MODE_CONFIG`. Decide whether to delete
-them properly or finish and restore them — leaving dead branches in the union
-means every `Record<GameMode, …>` carries entries nothing can reach.
+### [DONE] CI
+`.github/workflows/ci.yml` runs `tsc --noEmit` and `next build` on push and PR.
+Nothing ran before, so a commit that did not compile reached production the
+moment it landed — which happened.
+
+### [DONE] Name privacy notice
+The name field now says what happens to it before you type, rather than after.
+
+### [DONE] Dev-only preview writer locked down
+`app/api/devpreview/route.ts` writes to disk. It now requires both
+`NODE_ENV !== "production"` **and** an explicit `FR_ALLOW_PREVIEW_WRITE=1`.
+
+### [SHIP-SOON] Memory across many races
+Each race builds a new `Game` with new textures and geometry. `stop()` exists
+but has never been audited for complete disposal. Test: race → menu → race ×20,
+watching `renderer.info.memory`. Neon Run is the one to test, since it builds
+the most.
+
+### [SHIP-SOON] Audio autoplay
+Browsers block audio until a user gesture. `sound.ts` guards every call so
+nothing breaks, but if the first race starts silent there is no prompt and no
+recovery path.
+
+### [SHIP-SOON] Dead modes in the union
+`timetrial`, `nitro` and `transform` are off the picker but still in
+`GameMode`, so every `Record<GameMode, …>` carries entries nothing can reach.
+Decide: delete them properly, or finish and restore them.
 
 ### [SHIP-SOON] Realm previews go stale
-`public/previews/realm-*.jpg` are renders of the game. Every art change makes
-them wrong. They were regenerated on 2026-09-12; regenerate before launch.
-
-### [LATER] Nine realms have no bespoke landmarks tuned
-Six photo realms got a landmark pass; the older realms (forest, peaks, void,
-circuit, metro) predate the current art direction and have not been revisited.
-
-### [LATER] No tutorial or controls screen
-Controls are a single line of text on the last step. There is no pause-menu
-reference and no first-run explanation of drift, nitro or ramps.
+`public/previews/realm-*.jpg` are renders of the game, so every art change
+makes them wrong. They were last regenerated 2026-09-12 — before the sky
+rewrite, the elevation work and the car detail pass, so **they are already out
+of date**. Regenerate before launch (see the dev route above).
 
 ---
 
-## 6. Release mechanics
+## 3. Later
 
-### [BLOCKER] No analytics or error reporting
-Launching blind means never finding out what broke. Minimum: a client error
-reporter (Sentry or equivalent) and basic page analytics.
+### [LATER] Mobile is unhandled
+No touch controls, the HUD assumes a wide viewport, and the texture budget
+assumes desktop VRAM. Either commit to it properly or detect and say so.
 
-### [SHIP-SOON] No SEO or share metadata
-No Open Graph image, no description. Every share link will look broken.
+### [LATER] No tutorial or controls reference
+Controls are one line of text on the last step. No pause-menu reference, no
+first-run explanation of drift, nitro or ramps.
 
-### [SHIP-SOON] The repo is private with no licence
-Decide: source-available, or closed with only the deployment public. Either
-way the asset licences must be honoured in a visible `CREDITS`.
-
-### [LATER] No CI
-Nothing runs `tsc` or the build on push. A broken commit reaches production
-the moment it lands.
+### [LATER] Older realms predate the current art direction
+Forest, Peaks, Void, Circuit and Metro have had the global fixes (banking,
+elevation, sky, props) but not the bespoke landmark pass the six photo realms
+got.
 
 ---
 
 ## Suggested order
 
-1. Licensing audit (music, textures, models) — legal, and it can invalidate art.
-2. Error boundary + WebGL check — stops black screens.
-3. Leaderboard: either the DB or remove the Global tab.
-4. Performance floor + quality toggle.
-5. Analytics/error reporting.
-6. Privacy note, name moderation, saved-data migration.
-7. Everything else.
+1. Connect the KV store, or remove the GLOBAL tab.
+2. Wire an error reporter.
+3. Get a real frame-time number on hardware that is not the dev machine, and
+   hook `capability.lowPower` to the quality defaults.
+4. Regenerate the realm previews.
+5. Self-host the fonts.
+6. Everything else.

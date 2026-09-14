@@ -460,6 +460,13 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
                       if (e.key === "Enter") launch();
                     }}
                   />
+                  {/* Say what happens to it. The name is stored on this device
+                      and, once a shared board is connected, published on it —
+                      which the player should know BEFORE typing, not after. */}
+                  <p className="privacy-note">
+                    Stored on this device. Shown publicly on the shared board.
+                    Leave it blank to race as PLAYER.
+                  </p>
                 </label>
 
                 {mode !== "nitro" && (
