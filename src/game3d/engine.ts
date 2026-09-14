@@ -391,7 +391,7 @@ export class Game {
   private sun!: THREE.DirectionalLight; // shadow-casting key light; its frustum follows the car
   private offTrackT = 0; // seconds left before an off-track respawn (0 = on track / no warning)
   private offTrackExitDist = 0; // arc distance where you left the ribbon — respawn point
-  private terrSamp?: { sx: Float64Array; sz: Float64Array; sy: Float64Array }; // cached track polyline for ground-height queries
+  private terrSamp?: { sx: Float64Array; sz: Float64Array; sy: Float64Array; sag: Float64Array }; // cached track polyline for ground-height queries
   private camSnap = true;
   private cameraIndex = 0;
 
@@ -2219,9 +2219,36 @@ export class Game {
     if (this.terrSamp) return this.terrSamp;
     const T = this.track, N = 400;
     const sx = new Float64Array(N), sz = new Float64Array(N), sy = new Float64Array(N);
+    const sag = new Float64Array(N);
     const tmp = new THREE.Vector3();
     for (let i = 0; i < N; i++) { T.pointAt((i / N) * T.length, 0, tmp, true); sx[i] = tmp.x; sz[i] = tmp.z; sy[i] = tmp.y; }
-    return (this.terrSamp = { sx, sz, sy });
+
+    // HOW FAR THE TERRAIN CAN CHORD ABOVE THE ROAD.
+    //
+    // The ground is a 12 m grid sampling this same height field, so between two
+    // grid points it draws a straight line while the road keeps curving. Where
+    // the road is in a dip, that chord passes OVER it — measured at 0.905 m on
+    // this circuit against a flat 0.12 m clearance, which is the terrain slab
+    // that cuts the carriageway in half.
+    //
+    // A constant big enough for the worst dip would dish the verge everywhere,
+    // so the clearance is per-sample: the local sag of the road over a 12 m
+    // span, which is zero on the straights and only opens up in the dips.
+    const step = T.length / N;
+    const half = Math.max(1, Math.round(6 / step));   // ±6 m ≈ half a grid cell
+    for (let i = 0; i < N; i++) {
+      const a = sy[(i - half + N) % N], b = sy[(i + half) % N];
+      sag[i] = Math.max(0, (a + b) / 2 - sy[i]);
+    }
+    // spread each sample's requirement to its neighbours, so the dish eases in
+    // and out along the road instead of stepping
+    const smooth = new Float64Array(N);
+    for (let i = 0; i < N; i++) {
+      let m = 0;
+      for (let k = -half; k <= half; k++) m = Math.max(m, sag[(i + k + N) % N]);
+      smooth[i] = m;
+    }
+    return (this.terrSamp = { sx, sz, sy, sag: smooth });
   }
 
   /** Landscape height field (range ~[-1.5, 1.6]). Broad rolling hills PLUS a
@@ -2240,7 +2267,7 @@ export class Game {
   /** THE ground height at any world (x,z): the road's own elevation right by the
    *  ribbon, easing over `fall` metres into per-realm rolling hills further out. */
   private groundHeightAtXZ(x: number, z: number): number {
-    const { sx, sz, sy } = this.ensureTerrSamples();
+    const { sx, sz, sy, sag } = this.ensureTerrSamples();
     const n = sx.length;
     let best = 1e18, bi = 0;
     for (let i = 0; i < n; i++) { const dx = x - sx[i], dz = z - sz[i]; const d = dx * dx + dz * dz; if (d < best) { best = d; bi = i; } }
@@ -2272,7 +2299,9 @@ export class Game {
     // Hold the ground a few cm BELOW the ribbon across the road corridor so the
     // road always wins the depth test (no z-fighting, no dirt bleeding over the
     // tarmac). Eased out over ~20 m, so it's far too gentle to feel while driving.
-    const CLEAR = 0.12, CLEAR_FAR = 26;
+    // 0.12 was a z-fighting margin and nothing more. It has to also cover the
+    // chord the ground mesh draws over a dip — see ensureTerrSamples.
+    const CLEAR = 0.12 + sag[bi] * 1.25, CLEAR_FAR = 26;
     const fade = Math.max(0, dist - ROAD_HALF_WIDTH) / (CLEAR_FAR - ROAD_HALF_WIDTH);
     // NO GORGE CARVE HERE. I added one so the bridge would span a valley, and it
     // caused every symptom at once: the bowl is centred ON the road, so the
