@@ -14,7 +14,15 @@ export const ROAD_HALF_WIDTH = 5;
 export const LANES = 3;
 /** the road surface renders slightly above the track centerline, so lift cars
  *  by this much to keep their wheels on the road instead of sinking in */
-export const CAR_LIFT = 0.2;
+// Clearance between the car's origin and the road. makeWheel already places
+// each wheel centre at exactly its radius, so the tyre's contact patch sits at
+// the car's own origin — meaning any lift here is a gap between the tyres and
+// the tarmac. At 0.2 the car hovered 20 cm off the road, which is the
+// "floating, not running on the road" feel. This is now just enough to keep
+// the shadow and the road out of a depth fight.
+// Enough to absorb the suspension squat below, so a hard compression can bring
+// the contact patch to the road but never through it.
+export const CAR_LIFT = 0.05;
 export const LANE_CENTERS = [-2 / 3, 0, 2 / 3]; // in playerX units (1 = road edge)
 
 export const MAX_SPEED = 58;

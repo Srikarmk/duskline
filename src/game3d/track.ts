@@ -21,7 +21,11 @@ const VERGE_WIDTH = 18; // grass bank from road edge out to flat ground
 const GROUND_FLOOR = 0.35;
 // banking: the road tilts INTO corners (velodrome-style). Bank angle is the
 // smoothed signed curvature scaled by BANK_K, capped at MAX_BANK.
-const BANK_K = 11;
+// 11 was tuned against the old tight circuits. The regenerated ones carry
+// larger radii, where that yields ±2° — technically banked, imperceptible to
+// drive. 46 puts a tight corner near the 16° cap and leaves the fast sweepers
+// at a real but gentle lean.
+const BANK_K = 46;
 const MAX_BANK = 0.28; // ~16° — gentle lean; the road is lifted into a berm so
                        // the inner edge never dips below the ground (no sinking)
 const BANK_EDGE = ROAD_HALF_WIDTH * 1.25; // road half-width used for the berm lift
@@ -46,7 +50,7 @@ export class Track {
   private cz: number[] = [];
   private cd: number[] = [];
 
-  constructor(controlPoints: [number, number, number][], banked = true, hillScale = 1) {
+  constructor(controlPoints: [number, number, number][], banked = true, hillScale = 1, offCamber = 0) {
     this.banked = banked;
     // LAP LENGTH. Scaling the control points outward in X/Z stretches the whole
     // circuit while preserving its shape, corner sequence and elevation, so every
@@ -69,7 +73,11 @@ export class Track {
       // hillScale lets a realm opt out: a causeway has to stay near sea level,
       // because the ocean is one flat plane — a road that climbs 17 m over a lap
       // is a clifftop for half of it, and the water stops reading as adjacent.
-      const hill = (Math.sin(u * 2) * 6.5 + Math.sin(u * 3 + 1.1) * 3.0) * hillScale;
+      // Amplitude up from 9.5 m peak-to-peak to ~24. Every realm gets real
+      // undulation now, not only the ones with authored elevation — the ask was
+      // for this across all maps, and at the old amplitude a "hill" was a
+      // gentle swell you could not see from the car.
+      const hill = (Math.sin(u * 2) * 14 + Math.sin(u * 3 + 1.1) * 7 + Math.sin(u * 5) * 3) * hillScale;
       return new THREE.Vector3(x * TRACK_SCALE, y + hill, z * TRACK_SCALE);
     });
     this.curve = new THREE.CatmullRomCurve3(pts, true, "catmullrom", 0.5);
@@ -110,7 +118,42 @@ export class Track {
         const c = sum / (2 * win + 1);
         this.banks[i] = clampN(c * BANK_K, -MAX_BANK, MAX_BANK);
       }
+      // OFF-CAMBER. A circuit where every corner leans into you is a circuit
+      // with one kind of corner. Real roads have bends that fall away from the
+      // apex, and they are the ones that catch you out — so a slow, smooth
+      // signal flips the sign over a few stretches of the lap. It is smooth
+      // rather than switched because a step change in bank is a kerb.
+      if (offCamber > 0) {
+        for (let i = 0; i < this.samples; i++) {
+          const u = (i / this.samples) * Math.PI * 2;
+          // whole-number harmonics, so the loop closes without a seam
+          const w = Math.sin(u * 3 + 0.7) * 0.6 + Math.sin(u * 5 + 2.1) * 0.4;
+          // -1 fully inverted, +1 normal; offCamber sets how far it can swing
+          this.banks[i] *= 1 - offCamber * (1 + Math.tanh(w * 2.2));
+        }
+      }
+      // ease the whole thing once more so the flips cannot introduce a kink
+      const sm = this.banks.slice();
+      for (let i = 0; i < this.samples; i++) {
+        let t = 0;
+        for (let j = -win; j <= win; j++) t += sm[((i + j) % this.samples + this.samples) % this.samples];
+        this.banks[i] = t / (2 * win + 1);
+      }
     }
+  }
+
+  /**
+   * Vertical curvature at a distance: POSITIVE in a dip (the road curves up
+   * around you, so the car is pressed into it) and NEGATIVE over a crest (the
+   * road falls away, so the car goes light). This is the number a driver
+   * actually feels on an undulating road, and until now nothing in the game
+   * read it — elevation was something you looked at, not something you felt.
+   */
+  verticalCurvature(dist: number, span = 14): number {
+    const a = this.pointAt(this.wrap(dist - span), 0, new THREE.Vector3(), true).y;
+    const b = this.pointAt(this.wrap(dist), 0, new THREE.Vector3(), true).y;
+    const c = this.pointAt(this.wrap(dist + span), 0, new THREE.Vector3(), true).y;
+    return (a + c - 2 * b) / (span * span);
   }
 
   /** Bank (roll) angle in radians at a distance — 0 on unbanked (void) tracks. */

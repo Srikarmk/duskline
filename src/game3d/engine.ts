@@ -385,6 +385,9 @@ export class Game {
   private coast: { x: number; z: number; r: number; far: number; band: number; drop: number; side: number } | null = null;
   private clouds: THREE.Mesh | null = null;
   private skyMesh: THREE.Mesh | null = null;
+  /** Vertical g-load from the road's own shape: >0 pressed into a dip, <0 light
+   *  over a crest. Smoothed, because the raw curvature steps between samples. */
+  private gLoad = 0;
   private skyMat: THREE.ShaderMaterial | null = null;
   private seaY = -11; // coastal realms: land inside r, sea beyond
   private reliefAmp = 0; // per-realm amplitude of the rolling hills the ground rises into away from the road
@@ -492,7 +495,16 @@ export class Game {
     }
     // banking OFF: the car sits at the flat centreline height, so a banked (tilted)
     // road surface would poke up through it on corners and look like the car sinks
-    this.track = new Track(this.realm.controlPoints, false, this.realm.hillScale ?? 1);
+    // BANKING IS ON for the road realms now. It was disabled because the car
+    // was placed at the FLAT centreline height, so a tilted road surface rose
+    // through it and the car looked sunk — see the placement below, which now
+    // reads the banked surface at the car's actual lateral offset.
+    this.track = new Track(
+      this.realm.controlPoints,
+      this.realm.banked ?? false,
+      this.realm.hillScale ?? 1,
+      this.realm.offCamber ?? 0
+    );
     // how dramatically the land rolls away from the road, per realm — peaks/dunes
     // heave, the speedway + city stay near-flat, the space tubes get none
     this.reliefAmp = ({
@@ -3492,6 +3504,16 @@ export class Game {
     // sky is alive when you look at it, slow enough that it never pulls the eye
     // off the road.
     if (this.clouds) this.clouds.rotation.y += 0.0085 * dt;
+
+    // G-LOAD from the road's vertical shape. Scaled by speed squared, because
+    // that is what it is: a crest taken slowly is a view, and taken fast it
+    // unloads the car. Smoothed hard — the raw curvature steps between track
+    // samples, and a step here would read as a pothole.
+    {
+      const v = this.speed / MAX_SPEED;
+      const k = this.track.verticalCurvature(this.position) * 1150 * v * v;
+      this.gLoad += (clamp(k, -1.6, 1.6) - this.gLoad) * Math.min(1, dt * 5.5);
+    }
     // Drift the analytic cloud deck. Slow enough that it never pulls the eye
     // off the road, fast enough that the sky is alive if you look at it.
     if (this.skyMat) this.skyMat.uniforms.uTime.value += dt;
@@ -3594,7 +3616,12 @@ export class Game {
       },
       dt, this.track,
       {
-        maxSpeed: this.effectiveMaxSpeed(), accel: driveAccel, turnRate: FREE_TURN_RATE, grip: FREE_GRIP,
+        maxSpeed: this.effectiveMaxSpeed(), accel: driveAccel, turnRate: FREE_TURN_RATE,
+        // Weight over the axles changes with the road. In a compression the car
+        // is pressed in and finds grip; over a crest it goes light and the back
+        // steps out. Clamped tight — this is meant to be felt, not to become a
+        // second handbrake.
+        grip: FREE_GRIP * clamp(1 + this.gLoad * 0.22, 0.72, 1.28),
         // Free flight only while the mech is ACTUALLY AIRBORNE. Gating these on
         // `transformed` alone meant that the instant you grabbed an orb you lost
         // the walls, the steering assist AND the off-track respawn all at once —
@@ -4462,9 +4489,13 @@ export class Game {
       // FREE-ROAM: the car sits at its real world position, facing its heading
       // on the road the car rides the exact track height; off it, ride the
       // rolling terrain (they match at the verge, so the handoff is seamless)
+      // On the road, ride the BANKED surface at the lateral offset you are
+      // actually at — not the flat centreline. Passing flat = true here is what
+      // made a banked road poke up through the car, which is why banking was
+      // switched off in the first place.
       const groundY = this.freeDrive.offRoad
         ? this.groundHeightAtXZ(this.freeDrive.x, this.freeDrive.z)
-        : this.track.pointAt(this.position, 0, undefined, true).y;
+        : this.track.pointAt(this.position, this.freeDrive.lateral, undefined, false).y;
       this.playerRoot.position.set(this.freeDrive.x, groundY + this.alt + CAR_LIFT, this.freeDrive.z);
       this.playerRoot.rotation.order = "YXZ";
       // keep the shadow-casting sun (and its tight frustum) centred slightly
@@ -4482,6 +4513,9 @@ export class Game {
       this.playerRoot.rotation.y = this.freeDrive.heading;
       // nose pitch: rides up ramps, arcs in the air, follows the road slope on
       // the ground (computed + smoothed in update) — no more flat "sinking"
+      // suspension travel: a few centimetres, but it is what sells a dip as a
+      // dip rather than as a change of altitude
+      this.playerRoot.position.y -= clamp(this.gLoad, -1, 1) * 0.05;
       this.playerRoot.rotation.x = this.carPitch + this.weightPitch; // slope + brake-dive/throttle-squat
 
       // pitch = flips + air tilt, yaw = steer/drift heading, roll = barrel roll +
