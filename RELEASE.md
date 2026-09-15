@@ -205,6 +205,10 @@ in Chrome DevTools → Application → Service Workers on the deployed site.
 
 ## 3. Later
 
+Two of the three items that were here have since been done; they are kept in
+place rather than moved, so the section reads as a record of what "later"
+turned out to mean.
+
 ### [DONE] Tutorial and controls reference
 `FirstRunHint` shows the controls once, on the first race ever, and is
 dismissed by any input at all (the countdown is running behind it, so it had to
