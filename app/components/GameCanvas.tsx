@@ -9,6 +9,7 @@ import { reportError } from "@/src/ui/report";
 import PauseMenu from "./PauseMenu";
 import GameErrorBoundary from "./GameErrorBoundary";
 import TouchControls from "./TouchControls";
+import FirstRunHint from "./FirstRunHint";
 
 interface Props {
   mode: GameMode;
@@ -178,6 +179,7 @@ export default function GameCanvas({ mode, realm, car, laps, onFinish, onQuit }:
           🔊 TAP FOR SOUND
         </button>
       )}
+      {!paused && <FirstRunHint touch={touch} />}
       {touch && !paused && <TouchControls onPause={() => { gameRef.current?.pause(); setPaused(true); }} />}
       {paused && (
         <PauseMenu

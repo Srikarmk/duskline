@@ -2585,3 +2585,63 @@ html, body { overscroll-behavior: none; }
   cursor: pointer;
 }
 .audio-unblock:hover { background: rgba(34, 211, 238, 0.18); }
+
+/* ---------------------------------------------------------------------------
+   FIRST-RUN CONTROLS CARD + the pause-menu reference.
+   Until these, the only explanation of how to play was one line of small text
+   on the last step of setup — so drift-charges-nitro, the single mechanic the
+   game is built around, was discoverable only by accident.
+   --------------------------------------------------------------------------- */
+.first-run {
+  position: absolute;
+  left: 50%;
+  bottom: clamp(5rem, 16vh, 9rem);
+  transform: translateX(-50%);
+  z-index: 38;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(92vw, 27rem);
+  padding: 14px 18px 12px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--cyan);
+  border-radius: var(--r-md);
+  background: rgba(8, 5, 24, 0.82);
+  text-align: left;
+  pointer-events: none;           /* never in the way of the road */
+  animation: fade-up 0.4s var(--ease) both;
+}
+.first-run strong {
+  font-family: var(--font-display);
+  font-size: 11px;
+  letter-spacing: 3px;
+  color: var(--cyan-l);
+}
+.first-run dl, .controls-ref { display: flex; flex-direction: column; gap: 5px; }
+.first-run dl > div, .controls-ref > div { display: flex; align-items: baseline; gap: 10px; }
+.first-run dt, .controls-ref dt {
+  flex: 0 0 8.5rem;
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.6px;
+  color: var(--gold);
+  text-transform: uppercase;
+}
+.first-run dd, .controls-ref dd { font-size: 12px; color: var(--muted); }
+.first-run em { font-size: 10px; letter-spacing: 2px; color: var(--dim); font-style: normal; }
+
+.controls-ref {
+  margin: 4px 0 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+  background: rgba(0, 0, 0, 0.22);
+  text-align: left;
+}
+.controls-ref dt { flex-basis: 7.5rem; }
+
+/* The settings view grew a nine-row controls reference, and the panel had no
+   height cap — on a short viewport (a phone in landscape is ~390px tall) that
+   pushes BACK off the bottom of the screen with no way to reach it. */
+.pause-panel { max-height: 92vh; overflow-y: auto; }

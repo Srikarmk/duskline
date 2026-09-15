@@ -205,10 +205,20 @@ in Chrome DevTools → Application → Service Workers on the deployed site.
 
 ## 3. Later
 
-### [LATER] No tutorial or controls reference
-Controls are one line of text on the last step of setup and one in the pause
-menu. No first-run explanation of drift, nitro or ramps, and the touch pads are
-unlabelled beyond their glyphs.
+### [DONE] Tutorial and controls reference
+`FirstRunHint` shows the controls once, on the first race ever, and is
+dismissed by any input at all (the countdown is running behind it, so it had to
+be glanceable rather than a modal). It reads the touch flag, so a phone gets
+pad names instead of key names. Never shown again — one localStorage key.
+
+The pause menu's one-line mnemonic is now a nine-row reference. Both of them
+say the thing nothing in the game said before: **drifting through a corner is
+what refills nitro.** That is the mechanic the whole game is built around and
+it was discoverable only by accident.
+
+Side effect worth noting: the settings panel had no height cap, and nine extra
+rows pushed BACK off the bottom of a landscape phone. Capped at 92vh with
+internal scroll.
 
 ### [LATER] Older realms predate the current art direction
 Forest, Peaks, Void, Circuit and Metro have had the global fixes (banking,
@@ -225,11 +235,20 @@ performance blocker.
 
 ---
 
-## Suggested order
+## What is actually left
 
-1. Connect the KV store, or remove the GLOBAL tab. *(Needs your Vercel
-   project — everything else on this list is done or doable from the repo.)*
-2. Get a real frame-time number on a phone and a mid-range laptop.
-3. Set `NEXT_PUBLIC_SENTRY_DSN` if crash reports are wanted at launch.
-4. Service worker.
-5. Everything else.
+Two things, and **neither can be done from inside the repository**:
+
+1. **Connect the KV store**, or remove the GLOBAL tab. Needs credentials on
+   the Vercel project. `.env.example` says exactly what to set.
+2. **Get a frame-time number** on a phone and a mid-range laptop. Needs
+   hardware that is not this machine. Open the deployed build, turn on the FPS
+   readout in the pause menu, run Neon Run and Forest.
+
+Optional, also outside the repo: set `NEXT_PUBLIC_SENTRY_DSN` if crash reports
+are wanted at launch, and `NEXT_PUBLIC_GOOGLE_CLIENT_ID` if Google sign-in is.
+Both degrade honestly when unset.
+
+Still open inside the repo, but not launch-blocking: the five older realms
+(Forest, Peaks, Void, Circuit, Metro) have not had the bespoke landmark pass
+the six photo realms got.

@@ -87,9 +87,20 @@ export default function PauseMenu({ onResume, onRestart, onQuit, onApply }: Prop
                 <option value={2}>Hood</option>
               </select>
             </label>
-            <p className="controls-help">
-              arrows/WASD · nitro SPACE · item E · fly SHIFT · camera C · sound M · pause ESC
-            </p>
+            {/* A real reference, not a one-line mnemonic. This is the only
+                place in the game that explains drift charging or what a ramp
+                wants, and the pause menu is where someone goes looking. */}
+            <dl className="controls-ref">
+              <div><dt>ARROWS / WASD</dt><dd>drive</dd></div>
+              <div><dt>SPACE</dt><dd>nitro — one charge per press</dd></div>
+              <div><dt>drift</dt><dd>hold a slide through a corner to refill nitro</dd></div>
+              <div><dt>ramps</dt><dd>hit them fast, land flat for a stunt bonus</dd></div>
+              <div><dt>E</dt><dd>fire (Space Wars)</dd></div>
+              <div><dt>SHIFT</dt><dd>fly (mech)</dd></div>
+              <div><dt>C</dt><dd>change camera</dd></div>
+              <div><dt>M</dt><dd>mute</dd></div>
+              <div><dt>ESC / P</dt><dd>pause</dd></div>
+            </dl>
             <button className="start" onClick={() => setView("menu")}>BACK</button>
           </>
         )}
