@@ -17,7 +17,19 @@ import {
   drawToasts, drawCenterText, type Toast,
 } from "./render";
 
-export type GameMode = "classic" | "timetrial" | "nitro" | "transform" | "grandprix" | "spacewars" | "endless";
+/**
+ * Every mode the game can run.
+ *
+ * "timetrial" and "nitro" used to be here and are GONE — they were thin
+ * variations on classic (no rivals; one lap with full nitro) and were removed
+ * from the game, so leaving them in the union meant every
+ * `Record<GameMode, …>` carried two rows nothing could reach.
+ *
+ * "transform" is different: it is ARCHIVED, not deleted. It is off the picker
+ * but the mech, the sword and the monsters are all still wired to it, so it
+ * stays reachable by passing the mode directly.
+ */
+export type GameMode = "classic" | "transform" | "grandprix" | "spacewars" | "endless";
 export type RealmId =
   | "forest" | "ember" | "peaks" | "void"
   | "sands" | "castle" | "circuit" | "metro"

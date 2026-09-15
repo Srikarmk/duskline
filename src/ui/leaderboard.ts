@@ -21,7 +21,9 @@ const NAME_KEY = "fantasy-racer-name";
  * anything from an older version is dropped rather than shown wrong.
  */
 const SCHEMA_KEY = "fantasy-racer-schema";
-const SCHEMA = 2;
+// 3: "timetrial" and "nitro" were removed from GameMode, so any saved score
+// carrying one of those labels no longer has a mode to render.
+const SCHEMA = 3;
 
 function migrateIfStale(): void {
   if (typeof window === "undefined") return;

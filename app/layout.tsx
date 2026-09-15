@@ -1,5 +1,30 @@
 import type { Metadata } from "next";
+import { Orbitron, Rajdhani } from "next/font/google";
 import "./globals.css";
+
+/**
+ * Self-hosted, not a CDN link.
+ *
+ * These used to be an `@import` from fonts.googleapis.com in globals.css,
+ * which sends every visitor's IP to Google before a single pixel is drawn —
+ * a third-party request with real privacy implications in the EU, and one
+ * that blocks first paint on a round trip to another origin. `next/font`
+ * downloads both faces at BUILD time and serves them from this domain, so
+ * there is no third-party request at all, and no layout shift either.
+ */
+const orbitron = Orbitron({
+  subsets: ["latin"],
+  weight: ["600", "700", "800", "900"],
+  variable: "--font-orbitron",
+  display: "swap",
+});
+
+const rajdhani = Rajdhani({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-rajdhani",
+  display: "swap",
+});
 
 // Without these, every share link renders as a bare URL with no title, image
 // or description — which is most of what decides whether anyone clicks it.
@@ -42,7 +67,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${orbitron.variable} ${rajdhani.variable}`}>
       <body>{children}</body>
     </html>
   );

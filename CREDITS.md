@@ -38,16 +38,16 @@ CC0 / public domain. No attribution required; credited here as good practice.
 Every other texture in the game — skies, road markings, liveries, foliage,
 water, neon signs — is drawn procedurally to a canvas at runtime.
 
-## Fonts — Google Fonts
+## Fonts — Orbitron and Rajdhani, OFL 1.1, self-hosted
 
-**Orbitron** and **Rajdhani**, loaded from `fonts.googleapis.com` in
-`app/globals.css`. Both are licensed under the SIL Open Font License 1.1,
-which permits commercial use and embedding.
+Both are licensed under the SIL Open Font License 1.1, which permits
+commercial use and embedding.
 
-⚠️ **Loaded from Google's CDN at runtime.** That is a third-party request on
-every page load, which has privacy implications in some jurisdictions (the
-request carries the visitor's IP to Google). Self-hosting via `next/font` would
-remove the dependency and improve load time. See `RELEASE.md`.
+They are **self-hosted**, not loaded from a CDN: `next/font/google` in
+`app/layout.tsx` downloads both faces at build time and serves them from this
+origin. Verified on the running app — zero third-party requests on page load.
+They used to be an `@import` from `fonts.googleapis.com`, which sent every
+visitor's IP to Google before a pixel was drawn.
 
 ## Libraries
 

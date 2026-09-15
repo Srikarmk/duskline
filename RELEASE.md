@@ -1,6 +1,6 @@
 # Fantasy Racer — what's left before this is public
 
-Updated 2026-09-14. Ordered by whether it *blocks* a public launch.
+Updated 2026-09-15. Ordered by whether it *blocks* a public launch.
 
 Legend: **[BLOCKER]** must be done first · **[SHIP-SOON]** days after launch is
 fine · **[LATER]** real work, not urgent · **[DONE]** cleared, kept for the record.
@@ -9,8 +9,8 @@ fine · **[LATER]** real work, not urgent · **[DONE]** cleared, kept for the re
 
 ## Corrections to the first draft of this file
 
-Two items were listed as blockers and turned out not to exist. Recording that,
-because acting on a wrong list wastes as much time as having no list.
+Items that were listed as blockers and turned out not to exist. Recording
+that, because acting on a wrong list wastes as much time as having no list.
 
 - **Music licensing** was listed as "the single easiest thing to get sued
   over". There is no music to licence. All audio is generated at runtime by the
@@ -20,135 +20,201 @@ because acting on a wrong list wastes as much time as having no list.
   supports Vercel KV / Upstash via env vars and reports `global: hasKV`, and
   the UI already says *"shared board activates once a KV store is connected"*
   when it is false. It is not lying; it is unconfigured.
+- **"Memory leaks across many races"** was a suspicion, not an observation. It
+  has now been measured (see below) and there is no runaway leak.
 
 ---
 
 ## 1. Blockers
 
-### [DONE] Error boundary and crash recovery
-`GameErrorBoundary` catches render-phase failures, and a window `error`
-listener in `GameCanvas` catches the ones thrown inside `requestAnimationFrame`
-— which is where this engine spends its life, and which a React boundary
-cannot see. Either way you get a message and a route back to the menu instead
-of a black canvas.
-
-### [DONE] WebGL capability check
-`src/game3d/capability.ts` runs before the engine is constructed and
-distinguishes *no WebGL* from *WebGL 1 only* from *no float render targets*,
-because those have different fixes. It also reports a `lowPower` hint from the
-unmasked renderer string.
-
 ### [BLOCKER] Connect a KV store, or accept a device-only board
-The board works the moment `KV_REST_API_URL` + `KV_REST_API_TOKEN` (or the
-`UPSTASH_REDIS_REST_*` pair) exist in the Vercel project. Without them, scores
-live in per-instance memory, which on serverless means they effectively vanish.
+**This is now the only thing on the list that cannot be done from inside the
+repository** — it needs credentials on the Vercel project.
+
+`.env.example` documents exactly what to set. The board works the moment
+`KV_REST_API_URL` + `KV_REST_API_TOKEN` (or the `UPSTASH_REDIS_REST_*` pair)
+exist in the Vercel project; adding Upstash from the Vercel Marketplace sets
+them automatically. The same store powers the shared guest-number sequence, so
+without it "RACER 1015" is a local random number rather than the 1015th guest.
 
 Decide: connect Upstash (free tier is ample), or ship with the GLOBAL tab
 removed so nobody expects one.
 
-### [BLOCKER] No error reporting or analytics
-Launching blind means never learning what broke. `GameErrorBoundary.componentDidCatch`
-and the `GameCanvas` window handler are where a reporter hooks in — both already
-log with a `[fantasy-racer]` prefix. Sentry's Next.js SDK is a ten-minute job.
-
 ### [BLOCKER] No measured performance floor
-Everything has been tuned on one machine. There is still **no frame-time
-number from any hardware**, because the preview pane throttles
-`requestAnimationFrame` whenever it is not fronted, so every sampling attempt
-returns a single frame. Object counts have been the proxy throughout.
+Still open, and still for the same reason: **no frame-time number from any
+hardware but this machine.** Every attempt to sample one from the preview pane
+returns a single frame, because the pane throttles `requestAnimationFrame`
+whenever it is not fronted.
 
-What is needed: open the deployed build on a mid-range laptop and an
-integrated GPU, and record median frame time on Neon Run (the heaviest realm —
-260 signs, 176 towers, ~200 overhead lamps, 9 overpasses) and on Forest.
+What *is* now measured, by forcing renders manually at high quality:
 
-`capability.ts` already returns `lowPower`; it is **not yet wired to anything**.
-The obvious use is to default the heavy settings off on weak hardware.
+| Realm | Draw calls / frame | Triangles / frame |
+| --- | --- | --- |
+| Sunset Bay (circuit) | 640 | 7.9 M |
+| Neon Run (endless) | 3 060 | 5.9 M |
+
+Draw calls are in good shape overall — they were ~12 k before the per-prop
+merge — but **Neon Run is nearly 5× the circuit realms**, which is consistent
+with it being the realm that feels heaviest. That is the one to profile first,
+and the number to attack if a phone struggles: it is city geometry (signs,
+towers, lamps) that could merge further.
+
+What is still needed: open the deployed build on a mid-range laptop and a
+phone, turn on the FPS readout in the pause menu, and record the median on
+Neon Run (the heaviest realm — 260 signs, 176 towers, ~200 overhead lamps, 9
+overpasses) and on Forest.
+
+Mitigations already in place: quality tiers (dpr cap, shadow map, post chain,
+scenery density) and `capability.lowPower` choosing the first-run default.
+
+### [DONE] Error reporting
+`src/ui/report.ts`. Both crash paths — `GameErrorBoundary.componentDidCatch`
+and the `GameCanvas` window handler that catches errors thrown inside
+`requestAnimationFrame` — now call `reportError`, tagged with realm, mode, car,
+quality tier and GPU string.
+
+Set `NEXT_PUBLIC_SENTRY_DSN` to turn it on; unset, it is exactly the console
+line it was before. It posts the Sentry ingest envelope directly rather than
+pulling in `@sentry/nextjs` (~90 kB on the client) for a browser game whose
+whole pitch is that it loads fast. Capped at 8 events per session and
+de-duplicated by message, because an error thrown inside the render loop is
+thrown sixty times a second.
+
+### [DONE] Error boundary and crash recovery
+`GameErrorBoundary` catches render-phase failures; a window `error` listener in
+`GameCanvas` catches the ones thrown inside `requestAnimationFrame`, which is
+where this engine spends its life and which a React boundary cannot see.
+
+### [DONE] WebGL capability check
+`src/game3d/capability.ts` distinguishes *no WebGL* from *WebGL 1 only* from
+*no float render targets*, and reports a `lowPower` hint from the unmasked
+renderer string. That hint now picks the starting quality tier on first run.
 
 ---
 
 ## 2. Ship-soon
 
+### [DONE] Memory across many races — measured, and made deterministic
+**29 race → menu → race cycles**, sampling the JS heap and `renderer.info`
+after each. Result: heap oscillated between 118 and 173 MB with no runaway
+climb (first five races averaged 140 MB, the last five 154 MB — inside GC
+noise, and there is no way to force a collection to settle it exactly).
+Geometry count identical every race (542), canvas count never above 2, no
+context-loss warnings. So: no leak.
+
+But `stop()` was relying on the collector for all of it, so it now disposes
+explicitly — every geometry and material in the scene, then
+`renderer.forceContextLoss()`. That last one matters: browsers cap live WebGL
+contexts at about sixteen and kill the oldest when you exceed it, and every
+race builds a new renderer. Textures are deliberately *not* disposed; the
+expensive ones are shared between races through the caches in `textures.ts`
+and `cars.ts`.
+
+Re-measured after that change, over 15 more cycles: the heap goes **flat** —
+an eight-race stretch inside a 2.8 MB band, and the run ends 24 MB *below*
+where it started. Worth having even though there was no leak to fix, because
+GPU memory is not visible to the heap-pressure model that decides when to
+collect: a machine can be out of VRAM while the heap looks fine.
+
+### [DONE] Audio autoplay
+The race starts from a click so the context is normally allowed — but iOS
+Safari only honours a `resume()` made inside the gesture's own call stack, and
+`Game.start()` runs a tick later from a React effect. When that happened the
+race was simply silent with no explanation. `Sound.blocked` now reports it, and
+`GameCanvas` offers a **TAP FOR SOUND** chip; any pointer or key on the stage
+also unlocks it.
+
+### [DONE] Self-hosted fonts
+Orbitron and Rajdhani were pulled from `fonts.googleapis.com` at runtime, which
+sends every visitor's IP to Google before a pixel is drawn. They are now
+downloaded at build time by `next/font` and served from our own origin.
+Verified on the running app: **zero third-party requests**, five `.woff2` files
+all from `/_next/static/media/`.
+
+### [DONE] Dead modes in the union — decided
+`timetrial` and `nitro` are **deleted**: thin variations on classic, removed
+from the game, and every `Record<GameMode, …>` was carrying a row nothing could
+reach. `transform` is **archived, not deleted** — it is off the picker, but the
+mech, the sword and the monsters are still wired to it, so it stays reachable
+by passing the mode directly. `SCHEMA` in `src/ui/leaderboard.ts` is bumped to
+3 so a saved score carrying a deleted mode is dropped rather than rendered
+blank.
+
+### [DONE] Shadow type was silently downgraded
+`PCFSoftShadowMap` was deprecated in three r18x; the renderer fell back to
+`PCFShadowMap` and warned on every race. Now set explicitly — which also
+explains where the soft edges come from: PCFSoft ignores `shadow.radius` and
+PCF honours it, and `radius` is 7.
+
 ### [DONE] Saved-data migration
 Car ids were renamed wholesale (`comet` → `f40`) and the realm list grew twice,
-so a returning visitor's stored car resolved to `CAR_SPECS[undefined]` and old
-scores carried dead ids. `SCHEMA` in `src/ui/leaderboard.ts` drops anything
-older rather than rendering it wrong. Bump it whenever an id stops existing.
+so a returning visitor's stored car resolved to `CAR_SPECS[undefined]`. `SCHEMA`
+drops anything older rather than rendering it wrong. Bump it whenever an id
+stops existing.
 
 ### [DONE] Score validation
 `spacewars` and `endless` were missing from `VALID_MODES`, so their scores were
-silently relabelled `classic` — the board was filing Neon Run distances as
-circuit races. Also added plausibility gates (a huge score in under 8 seconds,
-or a time over six hours, is rejected).
+silently relabelled `classic`. Also added plausibility gates (a huge score in
+under 8 seconds, or a time over six hours, is rejected).
 
 ### [DONE] Share metadata
-Open Graph and Twitter card tags in `app/layout.tsx`, using the Sunset Bay
-preview as the share image. Every share link used to render as a bare URL.
+Open Graph and Twitter card tags in `app/layout.tsx`. Every share link used to
+render as a bare URL.
 
 ### [DONE] Credits and licence audit
 `CREDITS.md`. Everything third-party is CC0 (Kenney models, Poly Haven
-textures) or MIT (three.js, Next, React). One flag: **Orbitron and Rajdhani are
-loaded from Google's CDN at runtime**, which sends every visitor's IP to Google
-— self-hosting via `next/font` removes that and speeds up first paint.
+textures) or MIT/OFL (three.js, Next, React, the two fonts).
 
 ### [DONE] CI
 `.github/workflows/ci.yml` runs `tsc --noEmit` and `next build` on push and PR.
 Nothing ran before, so a commit that did not compile reached production the
 moment it landed — which happened.
 
-### [DONE] Name privacy notice
-The name field now says what happens to it before you type, rather than after.
-
 ### [DONE] Dev-only preview writer locked down
-`app/api/devpreview/route.ts` writes to disk. It now requires both
-`NODE_ENV !== "production"` **and** an explicit `FR_ALLOW_PREVIEW_WRITE=1`.
+`app/api/devpreview/route.ts` requires both `NODE_ENV !== "production"` **and**
+an explicit `FR_ALLOW_PREVIEW_WRITE=1`.
 
-### [SHIP-SOON] Memory across many races
-Each race builds a new `Game` with new textures and geometry. `stop()` exists
-but has never been audited for complete disposal. Test: race → menu → race ×20,
-watching `renderer.info.memory`. Neon Run is the one to test, since it builds
-the most.
+### [DONE] Realm previews regenerated
+All twelve regenerated 2026-09-14 against the current art (after the sky
+rewrite, the elevation work and the car detail pass). They are renders of the
+game, so any significant art change makes them wrong again — regenerate with
+the dev route above.
 
-### [SHIP-SOON] Audio autoplay
-Browsers block audio until a user gesture. `sound.ts` guards every call so
-nothing breaks, but if the first race starts silent there is no prompt and no
-recovery path.
-
-### [SHIP-SOON] Dead modes in the union
-`timetrial`, `nitro` and `transform` are off the picker but still in
-`GameMode`, so every `Record<GameMode, …>` carries entries nothing can reach.
-Decide: delete them properly, or finish and restore them.
-
-### [SHIP-SOON] Realm previews go stale
-`public/previews/realm-*.jpg` are renders of the game, so every art change
-makes them wrong. They were last regenerated 2026-09-12 — before the sky
-rewrite, the elevation work and the car detail pass, so **they are already out
-of date**. Regenerate before launch (see the dev route above).
+### [SHIP-SOON] Service worker
+The manifest makes the game installable, but there is no offline cache, so an
+installed copy with no signal opens to a network error. The whole game is
+static except `/api/scores` and `/api/guest`, so a cache-first worker over
+`/_next/static` and `/previews` would make it genuinely offline-capable.
 
 ---
 
 ## 3. Later
 
-### [LATER] Mobile is unhandled
-No touch controls, the HUD assumes a wide viewport, and the texture budget
-assumes desktop VRAM. Either commit to it properly or detect and say so.
-
 ### [LATER] No tutorial or controls reference
-Controls are one line of text on the last step. No pause-menu reference, no
-first-run explanation of drift, nitro or ramps.
+Controls are one line of text on the last step of setup and one in the pause
+menu. No first-run explanation of drift, nitro or ramps, and the touch pads are
+unlabelled beyond their glyphs.
 
 ### [LATER] Older realms predate the current art direction
 Forest, Peaks, Void, Circuit and Metro have had the global fixes (banking,
 elevation, sky, props) but not the bespoke landmark pass the six photo realms
 got.
 
+### [DONE] Mobile
+Touch controls (`TouchControls.tsx` synthesises the same key events the engine
+already listens for), a PWA manifest with `display: fullscreen` so the game
+gets the whole panel instead of losing 15–20% to browser chrome, quality tiers
+defaulting to medium on a coarse pointer, and a home screen that fits a 390 ×
+844 viewport without scrolling. Not yet measured on a real handset — see the
+performance blocker.
+
 ---
 
 ## Suggested order
 
-1. Connect the KV store, or remove the GLOBAL tab.
-2. Wire an error reporter.
-3. Get a real frame-time number on hardware that is not the dev machine, and
-   hook `capability.lowPower` to the quality defaults.
-4. Regenerate the realm previews.
-5. Self-host the fonts.
-6. Everything else.
+1. Connect the KV store, or remove the GLOBAL tab. *(Needs your Vercel
+   project — everything else on this list is done or doable from the repo.)*
+2. Get a real frame-time number on a phone and a mid-range laptop.
+3. Set `NEXT_PUBLIC_SENTRY_DSN` if crash reports are wanted at launch.
+4. Service worker.
+5. Everything else.

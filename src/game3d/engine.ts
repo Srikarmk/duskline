@@ -107,8 +107,6 @@ interface ModeConfig {
 
 const MODE_CONFIG: Record<GameMode, ModeConfig> = {
   classic:   { laps: 3, opponents: true,  orbs: false, monsters: false, startNitro: 1, label: "CIRCUIT" },
-  timetrial: { laps: 3, opponents: false, orbs: false, monsters: false, startNitro: 1, label: "TIME TRIAL" },
-  nitro:     { laps: 1, opponents: true,  orbs: false, monsters: false, startNitro: NITRO_MAX_CHARGES, label: "NITRO SPRINT" },
   transform: { laps: 3, opponents: true,  orbs: true,  monsters: true,  startNitro: 1, label: "TRANSFORMER" },
   grandprix: { laps: 2, opponents: true,  orbs: false, monsters: false, startNitro: 1, label: "GRAND PRIX" },
   spacewars: { laps: 3, opponents: true,  orbs: false, monsters: false, startNitro: 1, label: "SPACE WARS", combat: true },
@@ -557,7 +555,12 @@ export class Game {
     this.renderer.toneMappingExposure = 1.2;
     // real-time shadows — the single biggest "this is 3D, not flat" upgrade
     this.renderer.shadowMap.enabled = QUALITY[this.quality].shadow > 0;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // NOT PCFSoftShadowMap: three deprecated it in r18x and silently falls back
+    // to this, warning on every renderer we create. Worth naming because the
+    // fallback is what makes `sun.shadow.radius` work at all — PCFSoft ignores
+    // radius and uses a fixed kernel, PCF honours it. The soft edges on the
+    // ground have been coming from radius all along.
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
 
     const hudCanvas = document.createElement("canvas");
     hudCanvas.className = "game-layer game-hud";
@@ -699,8 +702,48 @@ export class Game {
     this.sound.dispose();
     this.weather?.dispose();
     this.composer.dispose();
+    this.disposeScene();
     this.renderer.dispose();
+    // renderer.dispose() releases three's own GL objects but leaves the
+    // CONTEXT alive until the garbage collector gets around to the canvas, and
+    // browsers cap live WebGL contexts at ~16 — at which point the oldest is
+    // killed out from under whatever is using it. Every race builds a new
+    // renderer, so this is the difference between "reclaimed when we say" and
+    // "reclaimed eventually, hopefully before the sixteenth race".
+    this.renderer.forceContextLoss();
     this.container.replaceChildren();
+    if (process.env.NODE_ENV !== "production") {
+      const w = window as unknown as { __frGame?: Game };
+      if (w.__frGame === this) delete w.__frGame;
+    }
+  }
+
+  /**
+   * Free the GPU side of everything this race built.
+   *
+   * Dropping the last reference to a Game does eventually free all of this,
+   * but only once the collector runs, and GPU memory is not part of what the
+   * JS heap pressure model can see — so a machine can be out of VRAM while the
+   * heap looks fine. Disposing explicitly makes it deterministic.
+   *
+   * Textures are deliberately NOT disposed here: the expensive ones are canvas
+   * renders shared between races through the module-level caches in
+   * textures.ts and cars.ts, and disposing those would force every realm and
+   * livery to be re-uploaded on the next race for no gain.
+   */
+  private disposeScene() {
+    const geometries = new Set<THREE.BufferGeometry>();
+    const materials = new Set<THREE.Material>();
+    this.scene.traverse((obj) => {
+      const mesh = obj as Partial<THREE.Mesh>;
+      if (mesh.geometry) geometries.add(mesh.geometry);
+      const mat = mesh.material;
+      if (Array.isArray(mat)) mat.forEach((m) => materials.add(m));
+      else if (mat) materials.add(mat);
+    });
+    geometries.forEach((g) => g.dispose());
+    materials.forEach((m) => m.dispose());
+    this.scene.clear();
   }
 
   private async init() {
@@ -3402,6 +3445,19 @@ export class Game {
   resume() {
     this.paused = false;
     this.last = performance.now();
+  }
+
+  /** Autoplay policy is holding audio down. See Sound.blocked. */
+  audioBlocked(): boolean {
+    return this.sound.blocked;
+  }
+
+  /** Called from a real user gesture, which is the only thing that works. */
+  unlockAudio(): void {
+    this.sound.unlock();
+    this.sound.setAmbient(REALM_AMBIENCE[this.realm.id]);
+    const s = loadSettings();
+    this.sound.setVolumes(s.musicVolume, s.sfxVolume);
   }
 
   applySettings(s: Settings) {

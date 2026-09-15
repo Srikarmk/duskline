@@ -17,7 +17,7 @@ const MAX = 20;
 // missing, so scores from them were silently relabelled "classic" — the board
 // was attributing Neon Run distances to circuit races.
 const VALID_MODES = new Set<GameMode>([
-  "classic", "timetrial", "nitro", "transform", "grandprix", "spacewars", "endless",
+  "classic", "transform", "grandprix", "spacewars", "endless",
 ]);
 
 // Works with a Vercel KV / Upstash Redis store when its env vars are present;

@@ -118,6 +118,18 @@ export class Sound {
     return this.muted;
   }
 
+  /**
+   * True when the browser is holding the context suspended — i.e. `unlock()`
+   * ran outside a user gesture and the autoplay policy refused it. iOS Safari
+   * is the one that actually does this: it requires the resume to happen
+   * inside the gesture's own call stack, and the race starts a tick later from
+   * a React effect. The UI uses this to offer a tap rather than leaving the
+   * player in silence with no explanation.
+   */
+  get blocked() {
+    return !this.ctx || this.ctx.state === "suspended";
+  }
+
   setVolumes(music: number, sfx: number) {
     this.musicVol = music;
     this.sfxVol = sfx;

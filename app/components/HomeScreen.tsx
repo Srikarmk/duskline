@@ -76,7 +76,7 @@ const MODES: { id: GameMode; name: string; blurb: string; tags: string[]; accent
 
 
 const MODE_LABEL: Record<GameMode, string> = {
-  classic: "CIRCUIT", timetrial: "TRIAL", nitro: "SPRINT", transform: "RUSH", grandprix: "GP", spacewars: "WARS",
+  classic: "CIRCUIT", transform: "RUSH", grandprix: "GP", spacewars: "WARS",
   endless: "NEON RUN",
 };
 
@@ -201,7 +201,7 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
   const ownWorld = isSpace ? "DEEP SPACE" : isNeon ? "NEON RUN" : null;
   const shownScores = board === "global" ? globalScores ?? [] : localScores;
   const racerName = ident?.name ?? "PLAYER";
-  const raceLaps = mode === "nitro" ? 1 : laps;
+  const raceLaps = laps;
 
   const goStep = (n: number) => setStep(n);
 
@@ -501,7 +501,7 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
                     style={{ background: "linear-gradient(140deg, #67e8f9, #a855f7)" }}
                     aria-hidden="true"
                   >
-                    {raceLaps}L
+                    {isNeon ? "∞" : `${raceLaps}L`}
                   </span>
                   <span className="loadout-txt">
                     <em>MODE</em>
@@ -516,7 +516,9 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
                 <p>{isSpace ? REALM_LORE.void : REALM_LORE[realm]}</p>
               </div>
 
-              {mode !== "nitro" && (
+              {/* Neon Run has no finish line, so a lap count is a number that
+                  means nothing there. */}
+              {!isNeon && (
                 <div className="field" role="group" aria-label="Lap count">
                   <span className="section-label">LAPS</span>
                   <div className="laps">

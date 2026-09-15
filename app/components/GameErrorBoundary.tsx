@@ -1,10 +1,13 @@
 "use client";
 
 import React from "react";
+import { reportError } from "@/src/ui/report";
 
 interface Props {
   children: React.ReactNode;
   onQuit: () => void;
+  /** Race context, so a report says WHICH realm and mode died. */
+  context?: Record<string, string>;
 }
 interface State {
   error: Error | null;
@@ -32,9 +35,11 @@ export default class GameErrorBoundary extends React.Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    // Surface it where a developer will actually see it. When an error
-    // reporter is wired up (see RELEASE.md) this is where it hooks in.
-    console.error("[fantasy-racer] engine crashed:", error, info.componentStack);
+    reportError(error, {
+      source: "boundary",
+      tags: this.props.context,
+      extra: { componentStack: info.componentStack },
+    });
   }
 
   render() {
