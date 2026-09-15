@@ -2187,275 +2187,6 @@ main {
     transform: none;
   }
 }
-
-/* Failure screens — capability check and engine crash. These exist so a
-   machine that cannot run the game, or a crash mid-race, produces a sentence
-   and a way back rather than a black canvas and a frozen page. */
-.fatal {
-  max-width: 44rem;
-  margin: 12vh auto;
-  padding: 2rem 2.25rem;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 14px;
-  background: rgba(18, 12, 34, 0.86);
-  color: #e6e3f2;
-  text-align: center;
-}
-.fatal h2 {
-  margin: 0 0 0.75rem;
-  font-size: 1.5rem;
-  letter-spacing: 0.04em;
-}
-.fatal p { margin: 0 0 1rem; opacity: 0.82; line-height: 1.55; }
-.fatal-detail {
-  margin: 0 0 1.4rem;
-  padding: 0.7rem 0.9rem;
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.4);
-  color: #ff9f9f;
-  font-size: 0.78rem;
-  text-align: left;
-  overflow-x: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.fatal-actions { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
-.fatal-actions button {
-  padding: 0.6rem 1.5rem;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: linear-gradient(100deg, #7c3aed, #c026d3);
-  color: #fff;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  cursor: pointer;
-}
-.fatal-actions button.ghost { background: transparent; font-weight: 600; }
-
-/* The line under the name field telling people the name goes on a public
-   board. Storing a user-entered name and publishing it without saying so is
-   the kind of thing that is trivially avoidable. */
-.privacy-note {
-  margin: 0.45rem 0 0;
-  font-size: 0.68rem;
-  letter-spacing: 0.08em;
-  opacity: 0.55;
-  text-transform: uppercase;
-}
-
-
-/* ===========================================================================
-   STEPPED SETUP  —  three screens, each exactly one viewport
-   ---------------------------------------------------------------------------
-   Palette: near-black with ONE accent (warm amber) for anything actionable and
-   a cool cyan for state. The old scheme was violet on violet, so everything
-   read as a single surface and nothing looked clickable.
-
-   The layout rule that matters: each step FILLS the viewport and never
-   scrolls. The grids auto-fit, so content grows with the display instead of
-   huddling in the top-left of a wide screen.
-   =========================================================================== */
-:root {
-  --ink: #07070b; --ink-2: #0e0e15; --ink-3: #16161f;
-  --line: rgba(255, 255, 255, 0.10);
-  --text: #e9e9f0; --text-dim: rgba(233, 233, 240, 0.55);
-  --accent: #ffb020; --accent-2: #38e0d0;
-}
-html, body { height: 100%; }
-body { background: var(--ink); color: var(--text); }
-
-.fr-home {
-  position: fixed; inset: 0;
-  display: flex; flex-direction: column; overflow: hidden;
-  background:
-    radial-gradient(1200px 700px at 78% -10%, rgba(255, 176, 32, 0.07), transparent 60%),
-    radial-gradient(900px 600px at 8% 108%, rgba(56, 224, 208, 0.06), transparent 60%),
-    var(--ink);
-}
-
-/* ---- sign-in gate ---- */
-.fr-home.fr-gate { align-items: center; justify-content: center; }
-.fr-gate-card {
-  width: min(92vw, 30rem); padding: 2.4rem 2rem; text-align: center;
-  border: 1px solid var(--line); border-radius: 18px; background: var(--ink-2);
-}
-.fr-gate-card .title {
-  font-size: clamp(1.6rem, 6vw, 2.4rem); line-height: 1.05;
-  letter-spacing: 0.1em; margin: 0; white-space: nowrap;
-}
-.fr-gate-sub { margin: 0.5rem 0 1.8rem; color: var(--text-dim); letter-spacing: 0.06em; }
-.fr-gate-actions { display: flex; flex-direction: column; gap: 0.7rem; }
-.fr-gate-note { margin: 1.1rem 0 0; font-size: 0.72rem; line-height: 1.5; color: var(--text-dim); }
-.fr-gate-note.error { color: #ff9f9f; }
-
-.fr-btn {
-  padding: 0.8rem 1.4rem; border-radius: 999px;
-  border: 1px solid var(--line); background: var(--ink-3); color: var(--text);
-  font: inherit; font-weight: 700; letter-spacing: 0.12em; cursor: pointer;
-  transition: transform 0.12s ease, filter 0.12s ease, border-color 0.12s ease;
-  white-space: nowrap;
-}
-.fr-btn:hover:not(:disabled) { transform: translateY(-1px); border-color: rgba(255, 255, 255, 0.24); }
-.fr-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-.fr-btn.primary { background: var(--accent); color: #17130a; border-color: transparent; }
-.fr-btn.ghost { background: transparent; }
-.fr-btn.google { display: flex; align-items: center; justify-content: center; gap: 0.6rem; }
-.fr-g-mark {
-  display: grid; place-items: center; width: 1.25rem; height: 1.25rem;
-  border-radius: 50%; background: #fff; color: #1a73e8; font-weight: 900; font-size: 0.8rem;
-}
-
-/* ---- top bar + step rail ---- */
-.fr-bar {
-  flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
-  gap: 1.5rem; padding: 0.7rem 1.5rem; border-bottom: 1px solid var(--line);
-}
-.fr-bar-left, .fr-bar-right { display: flex; align-items: center; gap: 1.2rem; min-width: 0; }
-.title.sm { font-size: 1rem; letter-spacing: 0.2em; margin: 0; white-space: nowrap; }
-.fr-steps { display: flex; gap: 0.35rem; }
-.fr-step {
-  display: flex; align-items: center; gap: 0.45rem;
-  padding: 0.35rem 0.85rem; border-radius: 999px;
-  border: 1px solid transparent; background: transparent;
-  color: var(--text-dim); font: inherit; font-size: 0.68rem;
-  letter-spacing: 0.14em; cursor: pointer;
-}
-.fr-step i {
-  display: grid; place-items: center; width: 1.15rem; height: 1.15rem;
-  border-radius: 50%; background: rgba(255, 255, 255, 0.08);
-  font-style: normal; font-size: 0.6rem;
-}
-.fr-step.on { color: var(--accent); border-color: rgba(255, 176, 32, 0.45); }
-.fr-step.on i { background: var(--accent); color: #17130a; }
-.fr-step.done i { background: rgba(56, 224, 208, 0.25); color: var(--accent-2); }
-.fr-last-run { font-size: 0.7rem; color: var(--text-dim); letter-spacing: 0.08em; }
-.fr-tab {
-  padding: 0.35rem 0.85rem; border-radius: 999px; border: 1px solid transparent;
-  background: transparent; color: var(--text-dim);
-  font: inherit; font-size: 0.7rem; letter-spacing: 0.14em; cursor: pointer;
-}
-.fr-tab.on { color: var(--accent-2); border-color: rgba(56, 224, 208, 0.4); }
-.fr-who { display: flex; align-items: center; gap: 0.5rem; font-size: 0.76rem; letter-spacing: 0.08em; }
-.fr-who b { color: var(--accent); }
-.fr-link {
-  background: none; border: 0; padding: 0; cursor: pointer;
-  color: var(--text-dim); font: inherit; font-size: 0.68rem; text-decoration: underline;
-}
-
-/* ---- the step body: fills what is left, never scrolls ---- */
-.fr-stage {
-  flex: 1 1 auto; min-height: 0;
-  display: flex; flex-direction: column; gap: 1rem;
-  padding: 1.2rem 1.5rem 0;
-}
-.fr-stage-head { flex: 0 0 auto; }
-.fr-stage-head h2 {
-  margin: 0; font-size: clamp(1.1rem, 2vw, 1.5rem);
-  letter-spacing: 0.16em; color: var(--text);
-}
-.fr-stage-head p {
-  margin: 0.3rem 0 0; font-size: 0.8rem; line-height: 1.5;
-  color: var(--text-dim); max-width: 70ch;
-}
-
-/* Grids auto-fit so a wide display gets bigger cards, not empty space. */
-.fr-grid { flex: 1 1 auto; min-height: 0; display: grid; gap: 0.8rem; align-content: start; overflow: hidden; }
-.fr-grid.worlds { grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); grid-auto-rows: 1fr; }
-.fr-grid.cars   { grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); grid-auto-rows: 1fr; }
-.fr-grid.modes  { grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); grid-auto-rows: minmax(0, 1fr); }
-.fr-grid.dim { opacity: 0.35; pointer-events: none; }
-
-.fr-card {
-  position: relative; border-radius: 14px; border: 2px solid transparent;
-  background: var(--ink-2); cursor: pointer; overflow: hidden;
-  font: inherit; color: var(--text); text-align: left;
-  transition: border-color 0.12s ease, transform 0.12s ease;
-  min-height: 0;
-}
-.fr-card:hover { transform: translateY(-2px); }
-.fr-card.on { border-color: var(--accent); }
-
-.fr-card.world { background-size: cover; background-position: center; display: flex; align-items: flex-end; padding: 0.7rem 0.85rem; }
-.fr-card.world::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, transparent 58%); }
-.fr-card-name { position: relative; font-size: 0.9rem; font-weight: 700; letter-spacing: 0.06em; }
-
-.fr-card.car { display: flex; flex-direction: column; justify-content: center; gap: 0.5rem; padding: 0.9rem 1rem; border-color: var(--line); }
-.fr-car-name { font-size: 1rem; font-weight: 800; letter-spacing: 0.1em; }
-.fr-car-stats { display: grid; grid-template-columns: auto auto; gap: 0.25rem 0.55rem; align-items: center; }
-.fr-car-stats span { font-size: 0.6rem; letter-spacing: 0.12em; color: var(--text-dim); }
-.fr-pips { display: inline-flex; gap: 3px; }
-.fr-pips i { width: 14px; height: 5px; border-radius: 2px; background: rgba(255, 255, 255, 0.14); }
-
-.fr-card.mode { display: flex; flex-direction: column; gap: 0.5rem; padding: 1.1rem 1.2rem; border-color: var(--line); }
-.fr-mode-blurb { font-size: 0.78rem; line-height: 1.5; color: var(--text-dim); }
-.fr-mode-tags { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: auto; }
-.fr-mode-tags i {
-  font-style: normal; font-size: 0.58rem; letter-spacing: 0.12em;
-  padding: 0.2rem 0.5rem; border-radius: 999px;
-  border: 1px solid var(--line); color: var(--text-dim);
-}
-
-.fr-laps { flex: 0 0 auto; display: flex; align-items: center; gap: 0.5rem; }
-.fr-lbl { font-size: 0.66rem; letter-spacing: 0.16em; color: var(--text-dim); }
-.fr-pill {
-  padding: 0.38rem 0.8rem; border-radius: 999px; border: 1px solid var(--line);
-  background: var(--ink-2); color: var(--text-dim);
-  font: inherit; font-size: 0.72rem; letter-spacing: 0.1em; cursor: pointer;
-}
-.fr-pill.on { border-color: var(--accent-2); color: var(--accent-2); background: rgba(56, 224, 208, 0.08); }
-.fr-pill.tiny { padding: 0.3rem 0.75rem; }
-
-/* ---- bottom bar ---- */
-.fr-go-bar {
-  flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
-  gap: 1rem; padding: 0.85rem 1.5rem; border-top: 1px solid var(--line);
-}
-.fr-summary { font-size: 0.75rem; letter-spacing: 0.1em; color: var(--text-dim); }
-.fr-go-pair { display: flex; gap: 0.6rem; }
-.fr-btn.go { padding: 0.85rem 2.8rem; font-size: 0.95rem; }
-
-/* ---- leaderboard sheet ---- */
-.fr-sheet { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: rgba(4, 4, 8, 0.72); }
-.fr-sheet-card {
-  width: min(94vw, 34rem); max-height: 74vh; display: flex; flex-direction: column;
-  padding: 1.2rem; border: 1px solid var(--line); border-radius: 16px; background: var(--ink-2);
-}
-.fr-board-tabs { display: flex; gap: 0.4rem; align-items: center; flex: 0 0 auto; }
-.fr-board-tabs button {
-  padding: 0.35rem 0.9rem; border-radius: 999px; border: 1px solid var(--line);
-  background: transparent; color: var(--text-dim);
-  font: inherit; font-size: 0.7rem; letter-spacing: 0.14em; cursor: pointer;
-}
-.fr-board-tabs button.on { color: var(--accent-2); border-color: rgba(56, 224, 208, 0.4); }
-.fr-close { margin-left: auto; }
-.fr-board-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin: 0.8rem 0 0; padding: 0; list-style: none; }
-.fr-board-list li {
-  display: grid; grid-template-columns: 2rem 1fr auto; gap: 0.8rem; align-items: center;
-  padding: 0.5rem 0.2rem; border-bottom: 1px solid var(--line); font-size: 0.82rem;
-}
-.fr-rk { color: var(--text-dim); }
-.fr-sc { color: var(--accent); font-weight: 700; }
-.fr-hint { margin: 0.8rem 0 0; font-size: 0.75rem; color: var(--text-dim); }
-
-/* ---- mobile ---- */
-@media (max-width: 760px) {
-  .fr-bar { padding: 0.55rem 0.8rem; gap: 0.7rem; flex-wrap: wrap; }
-  .title.sm { font-size: 0.8rem; letter-spacing: 0.14em; }
-  .fr-steps { order: 3; width: 100%; justify-content: space-between; }
-  .fr-step { flex: 1 1 0; justify-content: center; font-size: 0.6rem; padding: 0.3rem 0.4rem; }
-  .fr-last-run { display: none; }
-  .fr-stage { padding: 0.8rem 0.8rem 0; gap: 0.7rem; }
-  .fr-stage-head h2 { font-size: 0.95rem; }
-  .fr-stage-head p { font-size: 0.72rem; }
-  .fr-grid { overflow-y: auto; }
-  .fr-grid.worlds { grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); grid-auto-rows: 6rem; }
-  .fr-grid.cars { grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); grid-auto-rows: auto; }
-  .fr-grid.modes { grid-template-columns: 1fr; grid-auto-rows: auto; }
-  .fr-go-bar { padding: 0.7rem 0.8rem; }
-  .fr-summary { display: none; }
-  .fr-btn { padding: 0.75rem 1rem; font-size: 0.75rem; }
-}
-
 /* ---------------------------------------------------------------------------
    TOUCH CONTROLS — thumbs at the bottom corners, nothing across the middle
    where the road is, sized against the safe-area insets.
@@ -2520,13 +2251,317 @@ html, body { overscroll-behavior: none; }
 }
 .fatal-actions button.ghost { background: transparent; font-weight: 600; }
 
-/* .fr-card.car and .fr-card.mode set their own resting border AFTER .fr-card.on
-   in this sheet, and at equal specificity the later rule wins — so the selected
-   card lost its highlight and nothing on the step looked chosen. Re-assert the
-   selected state last, with the glow that makes it unmistakable. */
-.fr-home .fr-card.on,
-.fr-home .fr-card.car.on,
-.fr-home .fr-card.mode.on {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px rgba(255, 176, 32, 0.35), 0 10px 30px -14px rgba(255, 176, 32, 0.8);
+
+/* The touch pads were styled against the amber scheme from the home-screen
+   rewrite that got reverted. Alias those two names onto the arcade palette so
+   they still resolve here. */
+:root { --accent: var(--gold); --accent-2: var(--cyan-l); }
+
+/* ===========================================================================
+   ONE SCREEN PER STEP
+   ---------------------------------------------------------------------------
+   The wizard above is the original and stays the original — the preview art,
+   the 3D garage, the mode cards, the loadout. The only thing wrong with it was
+   its HEIGHT: every step ran two or three viewports deep, so making a choice
+   meant scrolling past the choices.
+
+   These rules do not restyle anything. They cap the page at the viewport and
+   let the CARDS take up the slack: the hero becomes one band, the step panel
+   takes whatever is left, and the grids are row-sized in `1fr` so twelve
+   realms lay out as 6x2 on a wide screen and 2x6 on a phone — same cards,
+   fitted to the glass.
+   =========================================================================== */
+
+.home.fit {
+  width: min(1560px, 97vw);
+  height: 100dvh;
+  max-height: 100dvh;
+  margin: 0 auto;
+  overflow: hidden;
+  gap: clamp(6px, 1.1vh, 14px);
+  padding: clamp(8px, 1.4vh, 18px) clamp(8px, 1.6vw, 20px) clamp(8px, 1.4vh, 16px);
+}
+
+/* ---------- hero, compressed to a single band ---------- */
+
+.hero.slim { gap: 0; padding: 0; flex: none; }
+.hero.slim .hero-glow { top: -90px; height: 170px; opacity: 0.55; }
+
+.hero-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: clamp(10px, 2vw, 26px);
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.hero-id {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  text-align: left;
+}
+
+.hero.slim .title { font-size: clamp(19px, 2.5vw, 34px); }
+.hero.slim .hero-kicker { padding: 3px 11px; letter-spacing: 2.5px; }
+.hero.slim .hero-kicker b { color: var(--cyan-l); font-family: var(--font-display); }
+
+.hero-side { display: flex; align-items: center; gap: clamp(8px, 1vw, 12px); }
+
+.hero.slim .quick-race {
+  margin: 0;
+  padding: 0.5rem 1.5rem;
+  box-shadow: 0 0 0 4px rgba(192, 38, 211, 0.12), 0 10px 26px -12px rgba(192, 38, 211, 0.9);
+}
+.hero.slim .quick-race .qr-go { font-size: 0.95rem; }
+.hero.slim .quick-race .qr-sub { font-size: 0.58rem; letter-spacing: 0.14em; }
+
+/* who you are, and the way out of it */
+.who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(16, 12, 40, 0.8);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 1.6px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.who:hover { border-color: var(--violet-l); }
+.who img { width: 20px; height: 20px; border-radius: 50%; }
+.who-name { font-family: var(--font-display); color: var(--gold-l); }
+.who-swap { font-size: 8.5px; letter-spacing: 2px; color: var(--dim); }
+
+.board-open {
+  padding: 7px 14px;
+  border: 1px solid rgba(34, 211, 238, 0.4);
+  border-radius: 999px;
+  background: rgba(34, 211, 238, 0.08);
+  color: var(--cyan-l);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 2.4px;
+  cursor: pointer;
+}
+.board-open:hover { background: rgba(34, 211, 238, 0.16); }
+
+.home.fit .result-banner { flex: none; padding-block: 6px; }
+
+/* ---------- the wizard fills what is left, and never scrolls ---------- */
+
+.home.fit .wizard {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(6px, 1vh, 12px);
+  padding: clamp(8px, 1.3vh, 16px) clamp(10px, 1.4vw, 18px);
+}
+.home.fit .wizard > nav { flex: none; }
+.home.fit .wiz-steps { margin: 0; }
+
+.home.fit .step-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(6px, 1.1vh, 14px);
+  overflow: hidden;
+}
+.home.fit .step-head { flex: none; margin: 0; }
+.home.fit .step-head .step-hint { margin: 0; }
+.home.fit .wiz-nav { flex: none; margin-top: 0; padding-top: clamp(6px, 1vh, 12px); }
+
+/* step 1 — twelve worlds, two rows, cards flexing to the height available */
+.home.fit .realms {
+  flex: 1;
+  min-height: 0;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: clamp(7px, 0.8vw, 13px);
+}
+.home.fit .realm-card { min-height: 0; }
+/* The fixed 16:10 media box is what made this step three viewports tall. Let
+   it take the slack instead of setting it. */
+.home.fit .realm-media { aspect-ratio: auto; flex: 1; min-height: 0; }
+.home.fit .realm-body { flex: none; padding: 7px 10px 9px; gap: 2px; }
+.home.fit .realm-body strong { font-size: 12px; }
+.home.fit .realm-blurb {
+  font-size: 10.5px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* step 2 — the showroom takes the slack, the grid stays put */
+.home.fit .garage { flex: 1; min-height: 0; gap: clamp(7px, 1vh, 13px); }
+.home.fit .showroom { flex: 1; min-height: 0; height: auto; }
+.home.fit .cars { flex: none; gap: clamp(6px, 0.7vw, 10px); }
+.home.fit .car-card { padding: 8px 10px 9px; gap: 5px; }
+.home.fit .car-card .car-head strong { font-size: 12px; }
+.home.fit .showroom-blurb { font-size: 11.5px; }
+
+/* step 3 — four modes, two rows */
+.home.fit .modes-step { flex: 1; min-height: 0; }
+.home.fit .modes {
+  flex: 1;
+  min-height: 0;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+}
+.home.fit .mode-card { min-height: 0; }
+
+/* step 4 — short already; centre it rather than stranding it at the top */
+.home.fit .race-step { flex: 1; min-height: 0; justify-content: center; gap: clamp(9px, 1.5vh, 18px); }
+.home.fit .race-step .field { align-items: center; }
+
+/* ---------- narrower glass: fewer columns, more rows ---------- */
+
+@media (max-width: 1280px) {
+  .home.fit .realms { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 900px) {
+  .home.fit .realms { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(4, minmax(0, 1fr)); }
+  .home.fit .cars { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .home.fit .modes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 680px) {
+  .hero-row { gap: 8px; }
+  .hero-side { width: 100%; justify-content: space-between; }
+  .hero.slim .quick-race { padding: 0.45rem 1rem; }
+  .home.fit .realms { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(6, minmax(0, 1fr)); overflow-y: auto; }
+  .home.fit .cars { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .home.fit .loadout { grid-template-columns: 1fr; }
+  .home.fit .step-head .step-hint { display: none; }
+}
+/* Short landscape (a phone on its side) — the hero is the first thing to go. */
+@media (max-height: 560px) {
+  .hero.slim .hero-kicker, .home.fit .step-head .step-hint, .home.fit .controls-help { display: none; }
+  .home.fit .realm-blurb { -webkit-line-clamp: 1; }
+}
+
+/* ---------- sign-in gate ---------- */
+
+.home.gate {
+  height: 100dvh;
+  justify-content: center;
+  gap: 10px;
+  overflow: hidden;
+}
+.gate-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(92vw, 30rem);
+  margin-top: 18px;
+  padding: 22px;
+  border: 2px solid var(--line-soft);
+  border-radius: var(--r-lg);
+  background: linear-gradient(180deg, rgba(26, 20, 64, 0.92), rgba(16, 12, 40, 0.92));
+}
+.gate-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 13px 18px;
+  border: 2px solid var(--line);
+  border-radius: var(--r-md);
+  background: rgba(10, 7, 32, 0.7);
+  color: var(--text);
+  font: inherit;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 2.4px;
+  cursor: pointer;
+  transition: border-color 0.16s, transform 0.16s var(--ease);
+}
+.gate-btn span {
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+}
+.gate-btn:hover:not(:disabled) { border-color: var(--violet-l); transform: translateY(-2px); }
+.gate-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.gate-btn.primary {
+  border-color: transparent;
+  background: var(--neon-hot);
+  box-shadow: 0 12px 30px -14px rgba(192, 38, 211, 0.9);
+}
+.gate-btn.primary span { color: rgba(255, 255, 255, 0.82); }
+.gate-error { font-size: 12px; color: #fda4af; }
+.gate-note { font-size: 11px; line-height: 1.5; color: var(--dim); }
+
+/* ---------- leaderboard as a sheet, not a slab under step 4 ---------- */
+
+.board-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 4vh 3vw;
+}
+.board-scrim { position: absolute; inset: 0; background: rgba(4, 2, 14, 0.78); }
+.board-sheet .leaderboard {
+  position: relative;
+  width: min(900px, 94vw);
+  max-height: 88vh;
+  overflow-y: auto;
+  box-shadow: 0 40px 90px -30px #000;
+}
+.board-close {
+  margin-left: auto;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: 2px;
+  cursor: pointer;
+}
+.board-close:hover { color: var(--text); border-color: var(--violet-l); }
+
+/* Step 4 on a phone: three stacked loadout chips, the lore, the laps and the
+   start button together ran 26px past the panel, and the panel clips. The
+   keyboard hint is the first thing to go — a phone has the touch pads. */
+@media (max-width: 680px) {
+  .home.fit .race-step { gap: 10px; }
+  .home.fit .loadout { gap: 7px; }
+  .home.fit .loadout-chip { padding: 7px 10px; }
+  .home.fit .realm-lore { padding: 9px 12px; }
+  .home.fit .realm-lore p {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .home.fit .controls-help { display: none; }
+}
+
+/* Twelve worlds on a 390px screen: six 1fr rows squeezed the preview art down
+   to a 30px sliver, which is the whole point of the card. Give each row a
+   floor instead and let the GRID scroll — the page still doesn't. */
+@media (max-width: 680px) {
+  .home.fit .realms {
+    grid-template-rows: none;
+    grid-auto-rows: minmax(108px, 1fr);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .home.fit .realm-blurb { -webkit-line-clamp: 1; }
+  .home.fit .realm-body { padding: 5px 8px 7px; }
 }
