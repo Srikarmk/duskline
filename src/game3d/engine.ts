@@ -58,7 +58,7 @@ import { makeWaterfall, makeRiverBridge } from "./props/water";
 import { Opponent } from "./ai";
 import { Minimap } from "./minimap";
 import { Sound } from "./sound";
-import { loadSetting, loadSettings, type Settings } from "../ui/settings";
+import { loadSetting, loadSettings, type Settings, QUALITY, type Quality } from "../ui/settings";
 import { Input } from "../game/input";
 import { drawHud, drawToasts, drawCallout, drawCenterText, drawSpeedFx, drawFrameGrade, drawStartLights, type Toast } from "../game/render";
 import type { GameMode, GameResult, GameOptions, RaceStanding, CarId } from "../game/engine";
@@ -388,6 +388,14 @@ export class Game {
   /** Vertical g-load from the road's own shape: >0 pressed into a dip, <0 light
    *  over a crest. Smoothed, because the raw curvature steps between samples. */
   private gLoad = 0;
+  /** Quality tier in force. Read once at build for the things that cannot
+   *  change live (shadow map size, scenery density) and again on every
+   *  settings change for the ones that can (resolution, post chain). */
+  private quality: Quality = "high";
+  /** Frame-time readout. Off by default; it exists so a real number can come
+   *  back off hardware that is not the machine this was built on. */
+  private showFps = false;
+  private frameMs = 16.7;
   private skyMat: THREE.ShaderMaterial | null = null;
   private seaY = -11; // coastal realms: land inside r, sea beyond
   private reliefAmp = 0; // per-realm amplitude of the rolling hills the ground rises into away from the road
@@ -535,8 +543,12 @@ export class Game {
     // preserveDrawingBuffer left OFF: nothing reads the WebGL backbuffer (realm
     // thumbnails are static JPGs) and keeping it on blocks the browser's swap
     // optimizations — a free perf win.
+    // Read BEFORE the renderer exists: dpr, shadow map size and the post chain
+    // are all decided from this, and two of them cannot change afterwards.
+    this.quality = loadSetting("quality", "high");
+    this.showFps = loadSetting("showFps", false);
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, QUALITY[this.quality].dprCap));
     this.renderer.setSize(w, h, false);
     this.renderer.domElement.className = "game-layer";
     this.renderer.setClearColor(this.realm.palette.fog);
@@ -544,7 +556,7 @@ export class Game {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.2;
     // real-time shadows — the single biggest "this is 3D, not flat" upgrade
-    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.enabled = QUALITY[this.quality].shadow > 0;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     const hudCanvas = document.createElement("canvas");
@@ -649,7 +661,9 @@ export class Game {
     const h = Math.max(1, this.container.clientHeight || window.innerHeight);
     this.viewW = w;
     this.viewH = h;
-    const dpr = Math.min(window.devicePixelRatio, 2);
+    // Resolution is the single biggest lever on a weak GPU: everything in the
+    // post chain is per-pixel, so halving dpr is close to halving the cost.
+    const dpr = Math.min(window.devicePixelRatio, QUALITY[this.quality].dprCap);
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, false);
     this.composer.setPixelRatio(dpr);
@@ -865,7 +879,9 @@ export class Game {
     // shadow pass is draw-call bound, not pixel bound, and the frustum below is
     // tight. The old note that 4096 cost 4x was measured against the WIDE +-95 m
     // frustum. Over +-58 m this is 2.8 cm per texel instead of 5.7 cm.
-    sun.shadow.mapSize.set(4096, 4096);
+    const shadowPx = QUALITY[this.quality].shadow;
+    sun.castShadow = shadowPx > 0;
+    if (shadowPx > 0) sun.shadow.mapSize.set(shadowPx, shadowPx);
     sun.shadow.bias = -0.00035;
     sun.shadow.normalBias = 0.6;
     sun.shadow.radius = 7;               // soft PCF edges; scaled with mapSize (radius is in TEXELS, so 4096 needs more to stay as soft)
@@ -3364,7 +3380,11 @@ export class Game {
       this.rafId = requestAnimationFrame(this.frame);
       return;
     }
-    this.accumulator += Math.min(now - this.last, 250) / 1000;
+    const raw = Math.min(now - this.last, 250);
+    // heavy smoothing: a per-frame number jitters too much to read, and what
+    // matters is the sustained rate, not one slow frame
+    this.frameMs += (raw - this.frameMs) * 0.06;
+    this.accumulator += raw / 1000;
     this.last = now;
     while (this.accumulator >= STEP) {
       this.update(STEP);
@@ -3385,8 +3405,19 @@ export class Game {
   }
 
   applySettings(s: Settings) {
-    this.bloomPass.enabled = s.bloom;
-    if (this.gtao) this.gtao.enabled = s.ao;
+    if (s.quality && s.quality !== this.quality) {
+      this.quality = s.quality;
+      // Resolution and the post chain take effect immediately. Shadow map size
+      // and scenery density are baked into the built world, so those need a
+      // restart — the pause menu says so rather than pretending otherwise.
+      this.resize();
+    }
+    const post = QUALITY[this.quality].post;
+    if (this.radialBlur) this.radialBlur.enabled = post;
+    if (this.filmGrade) this.filmGrade.enabled = post;
+    this.showFps = !!s.showFps;
+    this.bloomPass.enabled = s.bloom && post;
+    if (this.gtao) this.gtao.enabled = s.ao && post;
     this.sound.setVolumes(s.musicVolume, s.sfxVolume);
     this.cameraIndex = s.camera % CAMERA_PRESETS.length;
     this.camera.fov = CAMERA_PRESETS[this.cameraIndex].fov;
@@ -4761,6 +4792,8 @@ export class Game {
       position,
       totalRacers: this.opponents.length ? this.opponents.length + 1 : undefined,
       cameraName: CAMERA_PRESETS[this.cameraIndex].name,
+      fps: this.showFps ? Math.round(1000 / Math.max(1, this.frameMs)) : undefined,
+      frameMs: this.showFps ? this.frameMs : undefined,
       soundMuted: this.sound.isMuted,
       heldItems: this.heldItems.map((i) => ITEM_LABEL[i]),
       shieldActive: this.shieldT > 0,

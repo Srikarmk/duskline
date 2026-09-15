@@ -519,6 +519,9 @@ function drawMech(ctx: CanvasRenderingContext2D, s: PlayerRenderState) {
 // --- HUD ----------------------------------------------------------------
 
 export interface HudState {
+  /** frame-time readout, when the player has asked for it */
+  fps?: number;
+  frameMs?: number;
   mph: number;
   score: number;
   lap: number;
@@ -570,9 +573,21 @@ export function formatTime(seconds: number) {
   return `${m}:${String(s).padStart(2, "0")}.${t}`;
 }
 
+function drawFps(ctx: CanvasRenderingContext2D, fps: number, ms: number, vw: number) {
+  ctx.save();
+  ctx.font = "600 12px ui-monospace, Menlo, monospace";
+  ctx.textAlign = "right";
+  // green above 55, amber 30-55, red below — so a screenshot of it is
+  // self-explanatory without having to know what a good number is
+  ctx.fillStyle = fps >= 55 ? "#7ce08a" : fps >= 30 ? "#ffb020" : "#ff6b6b";
+  ctx.fillText(`${fps} FPS  ${ms.toFixed(1)}ms`, vw - 16, 14);
+  ctx.restore();
+}
+
 export function drawHud(
   ctx: CanvasRenderingContext2D, hud: HudState, vw = WIDTH, vh = HEIGHT
 ) {
+  if (hud.fps !== undefined && hud.frameMs !== undefined) drawFps(ctx, hud.fps, hud.frameMs, vw);
   ctx.textBaseline = "middle";
 
   // --- speed (top-left) ---

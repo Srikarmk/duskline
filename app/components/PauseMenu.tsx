@@ -44,6 +44,31 @@ export default function PauseMenu({ onResume, onRestart, onQuit, onApply }: Prop
               <input type="range" min={0} max={1} step={0.05} value={s.sfxVolume}
                 onChange={(e) => update({ sfxVolume: +e.target.value })} />
             </label>
+            {/* The tier is the control that actually matters on slow hardware:
+                it moves render resolution, the shadow map and the whole post
+                chain at once. The individual toggles below only nibble. */}
+            <div className="set-row">
+              <span>QUALITY</span>
+              <span className="seg">
+                {(["low", "medium", "high"] as const).map((q) => (
+                  <button
+                    type="button"
+                    key={q}
+                    className={s.quality === q ? "on" : ""}
+                    onClick={() => update({ quality: q })}
+                  >{q.toUpperCase()}</button>
+                ))}
+              </span>
+            </div>
+            <p className="set-note">
+              Resolution and effects change now. Shadows and scenery density
+              apply on the next race.
+            </p>
+            <label className="set-row">
+              <span>SHOW FPS</span>
+              <input type="checkbox" checked={s.showFps}
+                onChange={(e) => update({ showFps: e.target.checked })} />
+            </label>
             <label className="set-row">
               <span>GLOW (BLOOM)</span>
               <input type="checkbox" checked={s.bloom}

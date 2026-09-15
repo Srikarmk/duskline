@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Game } from "@/src/game3d/engine";
 import type { GameMode, RealmId, CarId, GameResult } from "@/src/game/engine";
 import { checkCapability } from "@/src/game3d/capability";
+import { loadSettings, saveSettings } from "@/src/ui/settings";
 import PauseMenu from "./PauseMenu";
 import GameErrorBoundary from "./GameErrorBoundary";
 import TouchControls from "./TouchControls";
@@ -33,8 +34,21 @@ export default function GameCanvas({ mode, realm, car, laps, onFinish, onQuit }:
   // laptop gets the pads too and a desktop never does.
   const [touch, setTouch] = useState(false);
   useEffect(() => {
-    setTouch(window.matchMedia("(pointer: coarse)").matches);
-  }, []);
+    const coarse = window.matchMedia("(pointer: coarse)").matches;
+    setTouch(coarse);
+    // FIRST RUN ONLY: pick a starting quality from what the hardware looks
+    // like. capability.lowPower flags software renderers and old integrated
+    // parts; a phone gets medium because the whole post chain is per-pixel and
+    // a phone has a lot of pixels for its GPU. After this the player's own
+    // choice is respected — it is only ever a default, never an override.
+    try {
+      if (!window.localStorage.getItem("fantasy-racer-settings")) {
+        const tier = cap.lowPower ? "low" : coarse ? "medium" : "high";
+        saveSettings({ quality: tier });
+      }
+    } catch { /* storage blocked — high is a fine default */ }
+    void loadSettings;
+  }, [cap.lowPower]);
 
   // Errors thrown inside requestAnimationFrame never reach a React error
   // boundary, and the render loop is where this engine spends its life — so
