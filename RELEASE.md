@@ -180,11 +180,26 @@ rewrite, the elevation work and the car detail pass). They are renders of the
 game, so any significant art change makes them wrong again — regenerate with
 the dev route above.
 
-### [SHIP-SOON] Service worker
-The manifest makes the game installable, but there is no offline cache, so an
-installed copy with no signal opens to a network error. The whole game is
-static except `/api/scores` and `/api/guest`, so a cache-first worker over
-`/_next/static` and `/previews` would make it genuinely offline-capable.
+### [DONE] Service worker
+`public/sw.js`, registered in production only by `ServiceWorkerRegister`. An
+installed copy with no signal used to open to a network error, which is worse
+than not being installable at all — the icon on the home screen promises an app.
+
+The rule that keeps a worker from becoming a bug factory: never cache-first an
+unhashed URL. `/_next/static/**` is content-hashed so it is cache-first
+forever; `/previews`, `/models`, `/textures` and icons are
+stale-while-revalidate; navigations are network-first; `/api/**` and
+cross-origin are never touched.
+
+`npm run test:sw` asserts every one of those routing decisions against the
+real file, and CI runs it — the worker is plain JS outside the bundle, so
+neither `tsc` nor `next build` would ever look at it.
+
+⚠️ **Registration itself is unverified in a real browser.** The in-app preview
+pane refuses to register any service worker ("An unknown error occurred when
+fetching the script") even though `/sw.js` serves 200 with the right MIME type,
+so the install path has only been checked by inspection. Worth thirty seconds
+in Chrome DevTools → Application → Service Workers on the deployed site.
 
 ---
 
