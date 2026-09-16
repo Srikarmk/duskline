@@ -14,6 +14,8 @@
  * only; it is never trusted as an authorisation of anything.
  */
 
+import { read, write, remove } from "./storage";
+
 export type IdentityKind = "guest" | "google";
 
 export interface Identity {
@@ -25,12 +27,12 @@ export interface Identity {
   picture?: string;
 }
 
-const KEY = "fantasy-racer-identity";
+const KEY = "identity";
 
 export function loadIdentity(): Identity | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = window.localStorage.getItem(KEY);
+    const raw = read(KEY);
     if (!raw) return null;
     const v = JSON.parse(raw) as Identity;
     return v && typeof v.name === "string" ? v : null;
@@ -42,8 +44,8 @@ export function loadIdentity(): Identity | null {
 export function saveIdentity(id: Identity | null): void {
   if (typeof window === "undefined") return;
   try {
-    if (id) window.localStorage.setItem(KEY, JSON.stringify(id));
-    else window.localStorage.removeItem(KEY);
+    if (id) write(KEY, JSON.stringify(id));
+    else remove(KEY);
   } catch {
     // storage blocked — the session still works, it just will not persist
   }

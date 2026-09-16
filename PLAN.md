@@ -1,4 +1,4 @@
-# Fantasy Racer — Plan
+# Duskline — Plan
 
 A pseudo-3D (OutRun-style) fantasy kart racer for the web.
 Vanilla JS + Canvas 2D, ES modules, Vite for dev/build. No runtime dependencies.

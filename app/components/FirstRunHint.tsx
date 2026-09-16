@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { read, write } from "@/src/ui/storage";
 
-const KEY = "fantasy-racer-seen-controls";
+const KEY = "seen-controls";
 
 /**
  * The controls, once, on the first race.
@@ -23,7 +24,7 @@ export default function FirstRunHint({ touch }: { touch: boolean }) {
   useEffect(() => {
     let seen = false;
     try {
-      seen = window.localStorage.getItem(KEY) === "1";
+      seen = read(KEY) === "1";
     } catch {
       // storage blocked — show it, showing it twice is not a problem
     }
@@ -32,7 +33,7 @@ export default function FirstRunHint({ touch }: { touch: boolean }) {
     const dismiss = () => {
       setShow(false);
       try {
-        window.localStorage.setItem(KEY, "1");
+        write(KEY, "1");
       } catch { /* not worth handling */ }
     };
     // Any input at all closes it, because the race has already started.

@@ -1,7 +1,7 @@
-# Fantasy Racer — work report
+# Duskline — work report
 
 Covering 2026-09-10 → 2026-09-15. 42 commits, 56 files, +6 002 / −563 lines.
-Live at https://fantasy-racer.vercel.app (verified 200 at time of writing).
+Live at https://duskline.vercel.app (verified 200 at time of writing).
 
 ---
 

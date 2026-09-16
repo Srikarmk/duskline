@@ -6,6 +6,7 @@ import type { GameMode, RealmId, CarId, GameResult } from "@/src/game/engine";
 import { checkCapability } from "@/src/game3d/capability";
 import { loadSettings, saveSettings } from "@/src/ui/settings";
 import { reportError } from "@/src/ui/report";
+import { read } from "@/src/ui/storage";
 import PauseMenu from "./PauseMenu";
 import GameErrorBoundary from "./GameErrorBoundary";
 import TouchControls from "./TouchControls";
@@ -46,7 +47,7 @@ export default function GameCanvas({ mode, realm, car, laps, onFinish, onQuit }:
     // a phone has a lot of pixels for its GPU. After this the player's own
     // choice is respected — it is only ever a default, never an override.
     try {
-      if (!window.localStorage.getItem("fantasy-racer-settings")) {
+      if (!read("settings")) {
         const tier = cap.lowPower ? "low" : coarse ? "medium" : "high";
         saveSettings({ quality: tier });
       }

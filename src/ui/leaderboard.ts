@@ -1,4 +1,5 @@
 import type { GameMode, GameResult, CarId } from "@/src/game/engine";
+import { read, write, remove } from "./storage";
 
 export interface ScoreEntry {
   name: string;
@@ -8,8 +9,8 @@ export interface ScoreEntry {
   date: string;
 }
 
-const KEY = "fantasy-racer-scores";
-const NAME_KEY = "fantasy-racer-name";
+const KEY = "scores";
+const NAME_KEY = "name";
 
 /**
  * Saved-data version. Bumped when an id in a saved payload stops existing.
@@ -20,7 +21,7 @@ const NAME_KEY = "fantasy-racer-name";
  * render blank. There is no sensible remap — the cars are different cars — so
  * anything from an older version is dropped rather than shown wrong.
  */
-const SCHEMA_KEY = "fantasy-racer-schema";
+const SCHEMA_KEY = "schema";
 // 3: "timetrial" and "nitro" were removed from GameMode, so any saved score
 // carrying one of those labels no longer has a mode to render.
 const SCHEMA = 3;
@@ -28,23 +29,23 @@ const SCHEMA = 3;
 function migrateIfStale(): void {
   if (typeof window === "undefined") return;
   try {
-    const have = Number(window.localStorage.getItem(SCHEMA_KEY) ?? 0);
+    const have = Number(read(SCHEMA_KEY) ?? 0);
     if (have >= SCHEMA) return;
-    window.localStorage.removeItem(KEY);
-    window.localStorage.removeItem(CAR_KEY);
-    window.localStorage.setItem(SCHEMA_KEY, String(SCHEMA));
+    remove(KEY);
+    remove(CAR_KEY);
+    write(SCHEMA_KEY, String(SCHEMA));
   } catch {
     // storage unavailable (private mode, blocked) — nothing to migrate
   }
 }
-const CAR_KEY = "fantasy-racer-car";
+const CAR_KEY = "car";
 const MAX_ENTRIES = 10;
 
 export function loadScores(): ScoreEntry[] {
   if (typeof window === "undefined") return [];
   try {
     migrateIfStale();
-    const raw = window.localStorage.getItem(KEY);
+    const raw = read(KEY);
     return raw ? (JSON.parse(raw) as ScoreEntry[]) : [];
   } catch {
     return [];
@@ -63,7 +64,7 @@ export function saveScore(name: string, result: GameResult): ScoreEntry[] {
     .sort((a, b) => b.score - a.score)
     .slice(0, MAX_ENTRIES);
   try {
-    window.localStorage.setItem(KEY, JSON.stringify(scores));
+    write(KEY, JSON.stringify(scores));
   } catch {
     // storage full or blocked; leaderboard just won't persist
   }
@@ -109,12 +110,12 @@ export async function submitGlobalScore(
 
 export function loadLastName(): string {
   if (typeof window === "undefined") return "";
-  return window.localStorage.getItem(NAME_KEY) ?? "";
+  return read(NAME_KEY) ?? "";
 }
 
 export function saveLastName(name: string) {
   try {
-    window.localStorage.setItem(NAME_KEY, name);
+    write(NAME_KEY, name);
   } catch {
     // ignore
   }
@@ -123,12 +124,12 @@ export function saveLastName(name: string) {
 export function loadLastCar(): CarId | null {
   if (typeof window === "undefined") return null;
   migrateIfStale();
-  return (window.localStorage.getItem(CAR_KEY) as CarId | null) ?? null;
+  return (read(CAR_KEY) as CarId | null) ?? null;
 }
 
 export function saveLastCar(car: CarId) {
   try {
-    window.localStorage.setItem(CAR_KEY, car);
+    write(CAR_KEY, car);
   } catch {
     // ignore
   }

@@ -1,8 +1,8 @@
-# Fantasy Racer — Evolution
+# Duskline — Evolution
 
 **From a 200-line pseudo-3D canvas prototype to a textured 3D arcade kart racer**, built
 with Next.js 15, React 19, TypeScript and Three.js. Live at
-**[fantasy-racer.vercel.app](https://fantasy-racer.vercel.app)**.
+**[duskline.vercel.app](https://duskline.vercel.app)**.
 
 This page is the before → after story in pictures — drop the montage into a post, or
 walk the six stages below.
@@ -11,7 +11,7 @@ walk the six stages below.
 
 ## The one-image story
 
-![Fantasy Racer evolution — six stages from prototype to today](screenshots/evolution.jpg)
+![Duskline evolution — six stages from prototype to today](screenshots/evolution.jpg)
 
 ---
 
@@ -140,7 +140,7 @@ Same lush forest, pixel-for-pixel — **2.5× the framerate**.
 > The rule that kept it sane: the game engine never imports React, and React never touches
 > in-race state.
 >
-> Play it 👉 fantasy-racer.vercel.app
+> Play it 👉 duskline.vercel.app
 >
 > #gamedev #threejs #webgl #typescript #nextjs #react #indiedev #performance
 

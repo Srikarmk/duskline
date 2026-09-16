@@ -1,5 +1,5 @@
 /**
- * Fantasy Racer service worker.
+ * Duskline service worker.
  *
  * The manifest already makes the game installable, but an installed copy with
  * no signal opened to a network error — which is a worse experience than not
@@ -17,7 +17,7 @@
  *   /api/**                                         -> never touched
  */
 
-const VERSION = "fr-v1";
+const VERSION = "dl-v1";
 const IMMUTABLE = `${VERSION}-immutable`;
 const ASSETS = `${VERSION}-assets`;
 const PAGES = `${VERSION}-pages`;

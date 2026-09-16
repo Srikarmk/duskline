@@ -77,7 +77,7 @@ export function reportError(err: unknown, ctx: ReportContext): void {
 
   // The console line is the part that always happens. It is what a developer
   // reads when someone pastes their console, DSN or no DSN.
-  console.error(`[fantasy-racer] ${ctx.source}:`, err, ctx.extra ?? "");
+  console.error(`[duskline] ${ctx.source}:`, err, ctx.extra ?? "");
 
   if (!target || typeof fetch === "undefined") return;
   const key = `${ctx.source}:${message}`;
@@ -96,7 +96,7 @@ export function reportError(err: unknown, ctx: ReportContext): void {
     level: "error",
     release: RELEASE,
     environment: process.env.NODE_ENV,
-    logger: "fantasy-racer",
+    logger: "duskline",
     // No stack-frame parsing: the raw stack in `extra` is legible in the
     // Sentry UI and saves shipping a parser to every visitor.
     exception: {

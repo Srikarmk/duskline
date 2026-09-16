@@ -219,7 +219,7 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
     return (
       <div className="home gate">
         <div className="hero-glow" aria-hidden="true" />
-        <h1 className="title">FANTASY RACER</h1>
+        <h1 className="title">DUSKLINE</h1>
         <div className="checker hero-rule" aria-hidden="true" />
         <p className="subtitle">drift · boost · jump · blast</p>
         <div className="gate-card">
@@ -257,7 +257,7 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
         <div className="hero-glow" aria-hidden="true" />
         <div className="hero-row">
           <div className="hero-id">
-            <h1 className="title">FANTASY RACER</h1>
+            <h1 className="title">DUSKLINE</h1>
             <span className="hero-kicker">
               <b>{realmIds.length}</b> WORLDS · <b>{CAR_IDS.length}</b> CARS · <b>{MODES.length}</b> MODES
             </span>

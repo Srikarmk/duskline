@@ -1,3 +1,5 @@
+import { read as readStored, write as writeStored } from "@/src/ui/storage";
+
 export type Sfx =
   | "beep" | "go" | "gem" | "airGem" | "nitroCharge" | "nitro"
   | "jump" | "stunt" | "land" | "crash" | "oob" | "lane"
@@ -8,7 +10,7 @@ export type Sfx =
 export type AmbientKind =
   | "none" | "wind" | "lava" | "city" | "space" | "forest" | "mist";
 
-const MUTE_KEY = "fantasy-racer-muted";
+const MUTE_KEY = "muted";
 
 /**
  * A running ambience graph. Every long-lived node is tracked so the whole
@@ -69,7 +71,7 @@ export class Sound {
 
   constructor() {
     if (typeof window !== "undefined") {
-      this.muted = window.localStorage.getItem(MUTE_KEY) === "1";
+      this.muted = readStored(MUTE_KEY) === "1";
     }
   }
 
@@ -153,7 +155,7 @@ export class Sound {
       this.master.gain.setTargetAtTime(this.muted ? 0 : 0.9, this.ctx.currentTime, 0.05);
     }
     try {
-      window.localStorage.setItem(MUTE_KEY, this.muted ? "1" : "0");
+      writeStored(MUTE_KEY, this.muted ? "1" : "0");
     } catch {
       // ignore
     }

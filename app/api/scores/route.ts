@@ -11,7 +11,7 @@ interface Entry {
   date: string;
 }
 
-const KEY = "fr:scores:v1";
+const KEY = "dl:scores:v1";
 const MAX = 20;
 // Every mode that can reach this endpoint. "spacewars" and "endless" were
 // missing, so scores from them were silently relabelled "classic" — the board

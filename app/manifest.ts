@@ -14,8 +14,8 @@ import type { MetadataRoute } from "next";
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Fantasy Racer",
-    short_name: "Racer",
+    name: "Duskline",
+    short_name: "Duskline",
     description:
       "A browser racing game. Ten road cars, twelve worlds, and an endless neon highway.",
     start_url: "/",

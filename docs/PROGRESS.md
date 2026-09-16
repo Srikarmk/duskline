@@ -1,13 +1,13 @@
-# Fantasy Racer — Progress Log
+# Duskline — Progress Log
 
 A fantasy kart racer that started as a single 800×600 canvas and grew into a
 full 3D game with eight realms, a competitive AI grid, a physically solid world
 with takedowns, a transforming sword-mech, drift, stunts, a championship mode,
 dynamic music, and a global leaderboard.
 
-**Play it:** https://fantasy-racer.vercel.app
+**Play it:** https://duskline.vercel.app
 
-![Fantasy Racer — six stages from prototype to today](screenshots/evolution.jpg)
+![Duskline — six stages from prototype to today](screenshots/evolution.jpg)
 
 > **The full before → after story lives in [EVOLUTION.md](EVOLUTION.md)** — a
 > LinkedIn-ready montage plus each stage broken out.

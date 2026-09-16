@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
 const KV_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
 const KV_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
 const hasKV = Boolean(KV_URL && KV_TOKEN);
-const COUNTER = "fr:guest:seq";
+const COUNTER = "dl:guest:seq";
 
 export async function POST() {
   if (!hasKV) {

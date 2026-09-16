@@ -8,6 +8,8 @@
  *  medium — half-size shadow map, dpr capped at 1.5, no radial blur
  *  low    — shadows off, dpr 1, no post effects at all
  */
+
+import { read, write } from "./storage";
 export type Quality = "high" | "medium" | "low";
 
 export interface Settings {
@@ -22,7 +24,7 @@ export interface Settings {
   showFps: boolean;
 }
 
-const KEY = "fantasy-racer-settings";
+const KEY = "settings";
 const DEFAULTS: Settings = {
   quality: "high", bloom: true, ao: false,
   musicVolume: 0.7, sfxVolume: 0.9, camera: 0, showFps: false,
@@ -40,7 +42,7 @@ export const QUALITY: Record<Quality, {
 export function loadSettings(): Settings {
   if (typeof window === "undefined") return { ...DEFAULTS };
   try {
-    const raw = window.localStorage.getItem(KEY);
+    const raw = read(KEY);
     return raw ? { ...DEFAULTS, ...(JSON.parse(raw) as Partial<Settings>) } : { ...DEFAULTS };
   } catch {
     return { ...DEFAULTS };
@@ -50,7 +52,7 @@ export function loadSettings(): Settings {
 export function saveSettings(patch: Partial<Settings>): Settings {
   const merged = { ...loadSettings(), ...patch };
   try {
-    window.localStorage.setItem(KEY, JSON.stringify(merged));
+    write(KEY, JSON.stringify(merged));
   } catch {
     // ignore
   }
