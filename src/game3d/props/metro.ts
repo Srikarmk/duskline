@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { mergeStaticParts } from "../merge";
 
 // -----------------------------------------------------------------------------
 // New-York-City night street-circuit props. Procedural, faceted low-poly massing
@@ -447,6 +448,8 @@ export function makeLightWash(hex: number, size: number, strength: number): THRE
  */
 export function makeNeoTower(rand: () => number, w: number, d: number, h: number): THREE.Group {
   const g = new THREE.Group();
+  // Everything below is boxes, and there are about a hundred of them per
+  // tower. See the merge at the end of this function.
   const shell = new THREE.MeshStandardMaterial({
     color: 0x0d0c18, metalness: 0.1, roughness: 0.92, flatShading: true,
   });
@@ -544,6 +547,10 @@ export function makeNeoTower(rand: () => number, w: number, d: number, h: number
       box(0.16, 1.1 + rand() * 0.6, wd, lit, -w * k * 0.5 - 0.02, fy, wz);
     }
   }
+  // 176 towers x ~100 boxes was 18k meshes in the Neon Run scene graph, each
+  // one a matrix update and a frustum test every frame. Nothing here moves, so
+  // it collapses to one mesh per material — about four.
+  mergeStaticParts(g);
   return g;
 }
 

@@ -186,8 +186,27 @@ by deleting what they pointed at:
    one, and making each set optional means 13 call sites have to cope with a
    missing one — a white untextured prop discovered mid-race is a worse trade
    than the ~300 kB it would save. Deliberately parked.
-4. ◻ **Merge Neon Run's city geometry.** 3,060 draw calls against 640 for the
-   circuit realms. Signs and lamps are the repeated pieces.
+4. ✅ **Merge the city geometry.** Profiling the scene graph first was the whole
+   trick: Neon Run held **21,151 meshes, 18,066 of them plain 24-vertex boxes**
+   — ~100 boxes per tower across 176 towers. Most are culled, but every one
+   still costs a matrix update and a frustum test on the CPU every frame.
+
+   `mergeStaticParts` already existed for cars; it moved to `src/game3d/merge.ts`
+   and `makeNeoTower` now calls it, collapsing each tower to about four meshes
+   — one per material. Nothing in a tower moves, which is what makes this safe;
+   merging *across* props is what broke the wind sway the last time it was
+   tried.
+
+   | | Before | After |
+   | --- | --- | --- |
+   | Neon Run scene meshes | 21,151 | **4,971** |
+   | Neon Run plain boxes | 18,066 | **1,787** |
+   | Neon Run draw calls | 1,838 | **843** |
+   | Sunset Bay draw calls | 641 | **433** |
+
+   Triangles are unchanged, as they should be — the geometry is identical, there
+   is simply far less of it for the CPU to walk. Verified visually on both
+   realms: nothing displaced, nothing missing.
 5. ✅ **Warm the race assets during the menu.** `src/ui/warm.ts`. Pressing DRIVE
    used to start a ~900 kB download before the world could build; the setup
    steps are ten to twenty seconds of doing nothing with the network. It waits
