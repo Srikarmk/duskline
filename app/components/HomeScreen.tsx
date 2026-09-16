@@ -399,17 +399,23 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
                     onClick={() => setRealm(id)}
                   >
                     <span className="realm-media" style={{ background: realmFallback(id) }}>
-                      {/* An <img>, not a CSS background, for two reasons: a
-                          background image cannot be lazy-loaded, and all
-                          twelve of these render at once. WebP halves them
-                          again. The realm's sky gradient sits behind as the
-                          fallback, so a missing file degrades to something
-                          thematic rather than a grey hole. */}
+                      {/* An <img> rather than a CSS background so it decodes
+                          off the main thread, and WebP so the twelve of them
+                          cost 333 kB instead of 660 kB. The realm's own sky
+                          gradient sits behind as the fallback, so a missing
+                          file degrades to something thematic.
+
+                          Deliberately NOT loading="lazy". Every card is on
+                          screen by design — the step does not scroll — so
+                          there is nothing to defer, and lazy loading was
+                          observed leaving all twelve cards as bare gradients
+                          with zero requests made. Blank cards are exactly the
+                          failure this art exists to prevent, and the byte
+                          saving came from WebP, not from laziness. */}
                       <img
                         className="realm-preview"
                         src={`/previews/realm-${id}.webp`}
                         alt=""
-                        loading="lazy"
                         decoding="async"
                         onError={(e) => { e.currentTarget.style.display = "none"; }}
                       />

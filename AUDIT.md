@@ -94,10 +94,17 @@ has a reachable path here. Upgrading to Next 16 is worth doing deliberately —
 not bundled into a launch-week batch with everything else.
 
 ### ✅ 🟡 B9 — Twelve realm previews loaded at once
-660 KB in one go, and unavoidable while they were CSS background images, which
-cannot be lazy-loaded. They are `<img loading="lazy" decoding="async">` now,
-with the realm's own sky gradient behind as the fallback, and WebP at q74.
-**660 KB → 333 KB**, all twelve still load, layout unchanged.
+660 KB in one go. They are `<img decoding="async">` in WebP now, with the
+realm's own sky gradient behind as the fallback. **660 KB → 333 KB**, all
+twelve load, layout unchanged.
+
+**Correction, worth recording:** the first attempt added `loading="lazy"`,
+which was wrong here and had to be backed out. On the deployed build it left
+**all twelve cards as bare gradients with zero requests made** — the step does
+not scroll, so every card is on screen by design and there is nothing to
+defer, while the failure mode is precisely the flat colour swatches the preview
+art exists to prevent. The byte saving came from WebP, not from laziness.
+Verified after the change: 12 images, 12 loaded, 0 broken, 333 KB, all WebP.
 
 ### ✅ 🟡 B10 — Dependencies behind
 Next 15.5.20 → 15.5.25, React 19.2.7 → 19.3.0, `@types/three` → 0.185.4. The
