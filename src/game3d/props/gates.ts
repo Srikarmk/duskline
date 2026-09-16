@@ -205,7 +205,7 @@ export function makeRingArch(rand: () => number): THREE.Group {
   const innerR = 1.68;           // opening half-width -> ~3.36 wide
   const radius = innerR + tube;  // 1.83
   const cy = innerR + 0.14;      // 1.82 -> opening bottom ~0.14
-  const outerR = radius + tube;  // 1.98, crown ~3.8
+  // outer radius (radius + tube) is ~1.98, so the crown sits near 3.8
 
   const accent = accentColor();
 

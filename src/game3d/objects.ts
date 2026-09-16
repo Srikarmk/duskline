@@ -820,11 +820,6 @@ export function makeEnvMap(pal: RealmPalette): THREE.Texture {
   return tex;
 }
 
-
-function hexStr(h: number): string {
-  return "#" + (h & 0xffffff).toString(16).padStart(6, "0");
-}
-
 /** Soft light-shaft texture: a bright vertical beam that fades at its side edges
  *  and softly down its length (brightest near the sky). */
 function shaftTexture(): THREE.Texture {
@@ -1501,25 +1496,6 @@ export function makeMountainRing(pal: RealmPalette, cx: number, cz: number, radi
 }
 
 // --- pickups & obstacles ---------------------------------------------------
-
-/** A low-poly "brilliant cut" jewel silhouette: a hexagonal pavilion tapering
- *  to a point, a girdle, and a short crown rising to a flat table facet —
- *  merged into one non-indexed buffer (same trick as boulderGeometry) so a
- *  single flat-shaded material reads as an actual cut gem instead of a
- *  stretched octahedron. */
-function gemGeometry(girdleR: number, pavH: number, crownH: number, tableR: number): THREE.BufferGeometry {
-  const seg = 6;
-  const pav = new THREE.CylinderGeometry(girdleR, 0, pavH, seg, 1, true).toNonIndexed();
-  pav.translate(0, -pavH / 2, 0); // apex below the girdle, girdle at y=0
-  const crown = new THREE.CylinderGeometry(tableR, girdleR, crownH, seg, 1, true).toNonIndexed();
-  crown.translate(0, crownH / 2, 0); // girdle at y=0, table at y=crownH
-  const table = new THREE.CircleGeometry(tableR, seg).toNonIndexed();
-  table.rotateX(-Math.PI / 2); // face +Y
-  table.translate(0, crownH, 0);
-  const geo = mergePosUV([pav, crown, table]);
-  geo.computeVertexNormals();
-  return geo;
-}
 
 export function makeGem(color: number, air: boolean): THREE.Mesh {
   // Not a diamond. The old pickup was a brilliant-cut jewel with an emissive

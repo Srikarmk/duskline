@@ -7,10 +7,8 @@ const ROAD_LIFT = 0.1;
 const LUT_SPACING = 1;
 // road ribbon cross-sections are emitted every this many metres.
 const ROAD_STEP = 2;
-const UP = new THREE.Vector3(0, 1, 0);
 
 const clampN = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-const lerpN = (a: number, b: number, t: number) => a + (b - a) * t;
 
 /** Tiny deterministic seeded rng (matches the inline pattern used across the
  *  game3d modules) so a given `seed` always yields the same branch shape. */

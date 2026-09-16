@@ -1,7 +1,10 @@
 # Duskline — work report
 
-Covering 2026-09-10 → 2026-09-15. 42 commits, 56 files, +6 002 / −563 lines.
+Covering 2026-09-10 → 2026-09-16.
 Live at https://playduskline.vercel.app (verified 200 at time of writing).
+
+The game was called Fantasy Racer until 2026-09-16. Saved data from before the
+rename is migrated, not dropped — see §7.
 
 ---
 
@@ -147,7 +150,10 @@ Meridian, Veloce, Zanza, Imprez, Firehawk, IROC and Fairlady.
 | Memory, 15 cycles (after explicit disposal) | flat — an 8-race stretch inside 2.8 MB |
 | Meshes per car after merge | 167 → 108 |
 | Third-party requests on page load | 0 |
-| Bundle | 295 kB page, 398 kB first load |
+| Bundle, before the audit | 295 kB page, 398 kB first load |
+| Bundle, after code-splitting the engine | **23 kB page, 126 kB first load** |
+| Textures for a first race, before → after | 12,114 kB → **916 kB** |
+| Dead code removed by the first ESLint run | ~700 lines |
 
 Neon Run is ~5× the circuit realms in draw calls. That is the number to attack
 first if a phone struggles — it is city geometry that could merge further.
@@ -183,14 +189,85 @@ repeatedly broke the dev server by running `npm run build` against a running
 
 ---
 
-## 6. What I could not verify
+## 6. The audit pass (2026-09-16)
+
+Thirteen findings, twelve fixed. Full detail in `AUDIT.md`; the ones that
+mattered:
+
+**A first visit cost 13.5 MB and now costs ~1.4 MB.**
+
+| | Before | After |
+| --- | --- | --- |
+| First-load JavaScript | 405 kB | 126 kB |
+| Textures for the first race | 12,114 kB | 916 kB |
+| Realm previews on step 1 | 660 kB | 333 kB |
+
+Three separate causes, all measured rather than guessed:
+
+- `GameApp` imported `GameCanvas` statically, so **three.js shipped in the
+  first chunk — 405 kB of JavaScript to display a menu that renders no
+  triangles.** A `dynamic()` import moved it behind the DRIVE button, where it
+  loads while the player is choosing a world.
+- The Poly Haven textures were full-resolution JPEG, and the normal maps were
+  the worst of it. Recompressed to WebP with a recipe per map type (normals get
+  the quality budget — compression error in a normal map is lighting pointing
+  the wrong way, not a soft edge): 17.6 MB of source down to 1.3 MB shipped,
+  no visible difference in the render.
+- The realm cards were CSS backgrounds, which cannot be lazy-loaded. Now
+  `<img loading="lazy">` in WebP.
+
+**The crash recovery had a hole exactly where failure was most likely.**
+`start()` ended with `void this.init()`, and `init()` is async — so a model
+that would not parse or a texture that 404'd became an unhandled rejection,
+invisible to both the React boundary and the window listener. The player got a
+frozen loading screen. There is now an `onError` channel through `GameOptions`.
+
+**Both write endpoints were wide open.** Rate limiting added, KV-backed when
+configured, and verified firing: 10 posts then 429, `Retry-After` correct. It
+does not make the board trustworthy — the client computes the score — and
+`AUDIT.md` says so rather than implying otherwise.
+
+**ESLint had never been run here.** 25k lines written with only `tsc`
+watching. The first run found 42 problems, and behind them ~700 lines of dead
+code: seven superseded car builders from the kart era (`cars.ts` 2,085 → 1,402
+lines), unused helpers, 16 dead imports — and one real bug. A comma operator in
+the fog-lamp code added **two meshes per side** instead of one: the lamp, plus
+a cylinder positioned by `.translateX(0).translateY(0)`, i.e. left at the car's
+origin, buried inside the bodywork where it could never be seen, uploaded and
+drawn every frame on every Imprez.
+
+Also cleared: pinch-zoom was disabled site-wide (a WCAG 1.4.4 failure) and is
+now scoped to the canvas; the leaderboard declared `aria-modal` without a focus
+trap or Escape; `escape()` in the Google token decoder mangled any non-ASCII
+name; two of four npm advisories fixed.
+
+## 7. The rename
+
+Fantasy Racer → **Duskline**. Code, UI, manifest, share tags, package name,
+console prefix, service-worker cache version, KV key prefixes, every document.
+GitHub repo and Vercel project renamed to match.
+
+`duskline.vercel.app` turned out to belong to an unrelated app, and Vercel does
+not swap a project's `.vercel.app` alias on rename anyway, so the game is at
+**playduskline.vercel.app**. The old `fantasy-racer.vercel.app` still resolves.
+
+**Saved data is migrated, not wiped.** Everything the game stored was prefixed
+`fantasy-racer-`; renaming carelessly would have silently reset every returning
+player's car, scores, settings and identity. `src/ui/storage.ts` is now the only
+place localStorage is touched, and the migration is lazy rather than a startup
+pass: a read misses the new key, finds the old one, adopts it, deletes the old.
+No ordering problem, idempotent, and free for a player who never returns.
+Verified by seeding the old keys — identity and car migrate on the home screen,
+settings and mute on the first race, and afterwards no legacy key remains.
+
+## 8. What I could not verify
 
 - **Frame time on any hardware.** Stated plainly because object counts have
   been the proxy throughout, and a proxy is not a measurement.
-- **Service worker registration in a real browser.** `/sw.js` serves 200 with
-  the correct MIME type and `npm run test:sw` asserts every routing decision
-  against the real file, but the in-app preview pane refuses to register any
-  worker, so the install path is inspection-only. Chrome DevTools → Application
-  → Service Workers settles it in half a minute.
+- ~~Service worker registration in a real browser.~~ **Now verified.** On the
+  deployed site it is registered and `activated`, all three caches are
+  populated, and a second visit transfers **0 bytes** — every texture served
+  from cache. The earlier failure was specific to `localhost` in the preview
+  pane.
 - **The shared leaderboard and guest sequence**, which cannot be exercised
   until a KV store exists.

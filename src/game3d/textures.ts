@@ -31,10 +31,15 @@ async function loadSet(name: string): Promise<TexSet> {
   const cached = setCache.get(name);
   if (cached) return cached;
   const loader = new THREE.TextureLoader();
+  // WebP, not JPEG. These are the single heaviest thing a first visit
+  // downloads, and recompressing them per map type took the set from 17.6 MB
+  // to 1.3 MB — see scripts/optimize-textures.mjs, which is also where the
+  // per-type quality reasoning lives. The source JPEGs are kept in
+  // assets/textures (out of public/, so they are not deployed).
   const [diff, nor, arm] = await Promise.all([
-    loader.loadAsync(`/textures/${name}_diff.jpg`),
-    loader.loadAsync(`/textures/${name}_nor.jpg`),
-    loader.loadAsync(`/textures/${name}_arm.jpg`).catch(() => null),
+    loader.loadAsync(`/textures/${name}_diff.webp`),
+    loader.loadAsync(`/textures/${name}_nor.webp`),
+    loader.loadAsync(`/textures/${name}_arm.webp`).catch(() => null),
   ]);
   diff.colorSpace = THREE.SRGBColorSpace;
   nor.colorSpace = THREE.NoColorSpace;

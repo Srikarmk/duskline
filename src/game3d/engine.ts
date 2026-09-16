@@ -9,10 +9,10 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import {
   WIDTH, HEIGHT, STEP,
   ROAD_HALF_WIDTH, LANE_CENTERS, CAR_LIFT,
-  MAX_SPEED, ACCEL, BRAKING, DECEL, OFF_ROAD_DECEL, OFF_ROAD_LIMIT,
-  STEER_RESPONSE, STEER_RETURN, TURN_ACCEL, STEER_SPEED_FALLOFF,
-  GRIP_LIMIT, LATERAL_DAMP, CENTRI_K, FREE_TURN_RATE, FREE_GRIP, FREE_STEER_ASSIST, WEIGHT_BRAKE_GRIP, WEIGHT_THROTTLE_GRIP,
-  DRIFT_GRIP_MULT, DRIFT_STEER_MULT, DRIFT_MIN_CHARGE, DRIFT_BOOST_FACTOR,
+  MAX_SPEED, ACCEL, DECEL, 
+  STEER_RESPONSE, STEER_RETURN, 
+  FREE_TURN_RATE, FREE_GRIP, FREE_STEER_ASSIST, 
+  DRIFT_MIN_CHARGE, DRIFT_BOOST_FACTOR,
   OUT_OF_BOUNDS_X, OFFTRACK_GRACE,
   NITRO_MAX_CHARGES, NITRO_DURATION, NITRO_SPEED_FACTOR,
   GRAVITY, RAMP_LAUNCH, FLY_LIFT, MAX_ALT, AIR_GEM_ALT, AIR_GEM_TOLERANCE,
@@ -28,7 +28,7 @@ import {
 import { Track, makeRoadTexture, makeCheckerTexture } from "./track";
 import { loadModels, instantiate, type ModelLibrary } from "./assets";
 import {
-  makeSkyDome, makePosterSky, makeCloudLayer, makeEnvMap, makeLightShafts, windTime, makeGround, makeGrassTexture,
+  makeSkyDome, makePosterSky, makeCloudLayer, makeEnvMap, windTime, makeGround, makeGrassTexture,
   makeGrassField, makeRockField, makeMountainRing,
   makeGem, makeNitroCan, makeOrb, makeRamp, RAMP_SPECS, type RampKind,
   makeCrystalCluster, makeMonster,
@@ -41,7 +41,7 @@ import {
 } from "./objects";
 import { makeWeather, type WeatherSystem } from "./weather";
 import { makeTunnelArch, makeTunnelPortal } from "./setpieces";
-import { makeGrandWaterfall, updateGrandWaterfall, makeStoneBridge, makeBatFlock, updateBatFlock } from "./props/grand";
+import { makeGrandWaterfall, updateGrandWaterfall, makeBatFlock, updateBatFlock } from "./props/grand";
 import { makeOceanPlane, makeSkyline, makePalmField, makePalmProp, makeSandTexture } from "./props/coast";
 import { makeForkArrowSign, makeBlimp } from "./props/signage";
 import { BranchPath } from "./branch";
@@ -49,12 +49,12 @@ import { FreeDrive } from "./freedrive";
 import { loadPBR, pbr } from "./textures";
 import { makeKart, setCarEnvTint, setCarPosterMode, CAR_SPECS, CAR_IDS, type CarStat } from "./cars";
 import { REALMS, pickScenery, REALM_WEATHER, REALM_WEATHER_POOL, REALM_AMBIENCE, REALM_TUNNELS, REALM_RIVERS, REALM_SPLITS, type RealmSpec, type SceneryKind, type RealmPalette, type WeatherKind } from "./realms";
-import { makePyramid, makeObelisk, makeSphinx, makePalm, makeSandRock } from "./props/egyptian";
+import { makePyramid, makeObelisk, makeSphinx, makeSandRock } from "./props/egyptian";
 import { makeTower, makeGatehouse, makeCastleWall, makeBanner, makeTorch } from "./props/castle";
 import { makeGrandstand, makeTyreStack, makeFloodlight, makePitBuilding, makeMarshalBoard } from "./props/circuit";
 import { makeSkyscraper, makeBrownstone, makeStreetlight, makeBillboard, makeWaterTower, makeOverheadLight, makeNeonSign, makeNeoTower, makeLightWash, washMaterial } from "./props/metro";
 import { makeHogwartsCastle, makeHogwartsExpress, makeQuidditchHoop, makeFloatingCandle, makeGoldenSnitch, makeWhompingWillow } from "./props/hogwarts";
-import { makeWaterfall, makeRiverBridge } from "./props/water";
+import { makeWaterfall } from "./props/water";
 import { Opponent } from "./ai";
 import { Minimap } from "./minimap";
 import { Sound } from "./sound";
@@ -320,6 +320,8 @@ export class Game {
   private mode: GameMode;
   private cfg: ModeConfig;
   private onFinish: (result: GameResult) => void;
+  /** Async world-build failures go here — see GameOptions.onError. */
+  private onError?: (err: unknown) => void;
   private rafId = 0;
   private last = 0;
   private accumulator = 0;
@@ -479,6 +481,7 @@ export class Game {
   constructor(container: HTMLElement, options: GameOptions) {
     this.container = container;
     this.mode = options.mode;
+    this.onError = options.onError;
     this.cfg = { ...MODE_CONFIG[options.mode] };
     // per-match lap override (time trial keeps its own clean-lap rule)
     // The home screen's lap picker must NOT apply to endless — it would cap
@@ -690,7 +693,14 @@ export class Game {
     this.sound.setVolumes(s.musicVolume, s.sfxVolume);
     this.last = performance.now();
     this.rafId = requestAnimationFrame(this.frame);
-    void this.init();
+    // NOT `void this.init()`. init() is async and loads models and textures
+    // over the network — the likeliest thing in the whole engine to fail on
+    // someone else's machine — and an unhandled rejection is invisible to both
+    // the React boundary and the window error listener.
+    this.init().catch((err) => {
+      if (this.stopped) return;   // we tore the race down mid-load; not a fault
+      this.onError?.(err);
+    });
   }
 
   stop() {
@@ -1041,10 +1051,6 @@ export class Game {
     this.weatherKind = next;
     this.weather = makeWeather(next, this.realm.palette);
     this.scene.add(this.weather.object);
-    const LABEL: Record<WeatherKind, string> = {
-      none: "SKIES CLEARING", snow: "SNOWFALL", ember: "EMBER STORM",
-      sand: "SANDSTORM", spores: "SPORE DRIFT", mist: "MIST ROLLING IN", rain: "RAIN INCOMING",
-    };
     // deliberately silent. A full-screen "MIST ROLLING IN" callout every 25-45 s
     // is pure interruption — you can SEE the weather change, it doesn't need
     // announcing over the racing.
@@ -4310,7 +4316,7 @@ export class Game {
     }
   }
 
-  private hitEntity(e: Entity, speedPercent: number) {
+  private hitEntity(e: Entity, _speedPercent: number) {
     switch (e.type) {
       case "gem":
         if (this.alt < 1.2) {

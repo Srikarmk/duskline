@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { rateLimit, tooManyRequests } from "@/src/server/rateLimit";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,12 @@ const KV_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST
 const hasKV = Boolean(KV_URL && KV_TOKEN);
 const COUNTER = "dl:guest:seq";
 
-export async function POST() {
+export async function POST(req: Request) {
+  // 5 a minute. Claiming a guest number is a once-per-device act; the limit
+  // exists because an unbounded INCR means a loop can make the shared
+  // sequence meaningless for everyone.
+  const limit = await rateLimit(req, "guest", 5, 60);
+  if (!limit.ok) return tooManyRequests(limit.retryAfter);
   if (!hasKV) {
     return NextResponse.json({ shared: false });
   }

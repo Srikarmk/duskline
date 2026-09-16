@@ -82,8 +82,11 @@ export const googleConfigured = GOOGLE_CLIENT_ID.length > 0;
 function decodeIdToken(jwt: string): { name?: string; picture?: string; sub?: string } {
   try {
     const payload = jwt.split(".")[1];
-    const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
-    return JSON.parse(decodeURIComponent(escape(json)));
+    const binary = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
+    // atob gives bytes-as-latin1. A name with any non-ASCII character in it —
+    // which is most of the world — needs those bytes decoded as UTF-8.
+    const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+    return JSON.parse(new TextDecoder().decode(bytes));
   } catch {
     return {};
   }

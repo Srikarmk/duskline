@@ -54,13 +54,17 @@ export const metadata: Metadata = {
 
 export const viewport = {
   themeColor: "#07070b",
-  // Lock the visual viewport. Without this a phone renders at a 980px layout
-  // width and scales down, so the HUD is unreadable; and pinch-zoom on a game
-  // canvas is never intentional, it is a mis-grab mid-corner.
+  // Without width=device-width a phone renders at a 980px layout width and
+  // scales down, so the HUD is unreadable.
+  //
+  // What is NOT here: maximumScale / userScalable. Locking zoom is right for a
+  // game canvas — a pinch mid-corner is a mis-grab, not an intention — but it
+  // was applied to the whole document, including the setup steps and the
+  // leaderboard, which is a WCAG 1.4.4 failure. The lock now lives where it
+  // belongs: `touch-action: none` on `.game-stage` in globals.css, which
+  // suppresses the gesture on the canvas and nowhere else.
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
   viewportFit: "cover" as const,
 };
 

@@ -10,7 +10,7 @@ import {
   LANE_BONUS_SECONDS,
 } from "./constants";
 import { Input } from "./input";
-import { Road, project, type Segment, type RoadSprite } from "./road";
+import { Road, project, type Segment } from "./road";
 import { COLLIDE_WIDTH } from "./sprites";
 import {
   drawBackground, drawSegment, drawSegmentSprite, drawPlayer, drawHud,
@@ -76,6 +76,16 @@ export interface GameOptions {
   car?: CarId;
   laps?: number;
   onFinish: (result: GameResult) => void;
+  /**
+   * Something failed while building or running the world.
+   *
+   * This exists because the async world build was the one failure the crash
+   * handling could not see: `init()` is async, so a model that will not parse
+   * or a texture that 404s rejects a promise, and a rejected promise reaches
+   * neither a React error boundary nor a window `error` listener. The player
+   * got a frozen loading screen and no way out.
+   */
+  onError?: (err: unknown) => void;
 }
 
 type Phase = "countdown" | "racing" | "finished";

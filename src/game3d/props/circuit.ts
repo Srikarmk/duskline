@@ -150,7 +150,7 @@ export function makeTyreStack(rand: () => number): THREE.Group {
 
 /** A tall stadium floodlight mast: a slim steel pole topped by an angled head
  *  of emissive warm-white lamp panels aimed down at the circuit. */
-export function makeFloodlight(rand: () => number): THREE.Group {
+export function makeFloodlight(_rand: () => number): THREE.Group {
   const g = new THREE.Group();
   const steel = std(STEEL, { metalness: 0.6, roughness: 0.4 });
   const dark = std(0x3a4049, { metalness: 0.5, roughness: 0.5 });
@@ -187,7 +187,7 @@ export function makeFloodlight(rand: () => number): THREE.Group {
 
 /** A low modern pit building: a long flat-roofed glass-and-steel block with a
  *  red/white striped fascia and a row of dark garage-door openings facing +Z. */
-export function makePitBuilding(rand: () => number): THREE.Group {
+export function makePitBuilding(_rand: () => number): THREE.Group {
   const g = new THREE.Group();
   const L = 9, D = 4, H = 4.4;
   const wall = std(GREY_L, { roughness: 0.7, metalness: 0.15 });

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { rateLimit, tooManyRequests } from "@/src/server/rateLimit";
 import type { GameMode } from "@/src/game/engine";
 
 export const dynamic = "force-dynamic";
@@ -79,6 +80,10 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  // 10 a minute. A real player posts one score every few minutes at most, so
+  // this is invisible to them and closes the "flood the board" case.
+  const limit = await rateLimit(req, "scores", 10, 60);
+  if (!limit.ok) return tooManyRequests(limit.retryAfter);
   try {
     const body = (await req.json()) as Record<string, unknown>;
     const name =

@@ -61,6 +61,14 @@ export default function GameCanvas({ mode, realm, car, laps, onFinish, onQuit }:
   useEffect(() => {
     const onErr = (e: ErrorEvent) => {
       if (fatal) return;
+      // NOT every window error is ours. Browser extensions, injected scripts
+      // and anything else on the page report here too, and killing the race
+      // with "The race stopped." because an extension threw is a bug that
+      // looks exactly like our own crash. Our code is always served from this
+      // origin; a cross-origin script gives an empty filename and the opaque
+      // "Script error." — neither is something we should claim.
+      const ours = Boolean(e.filename) && e.filename.startsWith(window.location.origin);
+      if (!ours) return;
       reportError(e.error ?? e.message, {
         source: "raf",
         tags: { mode, realm, car, quality: loadSettings().quality },
@@ -84,6 +92,18 @@ export default function GameCanvas({ mode, realm, car, laps, onFinish, onQuit }:
       car,
       laps,
       onFinish: (result) => onFinishRef.current(result),
+      // The async world build is the likeliest thing to fail on someone
+      // else's machine, and a rejected promise reaches neither the React
+      // boundary nor the window listener above. Without this it is a frozen
+      // loading screen with no way out.
+      onError: (err) => {
+        reportError(err, {
+          source: "init",
+          tags: { mode, realm, car, quality: loadSettings().quality },
+          extra: { renderer: cap.renderer },
+        });
+        setFatal(err instanceof Error ? err.message : String(err));
+      },
     });
     gameRef.current = game;
     game.start();
@@ -92,7 +112,7 @@ export default function GameCanvas({ mode, realm, car, laps, onFinish, onQuit }:
       game.stop();
       gameRef.current = null;
     };
-  }, [mode, realm, car, laps, runId, cap.ok, fatal]);
+  }, [mode, realm, car, laps, runId, cap.ok, fatal, cap.renderer]);
 
   // AUDIO AUTOPLAY. The race starts from a click, so the AudioContext is
   // normally allowed — but iOS Safari only honours a resume() made INSIDE the
@@ -153,8 +173,9 @@ export default function GameCanvas({ mode, realm, car, laps, onFinish, onQuit }:
       <div className="fatal">
         <h2>The race stopped.</h2>
         <p>
-          Something in the 3D engine failed mid-race. This is a bug, not
-          something you did.
+          Something in the 3D engine failed. If it happened as the world was
+          loading, a retry often works — the assets come over the network. This
+          is a bug, not something you did.
         </p>
         <pre className="fatal-detail">{fatal}</pre>
         <div className="fatal-actions">

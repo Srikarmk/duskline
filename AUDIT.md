@@ -1,160 +1,232 @@
-# Audit — 2026-09-15
+# Audit — opened 2026-09-15, worked 2026-09-16
 
 Run against the **deployed build**, not a local dev server, except where noted.
 Dependency and code checks are against the working tree.
 
 Severity: 🔴 fix before launch · 🟠 fix soon · 🟡 worth doing · ⚪ nice to have
+Status: ✅ fixed and verified · ◻ open
+
+**12 of 13 findings are fixed.** The one left open is a build-time dependency
+advisory that needs a major framework upgrade, and is not reachable in this app
+— reasoning below.
 
 ---
 
 ## 1. Bugs and issues
 
-### 🔴 B1 — First visit downloads 12 MB of textures
-Measured on the live site: a single race pulls **12 114 KB across 18 texture
-files**; 13.5 MB total from landing to driving. The biggest are normal maps —
-`foliage_nor` 1 372 KB, `ground_peaks_nor` 1 057 KB, `bark_nor` 992 KB.
+### ✅ 🔴 B1 — First visit downloaded 12 MB of textures
+**Measured before:** 12,114 KB across 18 files; 13.5 MB from landing to
+driving. The normal maps were the worst (`foliage_nor` 1,372 KB).
 
-Two compounding problems: they are **JPEG at full resolution** (WebP/AVIF at
-half size would cut this by roughly 75% with no visible difference at the
-distance these are seen), and **the set is fixed regardless of realm** — a race
-at Sunset Bay still downloads `ground_peaks_*`.
+Two compounding causes: full-resolution JPEG, and a fixed set regardless of
+realm. `scripts/optimize-textures.mjs` now recompresses to WebP with a recipe
+*per map type*, because the three kinds tolerate compression very differently:
 
-Mitigated on repeat visits: the service worker serves all 18 from cache on the
-second visit, **0 bytes transferred**. But a first impression on cellular is
-minutes of black screen.
+| Map | Treatment | Why |
+| --- | --- | --- |
+| `_diff` albedo | half size, q78 | tiled over a hillside, never seen at 1:1 |
+| `_nor` normals | half size, q92 | a vector per texel — compression error here is lighting pointing the wrong way, not a soft edge |
+| `_arm` AO/rough/metal | quarter size, q80 | the lowest-frequency data in the set |
 
-### 🔴 B2 — Async world-build failures escape crash recovery
-`Game.start()` ends with `void this.init()`, and `init()` is async. A rejection
-there — a model that will not parse, a texture 404, an out-of-memory during
-world build — becomes an **unhandled promise rejection**, which neither the
-React error boundary nor the window `error` listener catches. There is no
-`unhandledrejection` handler anywhere in the app.
+**Measured after: 916 KB.** 17.6 MB of source → 1.3 MB shipped, a 93% cut,
+with no visible difference in the render (checked at full scale on Sunset Bay:
+asphalt grain, kerbs and cliff faces all intact). The source JPEGs moved to
+`assets/textures/`, out of `public/`, so 18 MB of originals no longer upload to
+the CDN on every deploy.
 
-So the one place most likely to fail (asset loading, over a network, on someone
-else's hardware) is the one place with no recovery path. The player gets a
-frozen loading screen.
+### ✅ 🔴 B2 — Async world-build failures escaped crash recovery
+`Game.start()` ended with `void this.init()`. `init()` is async and loads
+models and textures over a network, so a failure there became an **unhandled
+promise rejection** — invisible to both the React error boundary and the window
+`error` listener. The most likely failure on someone else's machine was the one
+with no recovery path: a frozen loading screen.
 
-### 🟠 B3 — The race dies on *any* window error
-`GameCanvas`'s window `error` listener sets the fatal state for every error
-that reaches `window`, including ones thrown by browser extensions or anything
-else on the page. A benign third-party error kills the race with "The race
-stopped."
+`GameOptions` now carries an `onError` channel, `start()` routes an init
+rejection into it, and `GameCanvas` shows the recovery screen and reports the
+error with `source: "init"`. The copy changed too — a retry genuinely often
+works when the cause was an asset fetch.
 
-### 🟠 B4 — Anyone can post any score to the global board
-`POST /api/scores` has no authentication, no rate limit and no proof of play.
-The plausibility gates reject a huge score in under 8 seconds, but `curl` with
-a believable score and time is accepted, under any name — including someone
-else's. This only becomes a live problem the moment a KV store is connected.
+### ✅ 🟠 B3 — The race died on *any* window error
+The listener claimed every error that reached `window`, including ones thrown
+by browser extensions. Now it checks the error came from our own origin;
+cross-origin scripts report an empty filename and the opaque "Script error.",
+and neither is something we should claim as our crash.
 
-Options, cheapest first: rate-limit by IP; sign the result with a
-server-issued race token; accept it as a toy board and say so in the UI.
+### ✅ 🟠 B4/B5 — Both write endpoints were wide open
+`POST /api/scores` accepted any score under any name as fast as you could send
+it; `POST /api/guest` did an unbounded `INCR`, so a loop could drive the guest
+counter to a million and make the one genuinely shared piece of state
+meaningless.
 
-### 🟠 B5 — `/api/guest` can be spammed
-Every POST does an unbounded `INCR`. Nothing stops a loop driving the counter
-to a million, which makes the guest number meaningless (and is the one piece of
-state that is actually shared).
+`src/server/rateLimit.ts` — fixed-window limiter, KV-backed when configured
+(a per-instance counter on serverless is barely a limit; every cold start gets
+a fresh one), per-instance otherwise. Scores 10/min, guest 5/min, both with a
+`Retry-After` header. **Verified against the running server: 10× 200 then 429,
+5× 200 then 429, `retry-after: 54`.**
 
-### 🟠 B6 — Pinch-zoom is disabled site-wide
-`user-scalable=no, maximum-scale=1` is right for a game canvas and wrong for
-menus — it is a **WCAG 1.4.4 failure**, and it applies to the leaderboard and
-every setup step. Should be scoped to the race, not the document.
+Residual risk, stated plainly: this does **not** make the board trustworthy.
+The client computes the score, so a determined person can still post a
+believable one. That needs a server-issued race token, which is listed under
+improvements rather than pretended away here.
 
-### 🟡 B7 — The leaderboard sheet is not a real dialog
-It sets `role="dialog" aria-modal="true"` but has no focus trap, does not move
-focus into itself, and does not close on Escape. Keyboard and screen-reader
-users can tab out of it into the page behind.
+### ✅ 🟠 B6 — Pinch-zoom was disabled site-wide
+`user-scalable=no, maximum-scale=1` is right for a game canvas — a pinch
+mid-corner is a mis-grab — and wrong for menus, where it is a **WCAG 1.4.4
+failure**. The lock now lives where it belongs: `touch-action: none` on
+`.game-stage`, which suppresses the gesture on the canvas and nowhere else.
 
-### 🟡 B8 — 4 npm vulnerabilities (1 critical, 3 high)
-`postcss` path traversal, and `sharp` inheriting four libvips CVEs plus two
-libheif advisories. Both are build-time dependencies rather than shipped code,
-which lowers the severity, but `npm audit fix` clears them.
+### ✅ 🟡 B7 — The leaderboard sheet was not a real dialog
+It declared `role="dialog" aria-modal="true"` — which tells a screen reader the
+rest of the page is inert — and then did nothing to make that true. Now: focus
+moves into the sheet on open and returns to the opener on close, Tab wraps at
+both ends instead of walking out, and Escape closes it.
 
-### 🟡 B9 — Twelve realm previews load at once
-Step 1 fetches **660 KB across 12 JPEGs** simultaneously because they are CSS
-background images, which cannot be lazy-loaded. `<img loading="lazy">` or an
-IntersectionObserver would defer the ones below the fold.
+### ✅ 🟡 B8 — npm vulnerabilities: 4 → 2, and the two left are unreachable
+`npm audit fix` cleared the `sharp`/libvips and libheif advisories. The
+remaining two are `postcss`, pulled in by Next 15, and fixable only by
+upgrading to Next 16 — a major.
 
-### 🟡 B10 — Dependencies are behind
-Next 15.5.20 (15.5.25 patch, 16.3.5 major), React 19.2.7 → 19.3.0, three 0.185
-→ 0.186, TypeScript 5.9 → 7.0. The patch bumps are free; the majors need
-deliberate time.
+Both postcss advisories are about **attacker-controlled CSS**: XSS via an
+unescaped `</style>` in stringify output, and arbitrary `.map` file reads via a
+`sourceMappingURL` comment. This project processes exactly one CSS file, which
+we wrote, at build time. No user-supplied CSS ever reaches postcss, so neither
+has a reachable path here. Upgrading to Next 16 is worth doing deliberately —
+not bundled into a launch-week batch with everything else.
 
-### ⚪ B11 — `escape()` in the Google token decoder
-`src/ui/identity.ts` uses the legacy `escape()` for UTF-8 handling. It works
-everywhere today but is deprecated; `TextDecoder` is the modern equivalent.
+### ✅ 🟡 B9 — Twelve realm previews loaded at once
+660 KB in one go, and unavoidable while they were CSS background images, which
+cannot be lazy-loaded. They are `<img loading="lazy" decoding="async">` now,
+with the realm's own sky gradient behind as the fallback, and WebP at q74.
+**660 KB → 333 KB**, all twelve still load, layout unchanged.
 
-### ⚪ B12 — README and CLAUDE.md describe a different game
-README still says "four realms" and "a transforming sword-mech" — there are
-twelve realms and the mech is archived. CLAUDE.md says "the 3 realms" and
-describes name entry on the home screen, which no longer exists. TODO.md and
-PLAN.md predate most of the project.
+### ✅ 🟡 B10 — Dependencies behind
+Next 15.5.20 → 15.5.25, React 19.2.7 → 19.3.0, `@types/three` → 0.185.4. The
+majors left deliberately: Next 16, three 0.186, TypeScript 7.
+
+### ✅ ⚪ B11 — `escape()` in the Google token decoder
+Replaced with `TextDecoder`. Worth more than the "deprecated API" label
+suggests: `atob` returns bytes-as-latin1, and any name with a non-ASCII
+character in it — most of the world — needs those bytes decoded as UTF-8.
+
+### ✅ ⚪ B12 — README and CLAUDE.md described a different game
+README advertised "four realms" and "a transforming sword-mech"; CLAUDE.md said
+"the 3 realms" and described a name-entry home screen. Both rewritten during
+the rename.
+
+### ✅ NEW — Two invisible meshes on every fog-lamp car
+Found by the first ESLint run, from a `no-unused-expressions` warning:
+
+```js
+if (p.fogLamps) for (const sx of [-1, 1])
+  g.add(new THREE.Mesh(new THREE.CylinderGeometry(...), lensMat)
+        .translateX(0).translateY(0)),          // ← comma operator
+    g.add(box(0.14, 0.1, 0.05, lensMat, sx * hw * 0.52, ...));
+```
+
+A comma operator, so **two** meshes were added per side: the fog lamp, and a
+cylinder positioned by `.translateX(0).translateY(0)` — i.e. left at the car's
+origin, buried inside the body where it could never be seen. Two invisible
+meshes riding along on every Imprez, uploaded and drawn every frame. The
+cylinder was an abandoned first attempt; the box is the lamp.
+
+### ✅ NEW — ESLint had never been run, and it was holding ~700 lines of dead code
+`next lint` has always offered to set this up and never had been, so 25k lines
+were written with only `tsc` watching. The first run found 42 problems. Cleared
+by deleting what they pointed at:
+
+- **seven superseded car builders** (`buildKart`, `buildFormula`,
+  `buildMonsterTruck`, `buildHover`, `buildDragster`, `buildBuggy`, `buildJet`)
+  — the kart-era catalogue, replaced by the per-car rib system. `cars.ts`
+  2,085 → 1,402 lines.
+- unused helpers (`panelBetween`, `tyre`, `monsterWheel`, `suspensionArm`,
+  `hexStr`, `gemGeometry`, `KartParams`, `Wing`), 16 unused import specifiers,
+  and a dead weather-label table.
+- the fog-lamp bug above.
+
+`npm run lint` is clean and CI runs it.
 
 ---
 
 ## 2. What we could improve
 
 ### Performance
-1. **Code-split the engine.** `GameApp` imports `GameCanvas` statically, so
-   three.js is in the initial bundle: **405 KB of JavaScript to show a menu.**
-   A `dynamic()` import would cut first load by roughly 60% and load the engine
-   while the player is choosing a world.
-2. **Recompress the textures** (B1). Biggest single win available.
-3. **Per-realm texture sets** — do not ship snow to a beach.
-4. **Merge Neon Run's city geometry.** 3 060 draw calls against 640 for the
+1. ✅ **Code-split the engine.** `GameApp` imported `GameCanvas` statically, so
+   three.js shipped in the first chunk — **405 kB of JavaScript to display a
+   menu that renders no triangles.** Now a `dynamic()` import with a loading
+   state. **Page 295 kB → 23 kB; first-load JS 398 kB → 126 kB, a 68% cut.**
+   The engine downloads while the player is choosing a world.
+2. ✅ **Recompress the textures** — see B1. 12.1 MB → 916 KB.
+3. ◻ **Per-realm texture sets.** Still ships snow to a beach: a race at Sunset
+   Bay downloads `ground_peaks_*`. Now a 916 KB problem rather than a 12 MB
+   one, which is why it dropped down the list.
+4. ◻ **Merge Neon Run's city geometry.** 3,060 draw calls against 640 for the
    circuit realms. Signs and lamps are the repeated pieces.
-5. **Precache during the menu.** The player spends ten seconds choosing; the
-   service worker could be pulling the race assets during them.
+5. ◻ **Precache during the menu.** The player spends ten seconds choosing; the
+   service worker could pull race assets during them.
 
 ### Gameplay depth
-6. **Ghost cars** — your own best lap, replayed. Cheap to record (position
-   samples), and it is the feature that makes time attack matter.
-7. **Progression**: cars unlocked by distance or podiums, so the catalogue is
-   something you work through rather than a menu.
-8. **A real championship**: Grand Prix is three rounds; a season with points,
-   standings and a car that improves is the same code with persistence.
-9. **Photo mode.** The art direction is the point of this game and there is no
-   way to show it off. A free camera and a hidden HUD is an afternoon.
-10. **Weather as a race condition** rather than decoration — wet grip, spray,
-    visibility.
-11. **Rival personalities** — the AI is one behaviour with a rubber band.
+6. ◻ **Ghost cars** — your own best lap, replayed. Cheap to record, and the
+   feature that makes time attack matter.
+7. ◻ **Progression**: cars unlocked by distance or podiums.
+8. ◻ **A real championship**: Grand Prix is three rounds; a season with
+   standings is the same code with persistence.
+9. ◻ **Photo mode.** The art direction is the point of this game and there is
+   no way to show it off. A free camera and a hidden HUD is an afternoon.
+10. ◻ **Weather as a race condition** rather than decoration.
+11. ◻ **Rival personalities** — the AI is one behaviour with a rubber band.
 
 ### Product
-12. **Share a result**: a generated image with car, realm, time and score.
-    Nothing in the game currently produces a shareable artefact.
-13. **Daily challenge** — same realm, car and seed for everyone, one run a day.
-    The cheapest retention mechanic that exists, and it needs the KV store that
-    is already on the list.
-14. **Replays / highlights** of the last lap.
-15. **Settings persistence across devices** once identity is real.
+12. ◻ **Share a result**: a generated image with car, realm, time and score.
+13. ◻ **Daily challenge** — same realm, car and seed for everyone, one run a
+    day. The cheapest retention mechanic there is, and it needs the KV store
+    that is already on the release list.
+14. ◻ **Replays** of the last lap.
+15. ◻ **Settings synced across devices** once identity is real.
 
 ### Engineering
-16. **ESLint is not configured** — `next lint` offers to set it up and never
-    has been. No linting has ever run on this codebase.
-17. **No tests except the service-worker routing check.** The physics helpers
+16. ✅ **ESLint** — configured, clean, and in CI. See above for what it found.
+17. ◻ **Tests beyond the service-worker routing check.** The physics helpers
     (`verticalCurvature`, banking, the placement blend) are pure functions and
     would take an hour to cover.
-18. **A frame-budget test in CI** — assert draw calls and triangle counts stay
-    under a ceiling, so a scenery change cannot quietly double them.
-19. **Error-rate visibility** once a Sentry DSN exists.
-20. **`prefers-reduced-motion`** is handled in CSS but not in the engine —
-    camera shake and the speed blur still run.
+18. ◻ **A frame-budget test in CI** — assert draw calls and triangle counts
+    stay under a ceiling, so a scenery change cannot quietly double them.
+19. ◻ **A signed race token** for score submission, closing what rate limiting
+    only slows (see B4).
+20. ◻ **Next 16 upgrade**, which also clears the last two advisories.
+21. ◻ **`prefers-reduced-motion`** is handled in CSS but not in the engine —
+    camera shake and speed blur still run.
 
 ---
 
 ## 3. Verified working
 
-Things that were open questions and are now answered with measurements:
+Answered with measurements rather than assumed:
 
 - **Service worker is live and effective.** Registered and `activated` on the
   deployed site, all three caches populated, and a second visit transfers
-  **0 bytes** — all 18 textures served from cache. This was the one item the
-  previous report listed as unverified.
-- **No third-party requests.** Fonts are self-hosted; nothing calls out.
-- **Accessibility basics pass**: every one of 21 focusable controls has an
-  accessible name, images have `alt`, one `h1`, `lang` set, `main` landmark
-  present.
-- **No console errors or warnings** on the deployed build, through the gate,
-  the setup steps and a race.
+  **0 bytes** — all 18 textures from cache. This was the one item the previous
+  report listed as unverified.
+- **No third-party requests.** Fonts self-hosted; nothing calls out.
+- **Accessibility basics pass**: all 21 focusable controls have accessible
+  names, images have `alt`, one `h1`, `lang` set, `main` landmark present.
+- **No console errors or warnings** through the gate, the setup steps and a
+  race.
 - **Memory is flat** across 15 race→menu→race cycles after the disposal fix.
 - **Share metadata resolves correctly** — `og:image` is an absolute URL on the
   production domain, despite the build-time `metadataBase` warning.
+- **The dead-code removal changed nothing.** Sunset Bay after: 641 draw calls,
+  7.9 M triangles, 543 geometries, 13 textures — identical to before. All ten
+  cars build, and the Imprez (the fog-lamp car) drives.
+
+---
+
+## 4. What a first visit costs now
+
+| | Before | After |
+| --- | --- | --- |
+| First-load JavaScript | 405 kB | **126 kB** |
+| Textures for the first race | 12,114 kB | **916 kB** |
+| Realm previews on step 1 | 660 kB | **333 kB** |
+| **Total to first race** | **~13.5 MB** | **~1.4 MB** |
+
+A tenth of what it was, and the second visit is still zero.

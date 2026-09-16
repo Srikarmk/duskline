@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { GameMode, RealmId, CarId, GameResult } from "@/src/game/engine";
 import { REALMS, REALM_LORE } from "@/src/game3d/realms";
 import { CAR_SPECS, CAR_IDS, carColorHex, carUIHex } from "@/src/game3d/carData";
@@ -141,6 +141,7 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
   const [laps, setLaps] = useState(3);
   const [step, setStep] = useState(1);
   const [showBoard, setShowBoard] = useState(false);
+  const boardRef = useRef<HTMLElement>(null);
   const [localScores, setLocalScores] = useState<ScoreEntry[]>([]);
   const [globalScores, setGlobalScores] = useState<ScoreEntry[] | null>(null);
   const [isGlobal, setIsGlobal] = useState(false);
@@ -158,6 +159,53 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
       }
     });
   }, []);
+
+  /**
+   * Make the leaderboard sheet behave like the dialog it claims to be.
+   *
+   * It already set role="dialog" aria-modal="true", which tells a screen
+   * reader the rest of the page is inert — and then did nothing to make that
+   * true. Focus stayed on the page behind, Tab walked straight out of it, and
+   * Escape did nothing.
+   */
+  useEffect(() => {
+    if (!showBoard) return;
+    const opener = document.activeElement as HTMLElement | null;
+    const sheet = boardRef.current;
+    const focusables = () =>
+      Array.from(
+        sheet?.querySelectorAll<HTMLElement>('button, [href], input, select, [tabindex]:not([tabindex="-1"])') ?? []
+      ).filter((el) => !el.hasAttribute("disabled"));
+
+    focusables()[0]?.focus();
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setShowBoard(false);
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const items = focusables();
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      // Wrap at both ends rather than letting focus escape to the page behind.
+      if (e.shiftKey && (active === first || !sheet?.contains(active))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      opener?.focus?.();
+    };
+  }, [showBoard]);
 
   const adopt = (who: Identity | null) => {
     if (!who) return;
@@ -350,10 +398,20 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
                     aria-pressed={isSel}
                     onClick={() => setRealm(id)}
                   >
-                    <span className="realm-media">
-                      <span
+                    <span className="realm-media" style={{ background: realmFallback(id) }}>
+                      {/* An <img>, not a CSS background, for two reasons: a
+                          background image cannot be lazy-loaded, and all
+                          twelve of these render at once. WebP halves them
+                          again. The realm's sky gradient sits behind as the
+                          fallback, so a missing file degrades to something
+                          thematic rather than a grey hole. */}
+                      <img
                         className="realm-preview"
-                        style={{ backgroundImage: `url(/previews/realm-${id}.jpg), ${realmFallback(id)}` }}
+                        src={`/previews/realm-${id}.webp`}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        onError={(e) => { e.currentTarget.style.display = "none"; }}
                       />
                       <span className="realm-index" aria-hidden="true">{String(i + 1).padStart(2, "0")}</span>
                       <span className="pick-flag" aria-hidden="true">PICKED</span>
@@ -581,7 +639,7 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
       {showBoard && (
         <div className="board-sheet" role="dialog" aria-modal="true" aria-label="Leaderboard">
           <div className="board-scrim" onClick={() => setShowBoard(false)} />
-          <section className="leaderboard">
+          <section className="leaderboard" ref={boardRef}>
             <div className="board-head">
               <h2>HALL OF LEGENDS</h2>
               <div className="board-tabs" role="group" aria-label="Leaderboard source">

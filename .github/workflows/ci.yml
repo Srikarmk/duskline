@@ -20,6 +20,11 @@ jobs:
       - run: npm ci
       - name: Typecheck
         run: npx tsc --noEmit
+      # Nothing had ever been linted here — `next lint` offered to set ESLint
+      # up and never had been, so 25k lines were written with only tsc
+      # watching. The first run found ~700 lines of dead code and one real bug.
+      - name: Lint
+        run: npm run lint
       # The service worker is plain JS outside the bundle, so tsc and next
       # build never look at it. A routing mistake there is the one bug that can
       # strand every visitor on a stale build, so it gets its own check.

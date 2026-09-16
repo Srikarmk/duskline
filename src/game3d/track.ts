@@ -196,7 +196,8 @@ export class Track {
       const dx = x - px, dz = z - pz;
       const d2 = dx * dx + dz * dz;
       if (d2 < best.d2) {
-        let da = this.cd[a], db = this.cd[b];
+        const da = this.cd[a];
+        let db = this.cd[b];
         if (db < da) db += this.length; // seam wrap
         const invLen = 1 / Math.sqrt(segLen2);
         best = { dist: this.wrap(da + (db - da) * t), lateral: (sx * dz - sz * dx) * invLen, d2 };

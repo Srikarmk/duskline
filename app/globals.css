@@ -2645,3 +2645,46 @@ html, body { overscroll-behavior: none; }
    height cap — on a short viewport (a phone in landscape is ~390px tall) that
    pushes BACK off the bottom of the screen with no way to reach it. */
 .pause-panel { max-height: 92vh; overflow-y: auto; }
+
+/* The engine chunk is fetched on demand (see GameApp) — this is the gap
+   between pressing DRIVE and the world appearing. An unexplained blank screen
+   reads as a crash, so say what is happening. */
+.engine-loading {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: var(--ink);
+}
+.engine-loading p {
+  font-family: var(--font-display);
+  font-size: 11px;
+  letter-spacing: 5px;
+  color: var(--muted);
+}
+.engine-loading-bar {
+  width: min(280px, 60vw);
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+  background-size: 50% 100%;
+  background-repeat: no-repeat;
+  animation: engine-sweep 1.1s var(--ease) infinite;
+}
+@keyframes engine-sweep {
+  0% { background-position: -60% 0; }
+  100% { background-position: 160% 0; }
+}
+
+/* The realm preview is an <img> now rather than a CSS background — a
+   background cannot be lazy-loaded, and step 1 renders twelve at once. */
+.realm-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  border: 0;
+}

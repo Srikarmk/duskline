@@ -5,8 +5,31 @@ import type { GameMode, RealmId, CarId, GameResult, RaceStanding } from "@/src/g
 import { REALMS } from "@/src/game3d/realms";
 import { saveScore, saveLastName, saveLastCar, submitGlobalScore, loadScores } from "@/src/ui/leaderboard";
 import HomeScreen from "./HomeScreen";
-import GameCanvas from "./GameCanvas";
 import ResultsScreen from "./ResultsScreen";
+import dynamic from "next/dynamic";
+
+/**
+ * The engine is loaded ON DEMAND, not with the menu.
+ *
+ * GameCanvas imports the whole Three.js engine, and a static import put all of
+ * it in the first chunk — 405 kB of JavaScript to display a menu that does not
+ * render a single triangle. Now the menu loads on its own and the engine
+ * arrives while the player is choosing a world, which is time they were
+ * spending anyway.
+ *
+ * ssr:false because it touches WebGL on mount; the loading state matters
+ * because on a slow connection this is the gap between pressing DRIVE and the
+ * world appearing, and an unexplained blank screen reads as a crash.
+ */
+const GameCanvas = dynamic(() => import("./GameCanvas"), {
+  ssr: false,
+  loading: () => (
+    <div className="engine-loading">
+      <span className="engine-loading-bar" aria-hidden="true" />
+      <p>WARMING UP THE ENGINE…</p>
+    </div>
+  ),
+});
 
 type Screen = "home" | "race" | "intermission" | "gpresult" | "result";
 

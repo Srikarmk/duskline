@@ -197,9 +197,9 @@ function makeLayer(o: LayerOpts): Layer {
     for (let i = 0; i < n; i++) {
       const s = spd[i];
       // integrate drift, then wrap back to the far side of the box
-      let ox = wrap(off[i * 3] + o.vx * s * dt, -HALF, HALF);
-      let oy = wrap(off[i * 3 + 1] + o.vy * s * dt, o.yMin, o.yMax);
-      let oz = wrap(off[i * 3 + 2] + o.vz * s * dt, -HALF, HALF);
+      const ox = wrap(off[i * 3] + o.vx * s * dt, -HALF, HALF);
+      const oy = wrap(off[i * 3 + 1] + o.vy * s * dt, o.yMin, o.yMax);
+      const oz = wrap(off[i * 3 + 2] + o.vz * s * dt, -HALF, HALF);
       off[i * 3] = ox;
       off[i * 3 + 1] = oy;
       off[i * 3 + 2] = oz;
