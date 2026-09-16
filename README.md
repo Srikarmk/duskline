@@ -3,7 +3,7 @@
 A browser racing game. Twelve worlds, ten road cars, and an endless neon
 highway — no install, no account, no download screen.
 
-**Play:** https://duskline.vercel.app
+**Play:** https://playduskline.vercel.app
 
 ![Duskline](docs/screenshots/void.jpg)
 
