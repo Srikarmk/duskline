@@ -194,13 +194,14 @@ repeatedly broke the dev server by running `npm run build` against a running
 Thirteen findings, twelve fixed. Full detail in `AUDIT.md`; the ones that
 mattered:
 
-**A first visit cost 13.5 MB and now costs ~1.4 MB.**
+**A first visit cost 13.5 MB and now costs ~1.9 MB** — measured over the wire
+on the deployed build as a genuine first-time visitor.
 
 | | Before | After |
 | --- | --- | --- |
-| First-load JavaScript | 405 kB | 126 kB |
+| First-load JavaScript | 398 kB | 126 kB |
 | Textures for the first race | 12,114 kB | 916 kB |
-| Realm previews on step 1 | 660 kB | 333 kB |
+| Realm previews | 660 kB | 333 kB |
 
 Three separate causes, all measured rather than guessed:
 

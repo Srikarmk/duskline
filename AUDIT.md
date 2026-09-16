@@ -229,11 +229,26 @@ Answered with measurements rather than assumed:
 
 ## 4. What a first visit costs now
 
+Measured over the wire (gzipped where the server compresses), on the deployed
+build, as a genuine first-time visitor — service worker unregistered, caches
+and storage cleared:
+
 | | Before | After |
 | --- | --- | --- |
-| First-load JavaScript | 405 kB | **126 kB** |
+| First-load JavaScript | 398 kB | **126 kB** |
+| Engine chunks (fetched on demand) | — | 278 kB |
 | Textures for the first race | 12,114 kB | **916 kB** |
-| Realm previews on step 1 | 660 kB | **333 kB** |
-| **Total to first race** | **~13.5 MB** | **~1.4 MB** |
+| Realm previews | 660 kB | **333 kB** |
+| Models | 236 kB | 236 kB |
+| **Total, landing → driving** | **~13.5 MB** | **~1.9 MB** |
 
-A tenth of what it was, and the second visit is still zero.
+Seven times lighter, and **the second visit is still zero bytes** — the service
+worker serves all of it from cache.
+
+A measurement trap worth writing down, because it produced a false alarm
+mid-audit: once the service worker is controlling the page, `transferSize`
+reads **0** and `encodedBodySize` reports the *uncompressed* size, so a naive
+`transferSize || encodedBodySize` sum jumps from 405 kB to 1,107 kB and looks
+like a 700 kB regression. The chunk's content hash was unchanged, which is what
+gave it away. Compare compressed-to-compressed, or trust `next build`'s own
+first-load figure.
