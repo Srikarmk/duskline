@@ -316,9 +316,16 @@ by deleting what they pointed at:
 11. ◻ **Rival personalities** — the AI is one behaviour with a rubber band.
 
 ### Product
-12. ◻ **Share a result**: a generated image with car, realm, time and score.
-    Photo mode (above) now covers the "show someone the game" half of this; what
-    is left is the automatic one at the finish line.
+12. ✅ **Share a result.** `src/ui/shareCard.ts` — a 1200×630 card (the Open
+    Graph aspect, so it works pasted in a chat or attached to a post) with the
+    realm's own art, the score, time, finishing position, a PERSONAL BEST badge
+    and the URL. SHARE RESULT on the results screen hands it to the OS share
+    sheet where one exists and downloads it everywhere else.
+
+    Drawn on a 2D canvas rather than grabbed from WebGL: by the time the
+    results screen is up the race canvas is gone, and keeping the whole engine
+    alive for a postcard is the wrong trade. Verified on two realms; the first
+    version had the subtitle colliding with the wordmark.
 13. ◻ **Daily challenge** — same realm, car and seed for everyone, one run a
     day. The cheapest retention mechanic there is, and it needs the KV store
     that is already on the release list.

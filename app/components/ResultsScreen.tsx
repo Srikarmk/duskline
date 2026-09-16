@@ -1,11 +1,16 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { drawShareCard, shareCard } from "@/src/ui/shareCard";
 import type { GameResult } from "@/src/game/engine";
 
 interface Props {
   result: GameResult;
   realmName: string;
+  /** For the share card's art — the preview file is keyed by realm id. */
+  realmId: string;
+  carName: string;
+  racer: string;
   modeLabel: string;
   isNewBest: boolean;
   prevBest: number;
@@ -55,8 +60,33 @@ function taunt(solo: boolean, pos: number, total: number) {
 }
 
 export default function ResultsScreen({
-  result, realmName, modeLabel, isNewBest, prevBest, onRaceAgain, onMenu,
+  result, realmName, realmId, carName, racer, modeLabel, isNewBest, prevBest, onRaceAgain, onMenu,
 }: Props) {
+  const [sharing, setSharing] = useState(false);
+  const [shareMsg, setShareMsg] = useState<string | null>(null);
+
+  const onShare = async () => {
+    setSharing(true);
+    try {
+      const url = await drawShareCard({
+        realmName, realmId, carName, racer, modeLabel,
+        score: result.score,
+        timeMs: result.timeMs,
+        position: result.position,
+        totalRacers: result.totalRacers,
+        isNewBest,
+      });
+      if (!url) throw new Error("no canvas");
+      const how = await shareCard(url, realmName);
+      setShareMsg(how === "shared" ? "SHARED" : "SAVED");
+    } catch {
+      setShareMsg("COULDN'T SAVE");
+    } finally {
+      setSharing(false);
+      window.setTimeout(() => setShareMsg(null), 2600);
+    }
+  };
+
   const solo = !result.totalRacers || result.totalRacers <= 1;
   const pos = result.position ?? 1;
   const total = result.totalRacers ?? 1;
@@ -183,6 +213,12 @@ export default function ResultsScreen({
       <div className="result-actions">
         <button type="button" ref={againRef} className="start" onClick={onRaceAgain}>
           ▸ RACE AGAIN <kbd>Enter</kbd>
+        </button>
+        {/* Nothing this game produced was shareable, which for a browser game
+            is the whole distribution problem — the only way anyone hears about
+            it is if a player has something to show. */}
+        <button type="button" className="result-menu" disabled={sharing} onClick={onShare}>
+          {shareMsg ?? (sharing ? "…" : "SHARE RESULT")}
         </button>
         <button type="button" className="result-menu" onClick={onMenu}>
           MENU <kbd>Esc</kbd>

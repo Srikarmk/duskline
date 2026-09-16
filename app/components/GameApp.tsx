@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { GameMode, RealmId, CarId, GameResult, RaceStanding } from "@/src/game/engine";
 import { REALMS } from "@/src/game3d/realms";
+import { CAR_SPECS } from "@/src/game3d/carData";
 import { saveScore, saveLastName, saveLastCar, submitGlobalScore, loadScores } from "@/src/ui/leaderboard";
 import { beginRace } from "@/src/ui/raceToken";
 import HomeScreen from "./HomeScreen";
@@ -340,6 +341,9 @@ export default function GameApp() {
         result={lastResult}
         modeLabel={MODE_TITLE[lastResult.mode] ?? lastResult.mode}
         realmName={mode === "spacewars" ? "Deep Space" : REALMS[realm].name}
+        realmId={mode === "spacewars" ? "void" : mode === "endless" ? "neon" : realm}
+        carName={CAR_SPECS[car]?.name ?? car}
+        racer={name}
         isNewBest={resultBest.isNew}
         prevBest={resultBest.prev}
         onRaceAgain={() => {
