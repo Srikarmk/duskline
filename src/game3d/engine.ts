@@ -1614,6 +1614,83 @@ export class Game {
     return { reach, height, margin };
   }
 
+  /**
+   * The height of the ground AS DRAWN, not as computed.
+   *
+   * This distinction is the whole bug. `groundHeightAtXZ` is the analytic
+   * terrain function; the visible ground is a GRID MESH whose vertices sample
+   * that function every 9 or 12 m, with flat triangles in between. On a ridge
+   * the triangle chord cuts below the curve it interpolates, so a prop placed
+   * at the analytic height stands above the surface a player can see — by the
+   * chord error, which grows with the square of the cell size.
+   *
+   * That is why a waterfall measured as 0.4 m BURIED was rendering with clear
+   * daylight underneath it, and why nearby rocks floated too. Props have to be
+   * placed against the drawn surface.
+   *
+   * Reproduces the mesh exactly rather than raycasting it: same origin, same
+   * cell size, same diagonal (a, d, b / b, d, e — so the split runs from the
+   * cell's -x+z corner to its +x-z corner). O(1) per sample instead of a walk
+   * over ~14k triangles.
+   */
+  private renderedGroundY(x: number, z: number): number {
+    const b = this.track.bounds, margin = 470;
+    const cell = this.realm.palette.posterSun ? 9 : 12;
+    const minX = b.minX - margin, minZ = b.minZ - margin;
+    const fc = (x - minX) / cell, fr = (z - minZ) / cell;
+    const c = Math.floor(fc), r = Math.floor(fr);
+    const tx = fc - c, tz = fr - r;                  // 0..1 within the cell
+    const gx = (i: number) => minX + i * cell;
+    const gz = (i: number) => minZ + i * cell;
+    const h = (ci: number, ri: number) => this.groundHeightAtXZ(gx(ci), gz(ri));
+    const h00 = h(c, r), h10 = h(c + 1, r), h01 = h(c, r + 1), h11 = h(c + 1, r + 1);
+    // Which of the cell's two triangles the point falls in. The winding above
+    // puts the shared edge between (c, r+1) and (c+1, r).
+    return tx + tz <= 1
+      ? h00 + (h10 - h00) * tx + (h01 - h00) * tz
+      : h11 + (h01 - h11) * (1 - tx) + (h10 - h11) * (1 - tz);
+  }
+
+  /** How much the ground varies under a footprint — 0 is level, 10 is a cliff. */
+  private groundSpreadUnder(x: number, z: number, reach: number): number {
+    const r = Math.min(Math.max(1, reach), 12);
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const h = this.renderedGroundY(x + Math.cos(a) * r, z + Math.sin(a) * r);
+      if (h < lo) lo = h;
+      if (h > hi) hi = h;
+    }
+    return hi - lo;
+  }
+
+  /**
+   * The lowest ground height under a prop's footprint.
+   *
+   * Props have flat bases and terrain does not. Placing one at the height of
+   * its centre point works on a plain and fails on a hillside, where the base
+   * floats by however much the slope drops across the footprint. Sampling a
+   * ring plus the centre and taking the minimum means a prop is always
+   * standing on something; the cost is that it beds into the uphill side,
+   * which nobody ever notices.
+   */
+  private groundFloorUnder(x: number, z: number, reach: number, maxSink = 8): number {
+    // Sample no wider than 12 m even for a huge monument: `reach` comes from a
+    // bounding box that includes the prop's HEIGHT, so a tall tower would
+    // otherwise probe a ring 40 m out and find an unrelated valley.
+    const r = Math.min(Math.max(1, reach), 12);
+    const centre = this.renderedGroundY(x, z);
+    let lo = centre;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const h = this.renderedGroundY(x + Math.cos(a) * r, z + Math.sin(a) * r);
+      if (h < lo) lo = h;
+    }
+    // And never bury a prop further than `maxSink` below its centre, so a spot
+    // beside a cliff edge sinks a monument rather than swallowing it.
+    return Math.max(lo, centre - maxSink);
+  }
+
   /** True if a prop of the given footprint, standing at (x,z), leaves the whole
    *  circuit clear by `margin`. */
   private roadClear(x: number, z: number, reach: number, margin = 3): boolean {
@@ -2101,6 +2178,7 @@ export class Game {
       const p = this.track.pointAt(jd, off);
       const p0 = this.track.pointAt(jd, 0);     // the road point it must face
       const wf = makeGrandWaterfall(rand, pal);
+      wf.userData.kind = "grandfall";
       wf.position.set(p.x, this.terrainYAt(jd, off) - 4, p.z);
       // Aim the fall's FRONT at the road, derived from the actual geometry rather
       // than from a shared faceRoad() convention — going via that helper got the
@@ -2828,6 +2906,11 @@ export class Game {
 
     // scale a built prop and offset it within a cluster's local frame (base stays
     // on the cluster's y=0 plane since the builders sit their base at the origin)
+    /** Mark a prop so it can be found at runtime — used to diagnose placement. */
+    const tag = (obj: THREE.Object3D, kind: string): THREE.Object3D => {
+      obj.userData.kind = kind;
+      return obj;
+    };
     const at = (obj: THREE.Object3D, x: number, z: number, s: number): THREE.Object3D => {
       obj.position.set(x, obj.position.y, z);
       obj.scale.multiplyScalar(s);
@@ -2855,13 +2938,43 @@ export class Game {
       // otherwise come back round straight into a pyramid).
       let lat = this.clearOffset(group, side * off, 12);
       const hm = this.propMetrics(group);
-      for (let tries = 0; tries < 24; tries++) {
+      // Walk out until the spot is BOTH clear of the circuit and flat enough to
+      // stand a flat-based prop on.
+      //
+      // Clearance alone was the old test, and it is why a waterfall cliff ended
+      // up pitched on a mountainside with its downhill edge in the air: no
+      // amount of sinking fixes a slope that drops 10 m across a footprint,
+      // because the base is flat and the hill is not. So flatness is a
+      // placement criterion, not something to correct afterwards. Keep the
+      // flattest candidate seen, so a realm with nowhere truly level still gets
+      // the best available spot rather than the first one.
+      // Walk OUTWARD and take the first spot that is clear and not a cliff —
+      // nearest wins, because distance is its own bug. A previous pass had
+      // these falls 95-100 m out and the note in the code was that they were
+      // "scenery you never really register"; searching for perfectly level
+      // ground pushed one to 246 m, which is worse than the slope was.
+      //
+      // 6 m of spread across the footprint is the tolerance, not 0: these props
+      // are CLIFFS, they read fine pitched on a hillside, and the sink below
+      // handles the remainder. Ten tries (140 m) then settle for the flattest
+      // seen, so no monument wanders off to the horizon hunting a plain.
+      let best = { lat, spread: Infinity };
+      for (let tries = 0; tries < 10; tries++) {
         const q = track.pointAt(d, lat);
-        if (this.roadClear(q.x, q.z, hm.reach, Math.max(6, hm.margin))) break;
+        if (this.roadClear(q.x, q.z, hm.reach, Math.max(6, hm.margin))) {
+          const spread = this.groundSpreadUnder(q.x, q.z, hm.reach);
+          if (spread < best.spread) best = { lat, spread };
+          if (spread <= 6) break;
+        }
         lat += side * 14;
       }
+      lat = best.lat;
       const p = track.pointAt(d, lat);
-      group.position.set(p.x, this.terrainYAt(d, lat), p.z);
+      // Same single-sample bug as place() had, and worse here: these are the
+      // hero monuments — the widest footprints in the game, walked 90-120 m off
+      // the road into terrain nothing else constrains. A waterfall cliff on
+      // Crystal Peaks was standing with its downhill edge 9.8 m in the air.
+      group.position.set(p.x, this.groundFloorUnder(p.x, p.z, hm.reach), p.z);
       if (faceRoad) {
         const rp = track.pointAt(d, 0);
         group.rotation.y = Math.atan2(rp.x - p.x, rp.z - p.z) + yawOffset;
@@ -2961,7 +3074,7 @@ export class Game {
         grove.add(crystals(2.6));
         drop(grove, 0.4, 1, 95, false);
         // a big scenic waterfall cliff
-        drop(at(makeWaterfall(rand), 0, 0, 2.0), 0.15, -1, 100, true, Math.PI);
+        drop(tag(at(makeWaterfall(rand), 0, 0, 2.0), "waterfall"), 0.15, -1, 100, true, Math.PI);
         drop(cluster(crystals(3.0), at(makeCrystalCluster(rand, cols), 11, 6, 2.2)), 0.78, 1, 90, false);
         break;
       }
@@ -2987,7 +3100,7 @@ export class Game {
           at(makeCrystalCluster(rand, cols), -10, 6, 2.4),
           at(rock("rockA", 10), 6, -6, 1),
         ), 0.4, 1, 100, false);
-        drop(at(makeWaterfall(rand), 0, 0, 2.2), 0.62, -1, 95, true, Math.PI);
+        drop(tag(at(makeWaterfall(rand), 0, 0, 2.2), "waterfall"), 0.62, -1, 95, true, Math.PI);
         drop(cluster(
           crystals(4.0),
           at(makeCrystalCluster(rand, cols), 14, 10, 2.6),
@@ -3235,7 +3348,19 @@ export class Game {
       // back into a spot that looked clear at this arc distance)
       const fm = this.propMetrics(obj);
       if (!this.roadClear(p.x, p.z, fm.reach, Math.max(2, fm.margin))) return;
-      obj.position.set(p.x, this.terrainYAt(w, off), p.z);
+      // Sit it on the LOWEST ground under its footprint, not on one sample at
+      // its centre.
+      //
+      // This is what put a waterfall 9.3 m into the air on Crystal Peaks. The
+      // prop is ~7 m wide before a 2.2x scale, so its base spans ~18 m of
+      // mountainside; a single centre sample leaves the downhill edge hanging
+      // by the height the slope drops across that span. Measured: base at
+      // 41.88, ground beneath falling to 32.57.
+      //
+      // Sinking to the minimum buries the uphill edge instead, and buried is
+      // invisible while floating is the first thing you notice. Cheap, too —
+      // nine samples per prop, once, at build time.
+      obj.position.set(p.x, this.groundFloorUnder(p.x, p.z, fm.reach), p.z);
       obj.rotation.y = yaw;
       this.scene.add(obj);
     };
@@ -3276,6 +3401,7 @@ export class Game {
         const d = len * (0.24 + i * 0.42) + rand() * 30;
         const side = i % 2 === 0 ? -1 : 1;
         const w = makeWaterfall(rand);
+        w.userData.kind = "waterfall";
         w.scale.multiplyScalar(1.4 + rand() * 0.6);
         place(w, d, side * (ROAD_HALF_WIDTH + 12 + rand() * 6), faceRoad(d, side));
       }
@@ -3334,6 +3460,7 @@ export class Game {
         const d = len * (0.17 + i * 0.29) + rand() * 40;
         const side = i % 2 === 0 ? 1 : -1;
         const w = makeWaterfall(rand);
+        w.userData.kind = "waterfall";
         w.scale.multiplyScalar(1.5 + rand() * 0.7);
         place(w, d, side * (ROAD_HALF_WIDTH + 11 + rand() * 6), faceRoad(d, side));
       }

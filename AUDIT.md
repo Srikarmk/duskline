@@ -136,6 +136,53 @@ origin, buried inside the body where it could never be seen. Two invisible
 meshes riding along on every Imprez, uploaded and drawn every frame. The
 cylinder was an abandoned first attempt; the box is the lamp.
 
+### ✅ 🔴 NEW — A waterfall standing 9.3 m in the air on Crystal Peaks
+Reported by the user, twice. Measured before touching anything: the fall's base
+at y 41.88 with the ground beneath its footprint falling to 32.57.
+
+**Cause: one terrain sample at the prop's centre.** Both placement paths did
+it — `place()` for realm features and `drop()` for hero monuments — and a prop
+has a FLAT base while terrain does not. This fall is ~7 m wide before a 2.2×
+scale, so its base spans ~18 m of mountainside; a centre sample leaves the
+downhill edge hanging by whatever the slope drops across that span. `drop()`
+was the worse of the two: the widest props in the game, walked 90–120 m off the
+road into terrain nothing else constrains.
+
+Three changes, in the order the measurements demanded them:
+
+1. **Sit props on the lowest ground under their footprint**, not the centre —
+   nine samples, once, at build time. Buried is invisible; floating is the
+   first thing you see. Capped at 8 m of sink so a spot beside a cliff edge
+   does not swallow a monument. Gap 9.76 m → 1.76 m.
+2. **Make flatness a placement criterion, not something to correct after.** No
+   amount of sinking fixes a slope that drops 10 m across a footprint, so
+   `drop()` now walks outward and takes the first spot that is both clear of
+   the circuit and not a cliff. Gap → −0.4 m (buried).
+3. **Tolerance of 6 m, ten tries, nearest wins.** The first version searched
+   for level ground and pushed the fall to **246 m** from the road — trading a
+   visible bug for an invisible monument, which the code's own comments
+   complain about elsewhere ("scenery you never really register"). These props
+   are cliffs; they read fine pitched on a hillside. Final: 149 m out, 1 m
+   buried, standing in a valley instead of hanging off a rock face.
+
+Verified on both waterfall realms. Forest, which has the grand fall: −3.2 m
+(buried) at 48 m from the road, and its second fall −0.8 m at 99 m. No
+regression.
+
+**A wrong turn worth recording:** I hypothesised that the gap was chord error —
+the ground is a grid mesh sampled from an analytic function every 9–12 m, and
+flat triangles cut below the curve they interpolate. I built
+`renderedGroundY()` to sample the drawn surface exactly (mirroring the mesh's
+own triangulation rather than raycasting ~14k triangles). Then measured the
+chord error at that spot: **0.02 m.** Not the cause. The helper stays because
+placing props against the surface a player can see is right on principle, but
+the theory was wrong and the single-sample centre was the whole bug.
+
+A full scan of Crystal Peaks also flagged 193 props "floating" over 0.6 m.
+Nearly all are false positives — roadside furniture sits on the road ribbon,
+which is held deliberately above the terrain — and the two extreme ones (56 m
+and 72 m) are the blimps from `placeSkyProps`, which are meant to be up there.
+
 ### ✅ NEW — Everything in public/ revalidated on every single request
 Found while checking why the asset warming looked ineffective on production.
 
