@@ -1,4 +1,7 @@
 import * as THREE from "three";
+import { groundTextureFor } from "./realms";
+
+export { groundTextureFor };
 
 /** Anisotropic filtering level. The road and ground run to the horizon at a
  *  grazing angle, which is exactly where bilinear/trilinear smears into mush —
@@ -53,6 +56,10 @@ async function loadSet(name: string): Promise<TexSet> {
   setCache.set(name, set);
   return set;
 }
+
+
+/** Every PBR set a race loads, for warming. `ground` varies by realm. */
+export const SHARED_SETS = ["road", "rock", "metal", "bark", "foliage"] as const;
 
 /** Load the PBR sets a realm needs (its ground + shared road/rock/metal). */
 export async function loadPBR(groundName: string): Promise<PBRLib> {

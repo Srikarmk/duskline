@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - name: Typecheck
@@ -30,5 +30,10 @@ jobs:
       # strand every visitor on a stale build, so it gets its own check.
       - name: Service worker routing
         run: npm run test:sw
+      # Realm data pointing at files that do not exist: a missing preview, a
+      # realm with no ground albedo silently falling back to a green forest
+      # floor. All of these have shipped here, none of them break the types.
+      - name: Realm data invariants
+        run: npm run test:data
       - name: Build
         run: npm run build

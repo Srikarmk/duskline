@@ -242,6 +242,35 @@ now scoped to the canvas; the leaderboard declared `aria-modal` without a focus
 trap or Escape; `escape()` in the Google token decoder mangled any non-ASCII
 name; two of four npm advisories fixed.
 
+## 6b. Second audit batch
+
+**The race assets now arrive while you are choosing.** Pressing DRIVE used to
+start a ~900 kB download before the world could build. `src/ui/warm.ts` uses
+the ten to twenty seconds a player spends on the setup steps: idle-scheduled,
+low-priority, and skipped entirely on `saveData` or a 2g/3g connection.
+Verified — all 19 texture loads at race start came from cache, `transferSize:
+0`, median 4 ms.
+
+**The engine honours `prefers-reduced-motion`.** The stylesheet always had; the
+engine never did, so camera shake on every impact and the radial speed smear
+ran regardless — which for vestibular sensitivity is the whole problem, not the
+menu easing. Both suppressed now, verified with the render loop frozen.
+
+**A data-invariants test**, in CI. It guards the class of bug that has actually
+shipped here and that neither the compiler nor the build can see: realms added
+with no ground-texture mapping (silently falling back to a green forest floor
+that a multiply tint can never make into snow), realms with no preview art,
+a texture missed in the `.webp` conversion. Proven to fail before trusting it.
+
+**A trap worth naming.** A service worker is scoped to an origin, not a build.
+A production build served on `localhost:3000` installs one that cache-firsts
+`/_next/static/**` — and it then serves those chunks to the **dev** server on
+the same port, so the dev server silently hands back pre-edit code. Neither
+`rm -rf .next` nor a hard reload clears it. I diagnosed a working accessibility
+guard as broken three times before checking `g.render.toString()` and finding
+pre-edit source in the running bundle. Registration is now refused on localhost
+outright.
+
 ## 7. The rename
 
 Fantasy Racer → **Duskline**. Code, UI, manifest, share tags, package name,

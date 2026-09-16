@@ -136,6 +136,24 @@ origin, buried inside the body where it could never be seen. Two invisible
 meshes riding along on every Imprez, uploaded and drawn every frame. The
 cylinder was an abandoned first attempt; the box is the lamp.
 
+### ✅ NEW — A production build on localhost poisons the dev server
+Not a shipped bug, but it cost most of a debugging session and it is a trap
+anyone on this project can fall into.
+
+A service worker is scoped to an **origin**, not to a build. Running
+`next start` on `localhost:3000` — or accidentally building over a running dev
+server — installs one that cache-firsts `/_next/static/**`, and it keeps
+serving those chunks to the **dev** server on the same port afterwards. The
+symptom is a dev server that silently serves pre-edit code: a guard you just
+added does nothing, methods you deleted are still present, and neither
+`rm -rf .next` nor a hard reload clears it (navigation is network-first, chunks
+are cache-first).
+
+I diagnosed a working accessibility guard as broken three times before checking
+`g.render.toString()` and finding pre-edit source. `ServiceWorkerRegister` now
+refuses to register on localhost at all — there is nothing about offline
+support worth testing there.
+
 ### ✅ NEW — ESLint had never been run, and it was holding ~700 lines of dead code
 `next lint` has always offered to set this up and never had been, so 25k lines
 were written with only `tsc` watching. The first run found 42 problems. Cleared
@@ -165,11 +183,18 @@ by deleting what they pointed at:
 2. ✅ **Recompress the textures** — see B1. 12.1 MB → 916 KB.
 3. ◻ **Per-realm texture sets.** Still ships snow to a beach: a race at Sunset
    Bay downloads `ground_peaks_*`. Now a 916 KB problem rather than a 12 MB
-   one, which is why it dropped down the list.
+   one, and making each set optional means 13 call sites have to cope with a
+   missing one — a white untextured prop discovered mid-race is a worse trade
+   than the ~300 kB it would save. Deliberately parked.
 4. ◻ **Merge Neon Run's city geometry.** 3,060 draw calls against 640 for the
    circuit realms. Signs and lamps are the repeated pieces.
-5. ◻ **Precache during the menu.** The player spends ten seconds choosing; the
-   service worker could pull race assets during them.
+5. ✅ **Warm the race assets during the menu.** `src/ui/warm.ts`. Pressing DRIVE
+   used to start a ~900 kB download before the world could build; the setup
+   steps are ten to twenty seconds of doing nothing with the network. It waits
+   for idle, fetches at low priority, and skips outright on `saveData` or a
+   2g/3g connection — spending someone's data plan on a race they have not
+   started is not a trade to make for them. **Verified: all 19 texture loads at
+   race start came from cache, `transferSize: 0`, median 4 ms.**
 
 ### Gameplay depth
 6. ◻ **Ghost cars** — your own best lap, replayed. Cheap to record, and the
@@ -192,16 +217,26 @@ by deleting what they pointed at:
 
 ### Engineering
 16. ✅ **ESLint** — configured, clean, and in CI. See above for what it found.
-17. ◻ **Tests beyond the service-worker routing check.** The physics helpers
-    (`verticalCurvature`, banking, the placement blend) are pure functions and
-    would take an hour to cover.
+17. ✅ **A data-invariants test** — `npm run test:data`, in CI. Every bug it
+    guards has actually shipped here: realms added with no ground-texture
+    mapping (silently falling back to a green forest floor that a multiply tint
+    can never make into snow), realms added with no preview art, textures
+    renamed to `.webp` with a file missed. None of these break the types,
+    because they are data pointing at files. Proven to fail: deleting one
+    preview makes it exit 1 naming the realm. Physics helpers are still
+    uncovered.
 18. ◻ **A frame-budget test in CI** — assert draw calls and triangle counts
     stay under a ceiling, so a scenery change cannot quietly double them.
 19. ◻ **A signed race token** for score submission, closing what rate limiting
     only slows (see B4).
 20. ◻ **Next 16 upgrade**, which also clears the last two advisories.
-21. ◻ **`prefers-reduced-motion`** is handled in CSS but not in the engine —
-    camera shake and speed blur still run.
+21. ✅ **`prefers-reduced-motion` in the engine.** The stylesheet honoured it
+    for the menus all along; the engine never did, so the two effects most
+    likely to cause trouble ran regardless. Camera shake and the radial speed
+    smear are both suppressed now (the FOV kick is left — it is the cue that
+    tells you how fast you are going). **Verified with the engine's own loop
+    frozen: shake offset 0.049 normally, exactly 0 under reduce-motion, back to
+    0.035 when restored; smear 0.925 → 0 → 0.925.**
 
 ---
 

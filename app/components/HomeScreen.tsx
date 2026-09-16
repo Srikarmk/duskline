@@ -13,6 +13,7 @@ import {
   loadIdentity, saveIdentity, createGuest, signInWithGoogle, googleConfigured,
   type Identity,
 } from "@/src/ui/identity";
+import { warmRaceAssets } from "@/src/ui/warm";
 
 // live 3D garage preview — client-only (WebGL), so it must never be SSR'd
 const CarShowroom = dynamic(() => import("./CarShowroom"), { ssr: false });
@@ -159,6 +160,15 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
       }
     });
   }, []);
+
+  // Pull the race's textures down while the player is choosing. The setup
+  // steps are ten to twenty seconds of doing nothing with the network, and
+  // without this the first DRIVE of a visit waits on ~900 kB. Re-runs on realm
+  // change; the shared sets are only fetched once and most realms share a
+  // ground albedo, so switching is usually free.
+  useEffect(() => {
+    warmRaceAssets(realm);
+  }, [realm]);
 
   /**
    * Make the leaderboard sheet behave like the dialog it claims to be.

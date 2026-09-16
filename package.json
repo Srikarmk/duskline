@@ -9,7 +9,9 @@
     "typecheck": "tsc --noEmit",
     "test:sw": "node test/sw-routing.mjs",
     "textures": "node scripts/optimize-textures.mjs",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test:data": "node --experimental-strip-types --no-warnings test/data-invariants.mjs",
+    "test": "npm run test:sw && npm run test:data"
   },
   "dependencies": {
     "next": "^15.3.0",

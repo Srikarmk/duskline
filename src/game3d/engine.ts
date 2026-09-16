@@ -46,7 +46,7 @@ import { makeOceanPlane, makeSkyline, makePalmField, makePalmProp, makeSandTextu
 import { makeForkArrowSign, makeBlimp } from "./props/signage";
 import { BranchPath } from "./branch";
 import { FreeDrive } from "./freedrive";
-import { loadPBR, pbr } from "./textures";
+import { loadPBR, pbr, groundTextureFor } from "./textures";
 import { makeKart, setCarEnvTint, setCarPosterMode, CAR_SPECS, CAR_IDS, type CarStat } from "./cars";
 import { REALMS, pickScenery, REALM_WEATHER, REALM_WEATHER_POOL, REALM_AMBIENCE, REALM_TUNNELS, REALM_RIVERS, REALM_SPLITS, type RealmSpec, type SceneryKind, type RealmPalette, type WeatherKind } from "./realms";
 import { makePyramid, makeObelisk, makeSphinx, makeSandRock } from "./props/egyptian";
@@ -427,6 +427,18 @@ export class Game {
   private steerInput = 0;
   private slipping = false; // tires past their grip limit (understeer/slide)
   private shake = 0;        // camera shake amount, decays over time
+  /**
+   * The OS-level "reduce motion" setting.
+   *
+   * The stylesheet has honoured this for the menus all along; the engine never
+   * did, so the two effects most likely to cause trouble — the camera shake on
+   * every impact and the radial speed smear — ran regardless. For someone with
+   * vestibular sensitivity those are the whole problem, not the UI easing.
+   * Read once: this is not something that changes mid-race.
+   */
+  private readonly reduceMotion =
+    typeof window !== "undefined" &&
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
   private carYaw = 0; // visual heading offset from the track tangent
   private drifting = false;
   private driftDir = 0;
@@ -759,29 +771,7 @@ export class Game {
   private async init() {
     // load the CC0 PBR textures for this realm alongside the models. New realms
     // reuse a close-matching shipped ground albedo (then tint it via palette).
-    const GROUND: Record<string, string> = {
-      forest: "ground_forest", ember: "ground_ember", peaks: "ground_peaks",
-      void: "ground_peaks", sands: "ground_peaks", castle: "ground_forest",
-      circuit: "ground_forest", metro: "ground_peaks",
-      // The photo realms were falling through to ground_forest, which is a
-      // dark green woodland floor. groundTint is a MULTIPLY, so it can only
-      // ever darken that — which is why the snow pass came out olive and the
-      // deserts came out mossy. Pick the closest shipped albedo per realm and
-      // let the tint do the last 20%.
-      hokkai: "ground_peaks",   // pale rock, tints to snow
-      // Neither set is right on its own. peaks tinted straw reads as desert
-      // sand; forest tinted straw stays GREEN, because a multiply cannot move
-      // a green albedo's hue — the base dominates. peaks it is, with a tint
-      // carrying just enough green to land on dry olive grass rather than sand.
-      cape: "ground_peaks",
-      hills: "ground_ember",    // scorched chaparral
-      basin: "ground_ember",    // red desert rock
-      mirage: "ground_peaks",   // pale sand
-      azur: "ground_peaks",     // dusty stone waterfront
-      bay: "ground_peaks",
-      neon: "ground_peaks",   // barely seen; the city and the wet road carry it
-    };
-    const groundName = GROUND[this.realm.id] ?? "ground_forest";
+    const groundName = groundTextureFor(this.realm.id) ?? "ground_forest";
     const [library] = await Promise.all([loadModels(), loadPBR(groundName)]);
     if (this.stopped) return;
     this.buildWorld(library);
@@ -4755,7 +4745,9 @@ export class Game {
       // Drive the speed smear from the SAME number as the FOV kick, so the
       // periphery blurs exactly when it starts moving fast enough to strobe.
       if (this.radialBlur) {
-        const want = Math.max(0, spd - 0.45) / 0.55 * (boosting ? 1.35 : 1);
+        const want = this.reduceMotion
+          ? 0
+          : (Math.max(0, spd - 0.45) / 0.55) * (boosting ? 1.35 : 1);
         const u = this.radialBlur.uniforms.amount;
         u.value += (Math.min(1.15, want) - u.value) * 0.1;
       }
@@ -4791,7 +4783,7 @@ export class Game {
         if (this.camPos.y < floor) this.camPos.y = floor;
       }
       this.camera.position.copy(this.camPos);
-      if (this.shake > 0.01) {
+      if (this.shake > 0.01 && !this.reduceMotion) {
         const s = this.shake * 0.18;
         this.camera.position.x += (Math.random() - 0.5) * s;
         this.camera.position.y += (Math.random() - 0.5) * s;

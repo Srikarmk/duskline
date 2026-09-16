@@ -1113,3 +1113,38 @@ export function pickScenery(spec: RealmSpec, rand: () => number): SceneryKind {
   }
   return spec.scenery[0].kind;
 }
+
+/**
+ * Which shipped ground albedo each realm uses.
+ *
+ * Realm data, so it lives with the realms rather than in the texture loader:
+ * the engine needs it to build a world, the home screen needs it to warm the
+ * files while the player is choosing, and a data-invariants test needs it
+ * without pulling in three.js. Duplicating it is how the three drift apart.
+ *
+ * The photo realms used to fall through to `ground_forest`, a dark green
+ * woodland floor — and `groundTint` is a MULTIPLY, so it can only darken that.
+ * It is why the snow pass came out olive and the deserts came out mossy. Each
+ * realm now names the closest shipped albedo and lets the tint do the last 20%.
+ */
+const GROUND: Record<string, string> = {
+  forest: "ground_forest", ember: "ground_ember", peaks: "ground_peaks",
+  void: "ground_peaks", sands: "ground_peaks", castle: "ground_forest",
+  circuit: "ground_forest", metro: "ground_peaks",
+  hokkai: "ground_peaks",   // pale rock, tints to snow
+  // Neither set is right on its own for the coast road: peaks tinted straw
+  // reads as desert sand, forest tinted straw stays GREEN, because a multiply
+  // cannot move a green albedo's hue. peaks, with a tint carrying just enough
+  // green to land on dry olive grass.
+  cape: "ground_peaks",
+  hills: "ground_ember",    // scorched chaparral
+  basin: "ground_ember",    // red desert rock
+  mirage: "ground_peaks",   // pale sand
+  azur: "ground_peaks",     // dusty stone waterfront
+  bay: "ground_peaks",
+  neon: "ground_peaks",     // barely seen; the city and the wet road carry it
+};
+
+export function groundTextureFor(realmId: string): string {
+  return GROUND[realmId] ?? "ground_forest";
+}
