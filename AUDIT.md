@@ -136,6 +136,27 @@ origin, buried inside the body where it could never be seen. Two invisible
 meshes riding along on every Imprez, uploaded and drawn every frame. The
 cylinder was an abandoned first attempt; the box is the lamp.
 
+### ✅ NEW — Everything in public/ revalidated on every single request
+Found while checking why the asset warming looked ineffective on production.
+
+Vercel serves `public/` with **`cache-control: public, max-age=0,
+must-revalidate`**. The hashed build output under `/_next/static` correctly
+gets a year and `immutable` — but the 916 kB of textures, the 333 kB of realm
+previews and the models were getting nothing. Every visit and every race
+re-checked all 30 files, each a conditional round trip returning 304, measured
+at ~112 ms median.
+
+The service worker hid this once it was in control, which is why it took a
+first-ever visit (where the warm fetches race the worker's activation) to
+notice at all.
+
+`headers()` in `next.config.ts` now gives them a week of hard caching plus a
+month of stale-while-revalidate. Deliberately **not** `immutable` and not a
+year: these filenames are stable while their content is not — regenerating the
+previews or re-running the texture script rewrites them in place — so a year of
+`immutable` would strand people on old art with no way to bust it. `sw.js` is
+pinned to `no-cache`, because a stale worker is a stale everything.
+
 ### ✅ NEW — A production build on localhost poisons the dev server
 Not a shipped bug, but it cost most of a debugging session and it is a trap
 anyone on this project can fall into.
@@ -207,7 +228,8 @@ by deleting what they pointed at:
    Triangles are unchanged, as they should be — the geometry is identical, there
    is simply far less of it for the CPU to walk. Verified visually on both
    realms: nothing displaced, nothing missing.
-5. ✅ **Warm the race assets during the menu.** `src/ui/warm.ts`. Pressing DRIVE
+5. ✅ **Warm the race assets during the menu.** *(See also the cache-header
+   finding above — the warm exposed it.)* `src/ui/warm.ts`. Pressing DRIVE
    used to start a ~900 kB download before the world could build; the setup
    steps are ten to twenty seconds of doing nothing with the network. It waits
    for idle, fetches at low priority, and skips outright on `saveData` or a
