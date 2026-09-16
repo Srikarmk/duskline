@@ -7,10 +7,13 @@ import { checkCapability } from "@/src/game3d/capability";
 import { loadSettings, saveSettings } from "@/src/ui/settings";
 import { reportError } from "@/src/ui/report";
 import { read } from "@/src/ui/storage";
+import { REALMS } from "@/src/game3d/realms";
+import { CAR_SPECS } from "@/src/game3d/carData";
 import PauseMenu from "./PauseMenu";
 import GameErrorBoundary from "./GameErrorBoundary";
 import TouchControls from "./TouchControls";
 import FirstRunHint from "./FirstRunHint";
+import PhotoMode from "./PhotoMode";
 
 interface Props {
   mode: GameMode;
@@ -38,6 +41,8 @@ export default function GameCanvas({ mode, realm, car, laps, onFinish, onQuit }:
   const [touch, setTouch] = useState(false);
   /** Audio was blocked by the browser's autoplay policy; offer a tap. */
   const [muted, setMuted] = useState(false);
+  /** Free camera up, HUD hidden. See PhotoMode. */
+  const [photo, setPhoto] = useState(false);
   useEffect(() => {
     const coarse = window.matchMedia("(pointer: coarse)").matches;
     setTouch(coarse);
@@ -142,6 +147,9 @@ export default function GameCanvas({ mode, realm, car, laps, onFinish, onQuit }:
   // Esc / P toggles pause
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Photo mode owns Escape while it is up — it has its own handler that
+      // returns you to the pause menu rather than un-pausing the race.
+      if (photo) return;
       if (e.key === "Escape" || e.key.toLowerCase() === "p") {
         e.preventDefault();
         setPaused((p) => {
@@ -154,7 +162,7 @@ export default function GameCanvas({ mode, realm, car, laps, onFinish, onQuit }:
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [photo]);
 
   if (!cap.ok) {
     return (
@@ -201,9 +209,24 @@ export default function GameCanvas({ mode, realm, car, laps, onFinish, onQuit }:
           🔊 TAP FOR SOUND
         </button>
       )}
-      {!paused && <FirstRunHint touch={touch} />}
-      {touch && !paused && <TouchControls onPause={() => { gameRef.current?.pause(); setPaused(true); }} />}
-      {paused && (
+      {!paused && !photo && <FirstRunHint touch={touch} />}
+      {touch && !paused && !photo && <TouchControls onPause={() => { gameRef.current?.pause(); setPaused(true); }} />}
+      {photo && (
+        <PhotoMode
+          // Display names, not ids: the caption is part of the photograph's
+          // frame, and "bay · imprez" is a database row, not a place and a car.
+          realm={REALMS[realm]?.name ?? realm}
+          car={CAR_SPECS[car]?.name ?? car}
+          touch={touch}
+          onShoot={() => gameRef.current?.capturePhoto()}
+          onNudge={(d) => gameRef.current?.photoNudge(d)}
+          onExit={() => {
+            gameRef.current?.exitPhotoMode();
+            setPhoto(false);
+          }}
+        />
+      )}
+      {paused && !photo && (
         <PauseMenu
           onResume={() => {
             gameRef.current?.resume();
@@ -215,6 +238,10 @@ export default function GameCanvas({ mode, realm, car, laps, onFinish, onQuit }:
           }}
           onQuit={onQuit}
           onApply={(s) => gameRef.current?.applySettings(s)}
+          onPhoto={() => {
+            gameRef.current?.enterPhotoMode();
+            setPhoto(true);
+          }}
         />
       )}
     </div>

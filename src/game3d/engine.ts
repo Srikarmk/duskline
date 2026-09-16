@@ -405,6 +405,21 @@ export class Game {
   private terrSamp?: { sx: Float64Array; sz: Float64Array; sy: Float64Array; sag: Float64Array }; // cached track polyline for ground-height queries
   private camSnap = true;
   private cameraIndex = 0;
+  /**
+   * PHOTO MODE.
+   *
+   * The whole point of this game is how it looks — computed skies, sunset
+   * palettes, ten cars modelled individually — and there was no way to look at
+   * any of it. The chase camera sits behind the car at a fixed height and the
+   * HUD covers the corners, so the one thing worth showing off was the one
+   * thing you could not frame.
+   *
+   * Freezes the sim, hides the HUD, and puts the camera on an orbit around the
+   * car that you steer. Not a cutscene system: it reuses the same render path,
+   * so what you photograph is exactly what the game draws.
+   */
+  private photo = false;
+  private photoOrbit = { yaw: 2.3, pitch: 0.22, dist: 9, fov: 42 };
 
   // race state
   private phase: Phase = "loading";
@@ -3416,6 +3431,12 @@ export class Game {
     if (this.stopped) return;
     if (this.paused) {
       this.last = now; // hold time still so dt doesn't jump on resume
+      // PHOTO MODE is paused-but-live: the simulation is frozen, the camera is
+      // not. Without this the free camera renders exactly one frame and then
+      // sits there, which looks like the controls are dead rather than like
+      // the world is. update() stays skipped — nothing should move while you
+      // are composing a shot.
+      if (this.photo) this.render();
       this.rafId = requestAnimationFrame(this.frame);
       return;
     }
@@ -3441,6 +3462,49 @@ export class Game {
   resume() {
     this.paused = false;
     this.last = performance.now();
+  }
+
+  /** True while the free camera is up. The UI swaps its overlay on this. */
+  photoActive(): boolean {
+    return this.photo;
+  }
+
+  enterPhotoMode(): void {
+    this.photo = true;
+    this.paused = true;                 // freeze the world, keep rendering it
+    this.sound.setEngine(0, false);
+    this.hudCanvas.style.display = "none";
+    // Start from roughly where the chase camera was, so entering photo mode
+    // does not teleport the view — you adjust from the shot you were in.
+    this.photoOrbit.fov = this.camera.fov;
+  }
+
+  exitPhotoMode(): void {
+    this.photo = false;
+    this.hudCanvas.style.display = "";
+    this.camera.fov = CAMERA_PRESETS[this.cameraIndex].fov;
+    this.camera.updateProjectionMatrix();
+  }
+
+  /** Nudge the orbit. Called from the photo overlay's own controls. */
+  photoNudge(d: { yaw?: number; pitch?: number; dist?: number; fov?: number }): void {
+    const o = this.photoOrbit;
+    o.yaw += d.yaw ?? 0;
+    o.pitch = clamp(o.pitch + (d.pitch ?? 0), -0.25, 1.35);
+    o.dist = clamp(o.dist + (d.dist ?? 0), 3.2, 46);
+    o.fov = clamp(o.fov + (d.fov ?? 0), 18, 82);
+  }
+
+  /**
+   * Grab the frame as a PNG data URL.
+   *
+   * Has to render and read in the SAME synchronous block: the drawing buffer is
+   * cleared once the browser composites, and `preserveDrawingBuffer: true`
+   * would cost every frame of every race for the sake of a screenshot.
+   */
+  capturePhoto(): string {
+    this.composer.render();
+    return this.renderer.domElement.toDataURL("image/png");
   }
 
   /** Autoplay policy is holding audio down. See Sound.blocked. */
@@ -4782,6 +4846,38 @@ export class Game {
         const floor = cgy + 1.1;
         if (this.camPos.y < floor) this.camPos.y = floor;
       }
+      // PHOTO MODE takes the camera over completely: an orbit around the car
+      // that the player steers, instead of the chase rig. Everything else in
+      // render() runs unchanged, so the photograph is the game's own image.
+      if (this.photo) {
+        const o = this.photoOrbit;
+        const i = this.input;
+        const step = 0.028;
+        if (i.left) o.yaw -= step;
+        if (i.right) o.yaw += step;
+        if (i.accelerate) o.pitch = clamp(o.pitch + step * 0.7, -0.25, 1.35);
+        if (i.brake) o.pitch = clamp(o.pitch - step * 0.7, -0.25, 1.35);
+        if (i.holding("z")) o.dist = clamp(o.dist - 0.18, 3.2, 46);
+        if (i.holding("x")) o.dist = clamp(o.dist + 0.18, 3.2, 46);
+        if (i.holding("q")) o.fov = clamp(o.fov - 0.5, 18, 82);
+        if (i.holding("e")) o.fov = clamp(o.fov + 0.5, 18, 82);
+
+        const target = this.playerRoot.position;
+        const cp = Math.cos(o.pitch);
+        this.camera.position.set(
+          target.x + Math.sin(o.yaw) * o.dist * cp,
+          target.y + 1.1 + Math.sin(o.pitch) * o.dist,
+          target.z + Math.cos(o.yaw) * o.dist * cp,
+        );
+        this.camera.lookAt(target.x, target.y + 0.85, target.z);
+        if (Math.abs(this.camera.fov - o.fov) > 0.01) {
+          this.camera.fov = o.fov;
+          this.camera.updateProjectionMatrix();
+        }
+        this.composer.render();
+        return;
+      }
+
       this.camera.position.copy(this.camPos);
       if (this.shake > 0.01 && !this.reduceMotion) {
         const s = this.shake * 0.18;

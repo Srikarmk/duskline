@@ -29,6 +29,11 @@ export class Input {
     this.justPressed.clear();
   }
 
+  /** Is this key held right now? For keys without a named getter. */
+  holding(key: string) {
+    return this.down.has(key);
+  }
+
   /** True once per key press; consumed on read. */
   consumePress(key: string) {
     const had = this.justPressed.has(key);

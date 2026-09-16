@@ -2688,3 +2688,132 @@ html, body { overscroll-behavior: none; }
   display: block;
   border: 0;
 }
+
+/* ---------------------------------------------------------------------------
+   PHOTO MODE. Deliberately almost no chrome: every pixel of UI here is a pixel
+   of the photograph you cannot see, and the HUD is hidden while it is up.
+   --------------------------------------------------------------------------- */
+.photo-ui { position: fixed; inset: 0; z-index: 50; pointer-events: none; }
+.photo-ui button { pointer-events: auto; }
+
+.photo-bar {
+  position: absolute;
+  top: calc(0.9rem + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: min(94vw, 62rem);
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(6, 4, 18, 0.66);
+  pointer-events: auto;
+}
+.photo-tag {
+  font-family: var(--font-display);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 3px;
+  color: var(--ink);
+  background: var(--gold);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+.photo-what {
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  letter-spacing: 2px;
+  color: var(--text);
+  white-space: nowrap;
+}
+.photo-keys { font-size: 10.5px; letter-spacing: 0.4px; color: var(--dim); white-space: nowrap; }
+.photo-keys b { color: var(--cyan-l); font-weight: 700; }
+.photo-exit {
+  margin-left: 4px;
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 9.5px;
+  letter-spacing: 2px;
+  cursor: pointer;
+}
+.photo-exit:hover { color: var(--text); border-color: var(--violet-l); }
+
+/* The shutter: a camera button, bottom-centre, thumb-reachable on a phone. */
+.photo-shutter {
+  position: absolute;
+  bottom: calc(1.4rem + env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.85);
+  background: rgba(8, 5, 22, 0.5);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+.photo-shutter span {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.12s var(--ease);
+}
+.photo-shutter:active span { transform: scale(0.86); }
+
+.photo-pads {
+  position: absolute;
+  bottom: calc(1.6rem + env(safe-area-inset-bottom));
+  right: calc(1rem + env(safe-area-inset-right));
+  display: grid;
+  grid-template-columns: repeat(3, 44px);
+  gap: 7px;
+}
+.photo-pads button {
+  height: 44px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(10, 7, 26, 0.5);
+  color: #fff;
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.photo-pads button:active { background: rgba(251, 191, 36, 0.3); }
+
+/* A one-frame white wash, so the shutter feels like one. */
+.photo-flash {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  animation: photo-flash 0.22s ease-out forwards;
+}
+@keyframes photo-flash { from { opacity: 0.85; } to { opacity: 0; } }
+
+.photo-saved {
+  position: absolute;
+  bottom: calc(6.4rem + env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: rgba(6, 4, 18, 0.8);
+  border: 1px solid rgba(34, 211, 238, 0.45);
+  color: var(--cyan-l);
+  font-family: var(--font-display);
+  font-size: 9.5px;
+  letter-spacing: 2.4px;
+}
+
+@media (max-width: 760px) {
+  .photo-keys { display: none; }
+  .photo-what { font-size: 9px; }
+}

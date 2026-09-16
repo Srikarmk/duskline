@@ -287,6 +287,14 @@ caching plus a month of stale-while-revalidate, with `sw.js` pinned to
 `no-cache`. Found only because the asset warming *looked* ineffective on a
 first-ever visit; it was working, and this was why it didn't look like it.
 
+**Photo mode.** The audit's own note was that the art direction is the point of
+this game and there was no way to show it off — the chase camera is fixed and
+the HUD covers the corners. Pause → PHOTO MODE now freezes the sim, hides the
+HUD and hands over a camera you orbit, reusing the same render path so the
+photograph is the game's own image. Reading the frame loop before running it
+caught the flaw that would have killed it: `frame()` returns before `render()`
+while paused, so the free camera would have drawn one frame and then sat there.
+
 ## 7. The rename
 
 Fantasy Racer → **Duskline**. Code, UI, manifest, share tags, package name,

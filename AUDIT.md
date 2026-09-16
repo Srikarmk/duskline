@@ -243,13 +243,35 @@ by deleting what they pointed at:
 7. ◻ **Progression**: cars unlocked by distance or podiums.
 8. ◻ **A real championship**: Grand Prix is three rounds; a season with
    standings is the same code with persistence.
-9. ◻ **Photo mode.** The art direction is the point of this game and there is
-   no way to show it off. A free camera and a hidden HUD is an afternoon.
+9. ✅ **Photo mode.** The art direction is the point of this game and there was
+   no way to look at it: the chase camera sits behind the car at a fixed height
+   and the HUD covers the corners, so the one thing worth showing off was the
+   one thing you could not frame.
+
+   Pause → PHOTO MODE. Freezes the sim, hides the HUD, and puts the camera on
+   an orbit you steer (arrows orbit and raise, Z/X dolly, Q/E lens, SPACE
+   shutter, ESC back). It reuses the same render path, so the photograph is
+   exactly the image the game draws — not a separate cutscene renderer. Saves a
+   PNG named after what is in it, and shows the realm and car as a caption
+   while you compose.
+
+   One flaw found by reading rather than running: `frame()` returns before
+   `render()` while paused, so a paused-but-live camera would have rendered
+   exactly one frame and then sat there — looking like dead controls rather
+   than a frozen world. The loop now renders while composing and still skips
+   `update()`.
+
+   Verified: 1,241 composer passes while `paused === true`, camera responds to
+   held keys (yaw 2.3 → 4.34), capture is a real 1423×1491 PNG with 1,725 of
+   2,304 sampled pixels lit, and ESC returns to the pause menu with the HUD and
+   the chase FOV restored.
 10. ◻ **Weather as a race condition** rather than decoration.
 11. ◻ **Rival personalities** — the AI is one behaviour with a rubber band.
 
 ### Product
 12. ◻ **Share a result**: a generated image with car, realm, time and score.
+    Photo mode (above) now covers the "show someone the game" half of this; what
+    is left is the automatic one at the finish line.
 13. ◻ **Daily challenge** — same realm, car and seed for everyone, one run a
     day. The cheapest retention mechanic there is, and it needs the KV store
     that is already on the release list.

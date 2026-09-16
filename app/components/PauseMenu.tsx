@@ -8,9 +8,11 @@ interface Props {
   onRestart: () => void;
   onQuit: () => void;
   onApply: (s: Settings) => void;
+  /** Hide the HUD and hand the camera over — see PhotoMode. */
+  onPhoto: () => void;
 }
 
-export default function PauseMenu({ onResume, onRestart, onQuit, onApply }: Props) {
+export default function PauseMenu({ onResume, onRestart, onQuit, onApply, onPhoto }: Props) {
   const [view, setView] = useState<"menu" | "settings">("menu");
   const [s, setS] = useState<Settings>(() => loadSettings());
 
@@ -27,6 +29,7 @@ export default function PauseMenu({ onResume, onRestart, onQuit, onApply }: Prop
           <>
             <h2>PAUSED</h2>
             <button className="start" onClick={onResume}>RESUME</button>
+            <button className="pause-btn" onClick={onPhoto}>PHOTO MODE</button>
             <button className="pause-btn" onClick={() => setView("settings")}>SETTINGS</button>
             <button className="pause-btn" onClick={onRestart}>RESTART</button>
             <button className="pause-btn" onClick={onQuit}>QUIT TO MENU</button>
