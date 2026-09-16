@@ -37,3 +37,8 @@ jobs:
         run: npm run test:data
       - name: Build
         run: npm run build
+      # Budgets AFTER the build, because they measure it. The first-load figure
+      # is the one that regresses from a single innocuous top-level import —
+      # that is how three.js ended up in the menu chunk in the first place.
+      - name: Size budgets
+        run: npm run test:budget
