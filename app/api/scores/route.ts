@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, tooManyRequests } from "@/src/server/rateLimit";
+import { verifyRaceToken, spendRaceToken, tokenEnforced } from "@/src/server/raceToken";
 import type { GameMode } from "@/src/game/engine";
 
 export const dynamic = "force-dynamic";
@@ -107,9 +108,22 @@ export async function POST(req: NextRequest) {
     if (timeMs > 6 * 60 * 60 * 1000) {
       return NextResponse.json({ error: "bad time" }, { status: 400 });
     }
+    // The ticket proves a race was actually started, and that enough of the
+    // claimed duration has really elapsed since. It does NOT make the score
+    // itself trustworthy — the client computes that — so the response reports
+    // `verified` rather than leaving anyone to assume more than is true.
+    const ticket = verifyRaceToken(body.token, timeMs);
+    if (!ticket.ok) {
+      return NextResponse.json({ error: ticket.reason ?? "unverified" }, { status: 403 });
+    }
+    // One ticket, one score. A ticket is valid for three hours, so without
+    // this a single race buys an afternoon of submissions.
+    if (!(await spendRaceToken(ticket.nonce))) {
+      return NextResponse.json({ error: "token already used" }, { status: 403 });
+    }
     await addEntry({ name, score, mode, timeMs, date: new Date().toISOString().slice(0, 10) });
     const scores = await topEntries();
-    return NextResponse.json({ scores, global: hasKV });
+    return NextResponse.json({ scores, global: hasKV, verified: tokenEnforced });
   } catch {
     return NextResponse.json({ error: "server" }, { status: 500 });
   }

@@ -337,8 +337,33 @@ by deleting what they pointed at:
     uncovered.
 18. ◻ **A frame-budget test in CI** — assert draw calls and triangle counts
     stay under a ceiling, so a scenery change cannot quietly double them.
-19. ◻ **A signed race token** for score submission, closing what rate limiting
-    only slows (see B4).
+19. ✅ **A signed race token.** `src/server/raceToken.ts` + `/api/race-token`.
+    A ticket is issued when a race STARTS, and `/api/scores` refuses anything
+    without one. The server checks the HMAC, the age, that at least 80% of the
+    claimed duration really elapsed since issue, and that the ticket has not
+    already been spent.
+
+    It still does not make the score trustworthy — the client computes it, and
+    only running the simulation server-side would change that. What it closes
+    is the cheap attack: posting a believable number with `curl` and no race.
+    Faking a three-minute lap now costs three minutes per attempt.
+
+    Verified against a running server: no token 403, garbage token 403, token
+    signed with the wrong secret 403, a valid ticket claiming a long race
+    immediately 403 "race shorter than claimed", an honest post 200
+    `verified: true`, and a replay 403 "token already used".
+
+    **Two bugs caught during that verification, both of which would have
+    shipped.** Replay was wide open at first — the same ticket posted twice and
+    both scores landed, because a ticket was valid for its whole three-hour
+    life; tickets are single-use now. And Grand Prix would have been rejected
+    outright: it submits one aggregate result covering three rounds, but every
+    round called `beginRace()`, so the final post claimed five minutes against
+    a ticket ninety seconds old. `beginRace()` now keeps an unspent ticket and
+    the client clears it on submission.
+
+    Set `RACE_TOKEN_SECRET` to turn it on; unset, everything behaves exactly as
+    before.
 20. ◻ **Next 16 upgrade**, which also clears the last two advisories.
 21. ✅ **`prefers-reduced-motion` in the engine.** The stylesheet honoured it
     for the menus all along; the engine never did, so the two effects most

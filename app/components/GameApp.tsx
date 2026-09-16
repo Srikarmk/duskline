@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { GameMode, RealmId, CarId, GameResult, RaceStanding } from "@/src/game/engine";
 import { REALMS } from "@/src/game3d/realms";
 import { saveScore, saveLastName, saveLastCar, submitGlobalScore, loadScores } from "@/src/ui/leaderboard";
+import { beginRace } from "@/src/ui/raceToken";
 import HomeScreen from "./HomeScreen";
 import ResultsScreen from "./ResultsScreen";
 import dynamic from "next/dynamic";
@@ -91,6 +92,19 @@ export default function GameApp() {
   const [gp, setGp] = useState<GpState | null>(null);
   const [gpFinal, setGpFinal] = useState<ChampRow[] | null>(null);
   const [resultBest, setResultBest] = useState({ prev: 0, isNew: false });
+
+  /**
+   * The only way into a race.
+   *
+   * Every entry point goes through here so none of them can forget to ask for
+   * a race ticket — the server timestamps it at the start and checks the
+   * claimed duration against it, so a ticket requested at submission time
+   * would prove nothing. See src/server/raceToken.ts.
+   */
+  const startRace = () => {
+    beginRace();
+    setScreen("race");
+  };
 
   const applyStandings = (champ: Record<string, number>, standings: RaceStanding[]) => {
     const next = { ...champ };
@@ -230,7 +244,7 @@ export default function GameApp() {
         </div>
 
         <div className="result-actions">
-          <button type="button" className="start" onClick={() => setScreen("race")}>
+          <button type="button" className="start" onClick={startRace}>
             ▸ TO THE GRID
           </button>
         </div>
@@ -330,7 +344,7 @@ export default function GameApp() {
         prevBest={resultBest.prev}
         onRaceAgain={() => {
           setLastResult(null);
-          setScreen("race");
+          startRace();
         }}
         onMenu={() => {
           setLastResult(null);
@@ -357,7 +371,7 @@ export default function GameApp() {
         } else {
           setRealm(playerRealm);
         }
-        setScreen("race");
+        startRace();
       }}
     />
   );

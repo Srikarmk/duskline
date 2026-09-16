@@ -1,5 +1,6 @@
 import type { GameMode, GameResult, CarId } from "@/src/game/engine";
 import { read, write, remove } from "./storage";
+import { raceToken, clearRaceToken } from "./raceToken";
 
 export interface ScoreEntry {
   name: string;
@@ -79,9 +80,13 @@ export interface GlobalScores {
 export async function fetchGlobalScores(): Promise<GlobalScores | null> {
   try {
     const res = await fetch("/api/scores", { cache: "no-store" });
+    // One score per ticket, whatever the outcome — a rejected post must not
+    // leave a ticket lying around for the next race to reuse.
+    clearRaceToken();
     if (!res.ok) return null;
     return (await res.json()) as GlobalScores;
   } catch {
+    clearRaceToken();
     return null;
   }
 }
@@ -99,6 +104,9 @@ export async function submitGlobalScore(
         score: result.score,
         mode: result.mode,
         timeMs: result.timeMs,
+        // Issued when the race started; the server checks the elapsed time
+        // against the duration claimed above. See src/server/raceToken.ts.
+        token: await raceToken(),
       }),
     });
     if (!res.ok) return null;
