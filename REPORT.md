@@ -278,6 +278,15 @@ frame. The `mergeStaticParts` helper written for cars now runs on each tower
 too: Neon Run went **21,151 meshes → 4,971** and **1,838 draw calls → 843**,
 Sunset Bay **641 → 433**, with triangle counts unchanged and nothing displaced.
 
+**Every static file was being re-checked on every request.** Vercel serves
+`public/` with `max-age=0, must-revalidate`, so the 916 kB of textures, the
+333 kB of previews and the models were revalidated on every visit and every
+race — 30 conditional round trips at ~112 ms median. The hashed build output
+already had a year and `immutable`; this art had nothing. Now a week of hard
+caching plus a month of stale-while-revalidate, with `sw.js` pinned to
+`no-cache`. Found only because the asset warming *looked* ineffective on a
+first-ever visit; it was working, and this was why it didn't look like it.
+
 ## 7. The rename
 
 Fantasy Racer → **Duskline**. Code, UI, manifest, share tags, package name,
