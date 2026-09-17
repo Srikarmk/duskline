@@ -5087,6 +5087,7 @@ export class Game {
       nitroCharges: this.nitroCharges,
       nitroFill: this.nitroFill,
       nitroActive: this.nitroT > 0,
+      nitroBurn: this.nitroT / NITRO_DURATION,
       transformT: this.transformed ? this.transformT : 0,
       crashFlash: this.crashFlash,
       position,

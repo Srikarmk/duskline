@@ -54,14 +54,14 @@ export default function FirstRunHint({ touch }: { touch: boolean }) {
         ["◀ ▶ pads", "steer"],
         ["GAS / BRAKE", "throttle and brakes"],
         ["NOS", "nitro — one charge at a time"],
-        ["drift", "hold a slide through a corner to refill nitro"],
+        ["drift", "hold a slide — you get a boost the moment you straighten"],
         ["ramps", "hit them fast, land flat"],
       ]
     : [
         ["ARROWS / WASD", "drive"],
         ["SPACE", "nitro"],
         ["C", "change camera"],
-        ["drift", "hold a slide through a corner to refill nitro"],
+        ["drift", "hold a slide — you get a boost the moment you straighten"],
         ["ramps", "hit them fast, land flat"],
       ];
 

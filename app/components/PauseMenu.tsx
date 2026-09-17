@@ -95,8 +95,9 @@ export default function PauseMenu({ onResume, onRestart, onQuit, onApply, onPhot
                 wants, and the pause menu is where someone goes looking. */}
             <dl className="controls-ref">
               <div><dt>ARROWS / WASD</dt><dd>drive</dd></div>
-              <div><dt>SPACE</dt><dd>nitro — one charge per press</dd></div>
-              <div><dt>drift</dt><dd>hold a slide through a corner to refill nitro</dd></div>
+              <div><dt>SPACE</dt><dd>nitro — one charge per press, three max</dd></div>
+              <div><dt>drift</dt><dd>hold a slide for a boost as you straighten</dd></div>
+              <div><dt>nitro cans</dt><dd>refill a charge; they also come back on their own</dd></div>
               <div><dt>ramps</dt><dd>hit them fast, land flat for a stunt bonus</dd></div>
               <div><dt>E</dt><dd>fire (Space Wars)</dd></div>
               <div><dt>SHIFT</dt><dd>fly (mech)</dd></div>

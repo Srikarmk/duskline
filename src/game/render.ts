@@ -531,6 +531,9 @@ export interface HudState {
   /** 0..1 progress toward the NEXT charge (the bar fills continuously) */
   nitroFill?: number;
   nitroActive: boolean;
+  /** 0..1 of the current boost still to burn. Lets the bar show it draining
+   *  rather than just recolouring, and explains why SPACE is refused. */
+  nitroBurn?: number;
   transformT: number;
   crashFlash: number;
   position?: number;
@@ -647,33 +650,87 @@ export function drawHud(
     ctx.fillText(`of ${hud.totalRacers}`, vw - 192, 114);
   }
 
-  // --- nitro: ONE continuous bar (Asphalt-style) rather than discrete bottles.
-  // It always shows how close the next charge is, so the meter is alive even
-  // when you're not picking anything up.
+  // --- nitro ---------------------------------------------------------------
+  //
+  // THREE CELLS, because nitro is three discrete charges. This used to be one
+  // continuous gradient with tick marks — a fuel gauge — and it misrepresented
+  // the thing it was measuring in four ways:
+  //
+  //   1. It drew `(charges + fill) / 3` as one level, so a bar at 63% (one
+  //      charge, plus 0.9 of the next) offered exactly ONE boost, the same as a
+  //      bar at 34%. Identical capability, wildly different picture.
+  //   2. With zero charges and a nearly-complete fill the bar showed a third of
+  //      itself lit — and SPACE did nothing. A meter that looks loaded and
+  //      refuses to fire is the single most confusing thing it did.
+  //   3. Earning and holding looked identical: partial fill was drawn in the
+  //      same colour as a real charge.
+  //   4. Spending dropped the level instantly, so during the 2.2 s the boost
+  //      was actually running the bar already showed what you would have
+  //      afterwards. Nothing conveyed the burn, or the cooldown that makes a
+  //      second press bounce.
+  //
+  // So: one cell per charge. Solid = spendable. The next cell fills as a dim
+  // outline-and-sliver while it earns, which reads as "not yet" at a glance.
+  // A live boost drains its own cell in real time and the label says BOOSTING,
+  // which is also the answer to "why won't it fire again".
   {
-    // centred along the bottom: it's the thing you watch while driving, so it
-    // belongs on the line your eyes already follow, not tucked in a corner
-    const bw = 260, bh = 18, bx = Math.round(vw / 2 - bw / 2) - 6, by = vh - 46;
-    panel(ctx, bx, by - 6, bw + 12, 46);
-    const total = (hud.nitroCharges + (hud.nitroFill ?? 0)) / NITRO_MAX_CHARGES;
-    ctx.fillStyle = "#241f38";
-    ctx.fillRect(bx + 6, by, bw, bh);
-    const g2 = ctx.createLinearGradient(bx + 6, 0, bx + 6 + bw, 0);
-    if (hud.nitroActive) { g2.addColorStop(0, "#fb923c"); g2.addColorStop(1, "#fde047"); }
-    else { g2.addColorStop(0, "#22d3ee"); g2.addColorStop(1, "#a855f7"); }
-    ctx.fillStyle = g2;
-    ctx.fillRect(bx + 6, by, bw * Math.max(0, Math.min(1, total)), bh);
-    // ticks at each whole charge, so you can still read "how many bursts"
-    ctx.fillStyle = "rgba(11,11,26,0.85)";
-    for (let i = 1; i < NITRO_MAX_CHARGES; i++) ctx.fillRect(bx + 6 + (bw * i) / NITRO_MAX_CHARGES - 1, by, 2, bh);
-    ctx.strokeStyle = hud.nitroCharges > 0 ? "#67e8f9" : "#4a4468";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(bx + 6.5, by + 0.5, bw - 1, bh - 1);
-    ctx.fillStyle = "#8b85a8";
+    const cells = NITRO_MAX_CHARGES;
+    const gap = 5, cellW = 82, bh = 18;
+    const bw = cells * cellW + (cells - 1) * gap;
+    const bx = Math.round(vw / 2 - bw / 2), by = vh - 46;
+    panel(ctx, bx - 8, by - 6, bw + 16, 46);
+
+    const charges = hud.nitroCharges;
+    const fill = Math.max(0, Math.min(1, hud.nitroFill ?? 0));
+    const burning = hud.nitroActive;
+    const burn = Math.max(0, Math.min(1, hud.nitroBurn ?? 0));
+
+    for (let i = 0; i < cells; i++) {
+      const cx = bx + i * (cellW + gap);
+      // empty socket
+      ctx.fillStyle = "#1c1830";
+      ctx.fillRect(cx, by, cellW, bh);
+
+      const held = i < charges;
+      // The cell being burnt right now is the one just above what you hold —
+      // it was yours a moment ago, so draining it is what "spending" looks
+      // like.
+      const isBurning = burning && i === charges;
+      const earning = !held && !isBurning && i === charges;
+
+      if (held) {
+        const g = ctx.createLinearGradient(cx, 0, cx + cellW, 0);
+        g.addColorStop(0, "#22d3ee");
+        g.addColorStop(1, "#7dd3fc");
+        ctx.fillStyle = g;
+        ctx.fillRect(cx, by, cellW, bh);
+      } else if (isBurning) {
+        const g = ctx.createLinearGradient(cx, 0, cx + cellW, 0);
+        g.addColorStop(0, "#fb923c");
+        g.addColorStop(1, "#fde047");
+        ctx.fillStyle = g;
+        ctx.fillRect(cx, by, cellW * burn, bh);   // drains as the boost runs
+      } else if (earning) {
+        // A dim sliver, clearly not the same thing as a charge you can spend.
+        ctx.fillStyle = "rgba(103,232,249,0.30)";
+        ctx.fillRect(cx, by, cellW * fill, bh);
+      }
+
+      ctx.strokeStyle = held ? "#67e8f9" : isBurning ? "#fbbf24" : "#3a3458";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(cx + 0.5, by + 0.5, cellW - 1, bh - 1);
+    }
+
+    // The label doubles as the state readout, because "nothing happened when I
+    // pressed" needs an answer on screen and not in a wiki.
+    // Not "DRIFT TO CHARGE": drifting gives an INSTANT exit boost
+    // (driftBoostT), it does not bank a nitro charge. Charges come back on a
+    // ~14 s timer and from cans, so "CHARGING" is what is actually happening.
+    const label = burning ? "BOOSTING" : charges > 0 ? "[SPACE] NITRO" : "CHARGING…";
+    ctx.fillStyle = burning ? "#fbbf24" : charges > 0 ? "#a7f3d0" : "#6f6a8a";
     ctx.font = "9px monospace";
-    ctx.textAlign = "left";
     ctx.textAlign = "center";
-    ctx.fillText("[SPACE] NITRO", bx + 6 + bw / 2, by + bh + 13);
+    ctx.fillText(label, bx + bw / 2, by + bh + 13);
     ctx.textAlign = "left";
   }
 
