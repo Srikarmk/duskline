@@ -1379,29 +1379,62 @@ export function makeStartGantry(pal: RealmPalette): THREE.Group {
   beamGlow.position.set(0, height - 0.5, 0);
   g.add(beamGlow);
 
-  // banner with START / FINISH text, facing back down the track (-Z)
+  // The board. This hangs directly over the grid, which means it is in frame
+  // for the countdown of every single race — the most-looked-at object in the
+  // game. It was 54px monospace on a flat slab, which is a placeholder.
   const c = document.createElement("canvas");
-  c.width = 512;
-  c.height = 128;
+  c.width = 1024;
+  c.height = 256;
   const ctx = c.getContext("2d")!;
-  ctx.fillStyle = "#11101f";
-  ctx.fillRect(0, 0, 512, 128);
-  // checker trim top + bottom
-  for (let x = 0; x < 512; x += 32) {
-    ctx.fillStyle = (x / 32) % 2 ? "#e8e0ff" : "#1e1b2e";
-    ctx.fillRect(x, 0, 32, 16);
-    ctx.fillStyle = (x / 32) % 2 ? "#1e1b2e" : "#e8e0ff";
-    ctx.fillRect(x, 112, 32, 16);
+
+  // Brushed dark panel rather than a flat fill, lit from above like a real
+  // backlit sign hanging off a gantry beam.
+  const panel = ctx.createLinearGradient(0, 0, 0, 256);
+  panel.addColorStop(0, "#1b1830");
+  panel.addColorStop(0.5, "#0e0c1a");
+  panel.addColorStop(1, "#08070f");
+  ctx.fillStyle = panel;
+  ctx.fillRect(0, 0, 1024, 256);
+
+  // Chequer runs down the SIDES, not across the top and bottom: a full-width
+  // band above and below squeezed the type into a letterbox.
+  const sq = 32;
+  for (let y = 0; y < 256; y += sq) {
+    for (const [x, flip] of [[0, 0], [1024 - sq * 2, 1]] as const) {
+      const odd = ((y / sq) | 0) % 2 === (flip ? 1 : 0);
+      ctx.fillStyle = odd ? "#e8e0ff" : "#15121f";
+      ctx.fillRect(x, y, sq, sq);
+      ctx.fillStyle = odd ? "#15121f" : "#e8e0ff";
+      ctx.fillRect(x + sq, y, sq, sq);
+    }
   }
-  ctx.fillStyle = pal.edgeLine;
-  ctx.font = "bold 54px monospace";
+
+  // The realm's kerb colour as a hairline top and bottom, so the board belongs
+  // to the place it is standing in.
+  ctx.fillStyle = pal.rumbleB;
+  ctx.fillRect(sq * 2, 0, 1024 - sq * 4, 5);
+  ctx.fillRect(sq * 2, 251, 1024 - sq * 4, 5);
+
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText("START · FINISH", 256, 66);
+
+  // The game's own wordmark, in the game's own display face.
+  ctx.fillStyle = "#f3edff";
+  ctx.font = "900 92px Orbitron, Arial Black, sans-serif";
+  ctx.letterSpacing = "16px";
+  ctx.fillText("DUSKLINE", 520, 104);
+
+  // START · FINISH underneath, small and wide — the label, not the headline.
+  ctx.fillStyle = pal.edgeLine;
+  ctx.font = "700 34px Orbitron, Arial Black, sans-serif";
+  ctx.letterSpacing = "12px";
+  ctx.fillText("START · FINISH", 520, 176);
+  ctx.letterSpacing = "0px";
+
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   const banner = new THREE.Mesh(
-    new THREE.PlaneGeometry(span * 2, span * 0.5),
+    new THREE.PlaneGeometry(span * 2, span * 0.5),   // 4:1, matching the canvas
     new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide })
   );
   // face the banner back down the track so drivers approaching the line read it

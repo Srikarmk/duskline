@@ -349,6 +349,8 @@ export class Game {
    *  derived from it by projecting onto the track each frame). */
   private freeDrive = new FreeDrive();
   private lapProgress = 0;   // cumulative signed distance travelled this lap
+  /** Where the backmost grid slot sits, in metres behind the start line. */
+  private gridStart = 0;
   private lastFreeDist = 0;  // previous frame's projected distance (for lap wrap)
   private wasOnRamp = false;
   private lastRampPower = 1;
@@ -790,10 +792,16 @@ export class Game {
     const [library] = await Promise.all([loadModels(), loadPBR(groundName)]);
     if (this.stopped) return;
     this.buildWorld(library);
-    // place the free-roam body on the start line, facing down the track
-    this.freeDrive.reset(this.track, 0);
-    this.lastFreeDist = 0;
-    this.lapProgress = 0;
+    // Place the free-roam body on its GRID SLOT — behind the line with the
+    // field — rather than on the line itself.
+    //
+    // lapProgress starts negative by the same amount, which is what keeps lap
+    // counting honest: it reaches `len` exactly when the car returns to the
+    // line, not `gridStart` metres early. Without this the first lap would tick
+    // over before crossing the line, every race.
+    this.freeDrive.reset(this.track, this.track.wrap(this.gridStart));
+    this.lastFreeDist = this.track.wrap(this.gridStart);
+    this.lapProgress = this.gridStart;
     this.combo = 0;
     this.comboT = 0;
     this.lastPosition = 0;
@@ -1023,8 +1031,9 @@ export class Game {
 
     // start/finish gantry over the line + ambient particle field for life
     if (realm.style !== "void") {
-      const gp = track.pointAt(2);
-      const gtan = track.tangentAt(2);
+      // On the line, not 2 m past it — the gantry marks the place laps tick.
+      const gp = track.pointAt(0);
+      const gtan = track.tangentAt(0);
       const gantry = makeStartGantry(pal);
       gantry.position.set(gp.x, gp.y, gp.z);
       gantry.rotation.y = Math.atan2(gtan.x, gtan.z);
@@ -1168,16 +1177,30 @@ export class Game {
     // of traffic, not as a grid you are lined up on. A real standing grid is
     // rows of two, staggered so the car on the right of a row sits slightly
     // ahead of the one on its left, with a proper gap between rows.
+    // BEHIND THE LINE, all of it.
+    //
+    // The grid used to start AT distance 0 with the field arrayed ahead, so
+    // every race began with the whole pack already past the start/finish line
+    // and the player sitting on it. That is backwards: a standing grid forms up
+    // BEHIND the line and crosses it when the lights go out. It is the first
+    // thing anyone sees, and it read as joining a race already in progress.
+    //
+    // Everything is negative now: pole's nose sits GRID_BACK behind the line,
+    // each row a further rowStep back, and the player is the backmost slot. Lap
+    // counting compensates — see lapProgress below.
+    // Pole's nose sits this far behind the line — close enough that the line
+    // fills the windscreen on the grid, far enough that nobody is on top of it.
+    const GRID_BACK = 7;
     const rowStep = 8.0;    // metres between ROWS
     const stagger = 1.6;    // the right-hand slot of each row sits this far up
     const colLane = 0.38;   // the two columns, ± this in playerX units
     const gridN = Math.min(OPPONENT_COUNT, OPPONENTS.length);
     const playerSlot = gridN;                 // player is last (behind every rival)
     const rowOf = (slot: number) => Math.floor(slot / 2);
-    const lastRow = rowOf(playerSlot);
     const slotDist = (slot: number) =>
-      (lastRow - rowOf(slot)) * rowStep + (slot % 2 === 1 ? stagger : 0);
+      -(GRID_BACK + rowOf(slot) * rowStep) + (slot % 2 === 1 ? stagger : 0);
     const slotLane = (slot: number) => (slot % 2 === 0 ? -colLane : colLane);
+    this.gridStart = slotDist(playerSlot);   // the player's own slot, for init()
 
     for (let i = 0; i < gridN; i++) {
       const spec = OPPONENTS[i];

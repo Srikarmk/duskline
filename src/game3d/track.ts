@@ -497,16 +497,86 @@ export class Track {
     return g;
   }
 
+  /**
+   * The start/finish line, built as a STRIP THAT FOLLOWS THE ROAD.
+   *
+   * It used to be a single flat `PlaneGeometry` dropped at one point with one
+   * rotation. The road is banked and curving, so a flat rectangle could only
+   * ever meet the surface along one line — on a banked corner most of its width
+   * sank under the tarmac and the line looked like it covered half the road. It
+   * was full width the whole time; you just could not see it.
+   *
+   * The vertex maths here is COPIED FROM `buildRoadMesh`, not re-derived
+   * through `pointAt()`. That distinction is the whole fix: the ribbon sits at
+   * `max(GROUND_FLOOR, p.y) + 0.1 + lift` and spans `ROAD_HALF_WIDTH * 1.25`,
+   * and a first attempt that used `pointAt()` put the strip ~8 cm BELOW the
+   * road — invisible everywhere instead of visible in half. A decal has to be
+   * generated from the same expression as the surface it lies on.
+   *
+   * Sits at distance 0, which is where laps actually tick over; the old one was
+   * painted 2 m past it.
+   */
   buildStartLine(texture: THREE.Texture): THREE.Mesh {
-    const geo = new THREE.PlaneGeometry(ROAD_HALF_WIDTH * 2, 4);
-    const mat = new THREE.MeshBasicMaterial({ map: texture });
-    const mesh = new THREE.Mesh(geo, mat);
-    const p = this.pointAt(2);
-    const tan = this.tangentAt(2);
-    mesh.position.set(p.x, p.y + 0.1, p.z);
-    mesh.rotation.x = -Math.PI / 2;
-    mesh.rotation.z = Math.atan2(-tan.x, -tan.z);
-    return mesh;
+    const HALF_LEN = 2.0;        // metres of track the band covers
+    const COLS = 10;             // across the road
+    const ROWS = 6;              // along it — enough to follow a tight corner
+    // 7 cm, not 1 cm. The strip's vertices land within ~2 cm of the ribbon's
+    // own (measured), but depth precision 20+ m from the camera on a far plane
+    // of 1600 is far coarser than that, so a hairline lift simply loses the
+    // depth test and the line vanishes entirely — which is worse than the
+    // half-sunk rectangle it replaced. The old flat plane used 10 cm for the
+    // same reason. At 7 cm a painted line is not perceptibly proud of the road.
+    const LIFT = 0.07;
+    const edge = ROAD_HALF_WIDTH * 1.25;   // the ribbon's own half-width
+
+    const pos: number[] = [], uv: number[] = [], idx: number[] = [];
+    for (let r = 0; r <= ROWS; r++) {
+      const d = this.wrap(-HALF_LEN + (r / ROWS) * HALF_LEN * 2);
+      const t = this.wrap(d) / this.length;
+      const p = this.curve.getPointAt(t);
+      const tan = this.curve.getTangentAt(t);
+      // Banked "right" vector, lift and centre height — copied from
+      // buildRoadMesh deliberately, not approximated via pointAt().
+      let rx = -tan.z, ry = 0, rz = tan.x;
+      const bank = this.bankAt(d);
+      if (bank !== 0) {
+        const c = Math.cos(bank), sn = Math.sin(bank);
+        const ux = tan.y * rz - tan.z * ry;
+        const uy = tan.z * rx - tan.x * rz;
+        const uz = tan.x * ry - tan.y * rx;
+        rx = rx * c + ux * sn; ry = ry * c + uy * sn; rz = rz * c + uz * sn;
+      }
+      const lift = bank !== 0 ? BANK_EDGE * Math.abs(Math.sin(bank)) : 0;
+      const cy = Math.max(GROUND_FLOOR, p.y) + 0.1 + lift + LIFT;
+      for (let c = 0; c <= COLS; c++) {
+        const u = c / COLS;
+        const off = (u * 2 - 1) * edge;
+        pos.push(p.x + rx * off, cy + ry * off, p.z + rz * off);
+        // Tile the checker across the width so the squares stay square rather
+        // than stretching with the road.
+        uv.push(u * 7, r / ROWS);
+      }
+    }
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      const a = r * (COLS + 1) + c, b = a + 1, d2 = a + COLS + 1, e = d2 + 1;
+      // Wound so the face normals point UP. The terrain grid's order, copied
+      // straight over, produced normals averaging -0.98 in y — the strip was
+      // presenting its back to the sky.
+      idx.push(a, b, d2, b, e, d2);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+
+    const map = texture.clone();
+    map.wrapS = map.wrapT = THREE.RepeatWrapping;
+    map.needsUpdate = true;
+    const mat = new THREE.MeshBasicMaterial({
+      map, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+    });
+    return new THREE.Mesh(geo, mat);
   }
 }
 
