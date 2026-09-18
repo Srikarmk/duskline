@@ -1,4 +1,4 @@
-# Audit — opened 2026-09-15, worked 2026-09-16
+# Audit — opened 2026-09-15, worked 2026-09-16 and 2026-09-18
 
 Run against the **deployed build**, not a local dev server, except where noted.
 Dependency and code checks are against the working tree.
@@ -6,9 +6,11 @@ Dependency and code checks are against the working tree.
 Severity: 🔴 fix before launch · 🟠 fix soon · 🟡 worth doing · ⚪ nice to have
 Status: ✅ fixed and verified · ◻ open
 
-**12 of 13 findings are fixed.** The one left open is a build-time dependency
+**19 of 20 findings are fixed.** The one left open is a build-time dependency
 advisory that needs a major framework upgrade, and is not reachable in this app
-— reasoning below.
+— reasoning below. Six of the findings were opened by the 2026-09-18 feature
+pass: adding a mechanic is the fastest way to discover which of the existing
+ones were quietly wrong.
 
 ---
 
@@ -238,6 +240,77 @@ by deleting what they pointed at:
 
 `npm run lint` is clean and CI runs it.
 
+### ✅ 🔴 NEW — The camera showed the underside of the road on every descent
+Reported by eye: driving down a hill, you saw the road from below. The camera
+has a floor clamp, and it was clamped to the **terrain** height — but the
+terrain is deliberately held BELOW the road ribbon (that is the ramp that lets
+the verge meet the tarmac without a step). On a descent the chase camera trails
+above and behind the car into the space between those two surfaces, where a
+clamp to the terrain is still under the road.
+
+Fixed by clamping to whichever is higher, terrain or the road surface at the
+camera's own projected position:
+
+```ts
+let floor = this.groundHeightAtXZ(cx, cz);
+const pr = this.track.project(cx, cz);
+if (Math.abs(pr.lateral) < ROAD_HALF_WIDTH * 2.2) {
+  const rp = this.track.pointAt(pr.dist, pr.lateral, this.tmpCamFloor, false);
+  if (rp.y > floor) floor = rp.y;
+}
+```
+
+Verified: **0 frames** with the camera below the road surface over a 5,400-frame
+lap, on a circuit with hills that showed it every time before.
+
+### ✅ 🟠 NEW — Pole was not on pole, and the player was ninth of ten
+The standing grid's stagger was **added** where it should have been subtracted,
+so the odd slot of each row sat 1.6 m AHEAD of its partner instead of behind
+it. Three consequences from one sign: slot 0 was not the frontmost car, every
+row was ordered backwards against its slot numbers, and the player — the odd
+slot of the last row — started 1.6 m ahead of the ninth rival on a grid that is
+specifically supposed to put them last.
+
+Measured before: rivals at −5.4 … −39, player at −37.4. After: pole at −7 with
+its partner at −8.6, five rows of two at 8 m intervals, player at −40.6 with
+every rival ahead. Slot order and distance order now agree.
+
+### ✅ 🟠 NEW — A boost pad by the kerb fired when you drove down the middle
+`COLLIDE_WIDTH.boostpad` was `1.0` — and that table is in ROAD_HALF_WIDTH
+units, so the hit band was **five metres either side of the pad**, the entire
+road. It was correct when a pad spanned the circuit and was never revisited.
+Any attempt to place a pad off the racing line as a decision would have been
+silently undone: you would have collected it without ever leaving the centre
+line. Now `0.36` (1.8 m), matching the lane-width deck.
+
+### ✅ 🟡 NEW — CLEAN LANE paid for the opposite of what the track was asking
+The lane-discipline bonus pays for holding one lane arrow-straight. Inside a
+drift zone the circuit is asking for a slide across the whole road. Whichever a
+player chased, the other one was telling them they had got it wrong. The bonus
+no longer fires inside a zone.
+
+### ✅ 🟡 NEW — Toasts printed through the middle of the drama callout
+The toast stack started at y 150 and the callout was centred at `vh * 0.3`,
+which on a 600 px view is 180 — two independent magic numbers that put "NEAR
+MISS x1" straight through "PASSED". The callout now exports where it sits
+(`calloutCenterY`) and the stack starts below it, with a floor that keeps it
+clear of the style-chain panel on short viewports.
+
+### ✅ 🟡 NEW — A gem run pushed every meaningful toast off the screen
+A gem run is six chips 3.5 m apart. At racing speed that is six `+100` toasts
+in half a second into a stack that holds four, so collecting a run reliably
+evicted NEAR MISS, DRIFT ZONE and CHAIN BANKED. The score notifications were
+drowning out the skill notifications. Chips now coalesce into one line that
+counts up (`+100` → `+600`).
+
+### ✅ ⚪ NEW — Anisotropy was left at 8 on the road and 4 on the cars
+`textures.ts` raised the GLTF maps to 16 long ago with a comment calling
+anisotropy "the biggest single sharpness win available"; the procedural
+textures never got the same treatment. The road is the surface that runs to the
+horizon at the most grazing angle in the game, which is exactly where filtering
+smears into mush, and it was on 8. Now one exported `ANISO` used by the road,
+checker, ground, sky and car textures alike.
+
 ---
 
 ## 2. What we could improve
@@ -285,12 +358,83 @@ by deleting what they pointed at:
    race start came from cache, `transferSize: 0`, median 4 ms.**
 
 ### Gameplay depth
-6. ◻ **Ghost cars** — your own best lap, replayed. Cheap to record, and the
-   feature that makes time attack matter.
-7. ◻ **Progression**: cars unlocked by distance or podiums.
-8. ◻ **A real championship**: Grand Prix is three rounds; a season with
+6. ✅ **Ghost cars.** `src/game3d/ghost.ts` — your own best lap, per realm,
+   driving beside you. A solo lap had nothing to measure itself against: the AI
+   is rubber-banded, so beating it says more about the band than about you.
+
+   Stored in TRACK SPACE (distance along the lap, lateral offset, heading)
+   rather than world XYZ, so a ghost survives anything that moves the road in
+   world space — re-tuned elevation, a different bank, a wider ribbon. Sampled
+   by DISTANCE, not time: the only question a replay ever asks is "where was I
+   at this point on the track", and distance-indexed that is an array index
+   rather than a search. A 4 km lap is 966 samples.
+
+   That indexing is also what makes the delta readout honest. The first version
+   divided the metres between you and the ghost by your current speed, which is
+   wrong in exactly the moment you look at it — measured while coasting, a
+   36 m gap read as **4.5 seconds down** when it was 0.8. Now it is the ghost's
+   own recorded time at your distance minus your lap time, which is stable
+   through braking and is what a driver actually means by a delta.
+
+   Lap 1 is recorded but never stored: it runs from the grid ~40 m behind the
+   line, so its time includes a standing start and is not comparable to a
+   flying lap. Samples are rounded on the way out — raw doubles measured 56 kB
+   per realm, and twelve realms of that is an eighth of the localStorage quota
+   for precision no one can see.
+
+   Verified end to end: 966 samples with monotonic times and finite headings,
+   translucent unlit clone (74 meshes, all `MeshBasicMaterial`, `depthWrite`
+   off) visible on the road, and a delta that closes from −2.58 s to −1.46 s
+   over a lap driven slightly quicker than the recording.
+7. ✅ **A style chain.** Drift, near miss, overtake, stunt and pad chain all
+   feed one pot that **pends** rather than scores, at up to x6. Let the fuse
+   lapse cleanly and you bank it; clip anything and you lose the lot. The point
+   is that every one of those was previously a flat payout you could collect by
+   accident — a risk bank turns them into a decision about when to stop.
+
+   Verified: nothing moves the score while a chain is alive, a clean lapse
+   banked 820 from four links, and a break cost the 300-point pot without
+   touching the score. Ten links accumulated from real events on a hands-off
+   lap, so it is reachable in ordinary play rather than only on purpose.
+8. ✅ **Drift zones.** Painted corners that pay into the chain in proportion to
+   how much of them you spent sideways. Drifting was the deepest mechanic in
+   the game and the one nothing ever asked for: you could finish a race without
+   sliding once and the track would never notice.
+
+   Where the zones go is **measured, not authored**. Twelve realms each
+   generate their own circuit, so the lap's own curvature percentiles pick its
+   busiest corners and every circuit gets a comparable handful. A first pass
+   used absolute thresholds and found exactly ONE zone on a 3.9 km lap — the
+   0.010 floor was above the 90th percentile of a circuit whose tightest
+   hairpin measured 0.0116, so the floor had silently replaced the percentile.
+   Now four zones, 40–130 m, spread around the lap on Sunset Bay and on the
+   Void Circuit alike.
+
+   The band is the gauge, warming violet to amber under the car as you fill it,
+   so the feedback is on the road you are looking at. It only fills on tarmac:
+   the grass is deliberately looser than asphalt, so before that guard a run
+   wide onto the verge filled the gauge FASTER than a proper drift did, which
+   would have made the reward for a drift zone "steer off the road".
+9. ✅ **Boost pads, on the outside of corner exits.** They were pulled from the
+   circuit for being a conveyor belt, and that was true of a pad you cannot
+   miss — the deck was 8.5 m wide on a 10 m road, and its hit band was FIVE
+   metres either side of centre, so a pad parked by the kerb still fired when
+   you drove down the middle. Now a lane's width with a lane's hit band, in
+   chains of three on the outside of the corners the drift zones already found,
+   where taking them costs you the tight line. The second and third decks
+   EXTEND the surge rather than refresh it, so committing to the whole chain is
+   worth more than clipping the first.
+10. ✅ **Slipstream.** The hole in the air behind the car in front. Without it,
+   following a rival was strictly worse than being alone — same speed, spoiled
+   air, nowhere to go — which is why the pack strung out and stayed strung out.
+   Strongest right behind the gearbox, gone by 30 m, and it bleeds out slowly
+   so pulling out to pass keeps the speed you earned. Measured over a lap in
+   traffic: mean +2.0% top speed, with the strong band on 3% of frames — worth
+   chasing, not enough to make following better than leading.
+11. ◻ **Progression**: cars unlocked by distance or podiums.
+12. ◻ **A real championship**: Grand Prix is three rounds; a season with
    standings is the same code with persistence.
-9. ✅ **Photo mode.** The art direction is the point of this game and there was
+13. ✅ **Photo mode.** The art direction is the point of this game and there was
    no way to look at it: the chase camera sits behind the car at a fixed height
    and the HUD covers the corners, so the one thing worth showing off was the
    one thing you could not frame.
@@ -312,11 +456,15 @@ by deleting what they pointed at:
    held keys (yaw 2.3 → 4.34), capture is a real 1423×1491 PNG with 1,725 of
    2,304 sampled pixels lit, and ESC returns to the pause menu with the HUD and
    the chase FOV restored.
-10. ◻ **Weather as a race condition** rather than decoration.
-11. ◻ **Rival personalities** — the AI is one behaviour with a rubber band.
+14. ◻ **Weather as a race condition** rather than decoration. The `RoadFinish`
+    values it would drive are already defined and already change how the road
+    is lit; nothing couples them to grip.
+15. ◻ **Rival personalities** — the AI is one behaviour with a rubber band. It
+    does not benefit from the slipstream it now creates, which is the obvious
+    next step and the cheapest way to make the pack race each other.
 
 ### Product
-12. ✅ **Share a result.** `src/ui/shareCard.ts` — a 1200×630 card (the Open
+16. ✅ **Share a result.** `src/ui/shareCard.ts` — a 1200×630 card (the Open
     Graph aspect, so it works pasted in a chat or attached to a post) with the
     realm's own art, the score, time, finishing position, a PERSONAL BEST badge
     and the URL. SHARE RESULT on the results screen hands it to the OS share
@@ -326,15 +474,15 @@ by deleting what they pointed at:
     results screen is up the race canvas is gone, and keeping the whole engine
     alive for a postcard is the wrong trade. Verified on two realms; the first
     version had the subtitle colliding with the wordmark.
-13. ◻ **Daily challenge** — same realm, car and seed for everyone, one run a
+17. ◻ **Daily challenge** — same realm, car and seed for everyone, one run a
     day. The cheapest retention mechanic there is, and it needs the KV store
     that is already on the release list.
-14. ◻ **Replays** of the last lap.
-15. ◻ **Settings synced across devices** once identity is real.
+18. ◻ **Replays** of the last lap.
+19. ◻ **Settings synced across devices** once identity is real.
 
 ### Engineering
-16. ✅ **ESLint** — configured, clean, and in CI. See above for what it found.
-17. ✅ **A data-invariants test** — `npm run test:data`, in CI. Every bug it
+20. ✅ **ESLint** — configured, clean, and in CI. See above for what it found.
+21. ✅ **A data-invariants test** — `npm run test:data`, in CI. Every bug it
     guards has actually shipped here: realms added with no ground-texture
     mapping (silently falling back to a green forest floor that a multiply tint
     can never make into snow), realms added with no preview art, textures
@@ -342,9 +490,9 @@ by deleting what they pointed at:
     because they are data pointing at files. Proven to fail: deleting one
     preview makes it exit 1 naming the realm. Physics helpers are still
     uncovered.
-18. ◻ **A frame-budget test in CI** — assert draw calls and triangle counts
+22. ◻ **A frame-budget test in CI** — assert draw calls and triangle counts
     stay under a ceiling, so a scenery change cannot quietly double them.
-19. ✅ **A signed race token.** `src/server/raceToken.ts` + `/api/race-token`.
+23. ✅ **A signed race token.** `src/server/raceToken.ts` + `/api/race-token`.
     A ticket is issued when a race STARTS, and `/api/scores` refuses anything
     without one. The server checks the HMAC, the age, that at least 80% of the
     claimed duration really elapsed since issue, and that the ticket has not
@@ -371,8 +519,8 @@ by deleting what they pointed at:
 
     Set `RACE_TOKEN_SECRET` to turn it on; unset, everything behaves exactly as
     before.
-20. ◻ **Next 16 upgrade**, which also clears the last two advisories.
-21. ✅ **`prefers-reduced-motion` in the engine.** The stylesheet honoured it
+24. ◻ **Next 16 upgrade**, which also clears the last two advisories.
+25. ✅ **`prefers-reduced-motion` in the engine.** The stylesheet honoured it
     for the menus all along; the engine never did, so the two effects most
     likely to cause trouble ran regardless. Camera shake and the radial speed
     smear are both suppressed now (the FOV kick is left — it is the cue that

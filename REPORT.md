@@ -295,6 +295,92 @@ photograph is the game's own image. Reading the frame loop before running it
 caught the flaw that would have killed it: `frame()` returns before `render()`
 while paused, so the free camera would have drawn one frame and then sat there.
 
+## 6c. Giving the circuit something to do (2026-09-18)
+
+Five features, none of which needed a new asset, plus the visual and layout
+faults they exposed.
+
+**Ghost lap.** Your own best lap, per realm, driving beside you. The point is
+that a solo lap had nothing to measure itself against: the AI is rubber-banded,
+so beating it says more about the band than about the driver. Stored in track
+space rather than world XYZ so it survives any change to the road art, and
+sampled by *distance* rather than time — the only question a replay ever asks
+is "where was I at this point on the track", and distance-indexed that is an
+array index rather than a search.
+
+That indexing is what makes the delta honest, and getting it wrong first taught
+me why. Version one divided the gap in metres by the current speed, which is
+wrong in exactly the moment a driver looks at the number: measured while
+coasting, a 36 m gap read as 4.5 seconds down when it was 0.8. The recording
+already knows how long the best lap took to reach any distance, so the delta is
+now that minus your own lap time — stable through braking, and the number the
+readout was always pretending to be.
+
+**Style chain.** Drift, near miss, overtake, stunt and pad chain now feed one
+pot that *pends* rather than scores, at up to x6, banked when the fuse lapses
+cleanly and lost entirely on contact. Each of those was previously a flat
+payout you could collect by accident; a risk bank turns them into a decision
+about when to stop pushing.
+
+**Drift zones.** Drifting was the deepest mechanic in the game and the one
+nothing ever asked for — you could finish a race without sliding once and the
+track would never notice. Zones are painted corners that pay in proportion to
+how much of them you spent sideways, placed by the *lap's own* curvature
+percentiles rather than authored, because twelve realms generate twelve
+different circuits. A first pass with absolute thresholds found exactly one
+zone on a 3.9 km lap: the 0.010 floor I had picked as a guardrail was above the
+90th percentile of a circuit whose tightest hairpin measured 0.0116, so the
+floor had quietly replaced the percentile it was meant to protect.
+
+The zone only fills on tarmac, which I did not think to guard until I watched
+the gauge fill faster off the road than on it. The grass is deliberately looser
+than asphalt so the car slides on it — which would have made the optimal play
+in a drift zone "steer onto the verge".
+
+**Boost pads, back but placed to cost something.** They had been pulled for
+being a conveyor belt, and that was a fair description of a pad you cannot
+miss: the deck was 8.5 m wide on a 10 m road, and its collision band turned out
+to be five metres either side of centre — the whole road. Any attempt to make a
+pad a decision by moving it off the racing line would have been silently
+undone. Now a lane's width with a lane's hit band, in chains of three on the
+outside of corner exits, and the later decks extend the surge rather than
+refresh it so committing to the chain beats clipping the first one.
+
+**Slipstream.** Following a rival used to be strictly worse than being alone —
+same speed, spoiled air, nowhere to go — which is why the pack strung out and
+stayed strung out. The tow is strongest right behind the gearbox, gone by 30 m,
+and bleeds out slowly so pulling out to pass keeps the speed you earned.
+Measured over a lap in traffic it averages +2.0% top speed with the strong band
+on 3% of frames: worth chasing, not enough to make following better than
+leading.
+
+**The road from below.** Reported by eye — driving downhill, you saw the
+underside of the tarmac. The camera's floor clamp was against the *terrain*,
+and the terrain is deliberately held below the road ribbon so the verge can
+meet the tarmac without a step. On a descent the chase camera trails into the
+gap between the two, where a terrain clamp is still under the road. It now
+clamps to whichever is higher. Zero frames below the road over a 5,400-frame
+lap, on a circuit that showed it on every descent.
+
+**The grid.** Asked to put every car behind the line with assigned positions
+and the player last, I found the stagger was *added* where it should have been
+subtracted. One sign, three consequences: pole was not the frontmost car, every
+row was ordered backwards against its slot numbers, and the player — the odd
+slot of the last row — started 1.6 m ahead of the ninth rival. Now pole at −7,
+five rows of two at 8 m intervals, player at −40.6 with all nine ahead.
+
+**Sharpening.** The features exposed how noisy the screen had become. Toasts
+were laid out at y 150 and the drama callout at `vh * 0.3`, two independent
+magic numbers that on a 600 px view printed "NEAR MISS x1" straight through
+"PASSED"; the callout now exports where it sits. A gem run is six chips 3.5 m
+apart, which at racing speed is six `+100` toasts in half a second into a
+four-slot stack — so collecting one reliably evicted every line that meant
+something, and chips now coalesce into a single counting line. The first drift
+zone texture was a 0.7 m violet chevron every six metres, which stopped reading
+as road markings and started reading as a purple road. And anisotropy, which
+`textures.ts` itself calls the biggest single sharpness win available, was
+still 8 on the road and 4 on the cars while the GLTF maps were on 16.
+
 ## 7. The rename
 
 Fantasy Racer → **Duskline**. Code, UI, manifest, share tags, package name,
