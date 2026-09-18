@@ -6,7 +6,7 @@ Dependency and code checks are against the working tree.
 Severity: 🔴 fix before launch · 🟠 fix soon · 🟡 worth doing · ⚪ nice to have
 Status: ✅ fixed and verified · ◻ open
 
-**19 of 20 findings are fixed.** The one left open is a build-time dependency
+**20 of 21 findings are fixed.** The one left open is a build-time dependency
 advisory that needs a major framework upgrade, and is not reachable in this app
 — reasoning below. Six of the findings were opened by the 2026-09-18 feature
 pass: adding a mechanic is the fastest way to discover which of the existing
@@ -311,6 +311,40 @@ horizon at the most grazing angle in the game, which is exactly where filtering
 smears into mush, and it was on 8. Now one exported `ANISO` used by the road,
 checker, ground, sky and car textures alike.
 
+### ✅ 🔴 NEW — The fork was removed for nine faults, none of them the fork
+The alternate routes were torn out with the note *"the open fork corridor let
+the car wander off-road (OOB + sink) and the separate curve felt bad"*. That
+blamed the feature. The cause was that nothing outside `freeDrive` had ever
+been told a second road existed.
+
+`freeDrive` projects onto whichever road is nearer and walls you onto it, and
+reports `lateral` relative to **that** road. Everything else reads
+`freeDrive.lateral` as metres from the MAIN centreline. Measured, parked on the
+branch centreline at the apex: `freeDrive.lateral` **0.00** while
+`track.project` put the car **17.23 m** off the main road — with thirteen
+entities in the fork span at laterals the collision test would have matched.
+
+| Fault | Measured |
+| --- | --- |
+| Entity pickups, ramps, drift zones, the crossing, near misses, car contact, the lane bonus and both halves of the slipstream all read the branch lateral as a main-road one | 13 entities in the span collectable from a different road |
+| The car's height came from the main track whichever road it was on | the "sink"; error now 0.000 m via `surfaceY()` |
+| The steering assist aimed at the main centreline, so it steered you off the fork | 34 frames of 600 held on the branch |
+| Scenery bands reach 40 m from the main centreline, so rows 2-3 planted a forest on the branch | 0 of 2,636 obstacles on a branch now |
+| The island was sized from `bulge`: a 6.6 m cone in a 4.6 m median, overlapping both roads | inner edge 5.5 m vs road to 6.6; outer 12.1 m vs branch inner edge 11.2 |
+| The branch ribbon was built 5 m half-width against the road's 6.25, while the walls are absolute at 5.6/6.6 | 47% of the branch flagged off-road → 18.6%, and that residue is all the merge overlap |
+| The fork sign is a gantry with central posts, placed on the centreline | two steel posts on the racing line, not registered solid |
+| The side came from a character code, so on a straight the branch was a lens — always longer than its chord | 154 m on a 130 m span → 138 m (Forest) and 119 m, a real shortcut (Void) |
+| Nothing made the slower branch worth taking | now pays a style-chain link for seeing it through |
+
+The ramp ride-up's own guard is worth noting: it read `!this.onBranch`, the
+rail-era field, which nothing has set since the move to free-roam driving — so
+it had quietly stopped guarding years of commits ago. All nine now share one
+`onMainRoad` accessor.
+
+Verified across two realms: 4.4 s held on the fork covering 87% of it, **0**
+gems collected while on it, no respawn, and all four of this session's gimmicks
+on one circuit at once.
+
 ---
 
 ## 2. What we could improve
@@ -431,10 +465,7 @@ checker, ground, sky and car textures alike.
    so pulling out to pass keeps the speed you earned. Measured over a lap in
    traffic: mean +2.0% top speed, with the strong band on 3% of frames — worth
    chasing, not enough to make following better than leading.
-11. ◻ **Progression**: cars unlocked by distance or podiums.
-12. ◻ **A real championship**: Grand Prix is three rounds; a season with
-   standings is the same code with persistence.
-13. ✅ **Photo mode.** The art direction is the point of this game and there was
+11. ✅ **Photo mode.** The art direction is the point of this game and there was
    no way to look at it: the chase camera sits behind the car at a fixed height
    and the HUD covers the corners, so the one thing worth showing off was the
    one thing you could not frame.
@@ -456,15 +487,66 @@ checker, ground, sky and car textures alike.
    held keys (yaw 2.3 → 4.34), capture is a real 1423×1491 PNG with 1,725 of
    2,304 sampled pixels lit, and ESC returns to the pause menu with the HUD and
    the chase FOV restored.
-14. ◻ **Weather as a race condition** rather than decoration. The `RoadFinish`
-    values it would drive are already defined and already change how the road
-    is lit; nothing couples them to grip.
-15. ◻ **Rival personalities** — the AI is one behaviour with a rubber band. It
-    does not benefit from the slipstream it now creates, which is the obvious
-    next step and the cheapest way to make the pack race each other.
+12. ✅ **Weather is a race condition.** It already rolled over mid-race and
+    already changed the sky; it just had no consequence, which made it
+    scenery. Rain, snow, sand and ash now take LATERAL GRIP — 0.78 at the
+    worst — and nothing else.
+
+    Grip is the interesting lever. The straights are unchanged, every corner
+    has to be taken slower or sideways, and because the drift threshold is a
+    side-slip *speed* the car breaks loose earlier — so a wet lap pays more
+    style than a dry one. Cutting top speed would only have made the race
+    longer.
+
+    Eased over ~2.5 s rather than switched, because a shower that took hold
+    between one frame and the next would change the car's handling mid-corner.
+    The ribbon's material wets and dries with it, read back from
+    `buildRoadMesh` rather than duplicated from the finish presets so the two
+    cannot drift apart, and the HUD names the cause and the number: a car that
+    has quietly lost a fifth of its cornering grip with nothing on screen is
+    indistinguishable from a car that has started handling badly, and the
+    player will blame the game. The AI lifts on the same curve — a weather
+    effect only the human felt would be a handicap, not a condition.
+
+    Verified: grip 1.00 → 0.81 and road roughness 0.625 → 0.292 over five
+    seconds of rain, and back again when it clears.
+13. ✅ **The pack gets the slipstream too.** (The personality system — apex
+    hunting, corner caution, preferred line, weave, nitro style, mistake rate,
+    all name-seeded — already existed; this was the gap in it.) A rival could
+    never reel in a car it was following, so one that dropped two lengths back
+    stayed there for the rest of the race and the field never fought over
+    anything. Rivals now tow off each other and off the player.
+
+    Gain is 0.09 against the player's 0.12, because the AI holds a line and
+    does not think to pull out, so it sits in a tow far more of the time; the
+    same number compounded into the pack circulating faster than anyone
+    driving it. Measured over a lap: mean rival tow 0.088, eight of nine
+    rivals in a meaningful tow at some point, field inside 156 m.
+14. ✅ **A telegraphed set piece per circuit — the crossing.** Everything else
+    on the track is static: you learn where it is once and it is the same
+    every lap. Two boulders now sweep across the road on a 9.5 s cycle behind
+    a painted hazard band, two flashing beacons and a HUD callout, so the same
+    corner is a different problem on lap 1 and lap 3.
+
+    Nearly all the work was finding out where a boulder is allowed to be.
+    One boulder leaves nine metres of clear road and is therefore nothing to
+    do; two with a 4.5 m gap was a *wall*, because each blocks 2.8 m once the
+    car's width is counted. At 7.5 m the narrowest clear stretch at any point
+    in the sweep is 1.9 m and never under 1.2, so there is always a way
+    through. And they only exist ON the road now, at road height — there is no
+    good resting place beside the tarmac, and at Sunset Bay a parked boulder
+    sat in mid-air over a ten-metre drop to the beach, on a slope steep enough
+    that 15 cm of lateral slide moved it 1.1 m vertically. Collision is bounded
+    to the same window, so an invisible boulder on the verge cannot flatten a
+    car running wide.
+15. ✅ **The gated fork.** See the bug section below — nine separate faults,
+    none of them the fork itself.
+16. ◻ **Progression**: cars unlocked by distance or podiums.
+17. ◻ **A real championship**: Grand Prix is three rounds; a season with
+    standings is the same code with persistence.
 
 ### Product
-16. ✅ **Share a result.** `src/ui/shareCard.ts` — a 1200×630 card (the Open
+18. ✅ **Share a result.** `src/ui/shareCard.ts` — a 1200×630 card (the Open
     Graph aspect, so it works pasted in a chat or attached to a post) with the
     realm's own art, the score, time, finishing position, a PERSONAL BEST badge
     and the URL. SHARE RESULT on the results screen hands it to the OS share
@@ -474,15 +556,15 @@ checker, ground, sky and car textures alike.
     results screen is up the race canvas is gone, and keeping the whole engine
     alive for a postcard is the wrong trade. Verified on two realms; the first
     version had the subtitle colliding with the wordmark.
-17. ◻ **Daily challenge** — same realm, car and seed for everyone, one run a
+19. ◻ **Daily challenge** — same realm, car and seed for everyone, one run a
     day. The cheapest retention mechanic there is, and it needs the KV store
     that is already on the release list.
-18. ◻ **Replays** of the last lap.
-19. ◻ **Settings synced across devices** once identity is real.
+20. ◻ **Replays** of the last lap.
+21. ◻ **Settings synced across devices** once identity is real.
 
 ### Engineering
-20. ✅ **ESLint** — configured, clean, and in CI. See above for what it found.
-21. ✅ **A data-invariants test** — `npm run test:data`, in CI. Every bug it
+22. ✅ **ESLint** — configured, clean, and in CI. See above for what it found.
+23. ✅ **A data-invariants test** — `npm run test:data`, in CI. Every bug it
     guards has actually shipped here: realms added with no ground-texture
     mapping (silently falling back to a green forest floor that a multiply tint
     can never make into snow), realms added with no preview art, textures
@@ -490,9 +572,9 @@ checker, ground, sky and car textures alike.
     because they are data pointing at files. Proven to fail: deleting one
     preview makes it exit 1 naming the realm. Physics helpers are still
     uncovered.
-22. ◻ **A frame-budget test in CI** — assert draw calls and triangle counts
+24. ◻ **A frame-budget test in CI** — assert draw calls and triangle counts
     stay under a ceiling, so a scenery change cannot quietly double them.
-23. ✅ **A signed race token.** `src/server/raceToken.ts` + `/api/race-token`.
+25. ✅ **A signed race token.** `src/server/raceToken.ts` + `/api/race-token`.
     A ticket is issued when a race STARTS, and `/api/scores` refuses anything
     without one. The server checks the HMAC, the age, that at least 80% of the
     claimed duration really elapsed since issue, and that the ticket has not
@@ -519,8 +601,8 @@ checker, ground, sky and car textures alike.
 
     Set `RACE_TOKEN_SECRET` to turn it on; unset, everything behaves exactly as
     before.
-24. ◻ **Next 16 upgrade**, which also clears the last two advisories.
-25. ✅ **`prefers-reduced-motion` in the engine.** The stylesheet honoured it
+26. ◻ **Next 16 upgrade**, which also clears the last two advisories.
+27. ✅ **`prefers-reduced-motion` in the engine.** The stylesheet honoured it
     for the menus all along; the engine never did, so the two effects most
     likely to cause trouble ran regardless. Camera shake and the radial speed
     smear are both suppressed now (the FOV kick is left — it is the cue that

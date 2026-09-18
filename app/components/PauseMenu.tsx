@@ -104,6 +104,9 @@ export default function PauseMenu({ onResume, onRestart, onQuit, onApply, onPhot
               <div><dt>boost pads</dt><dd>out wide on corner exits — the long way round, for a surge onto the straight</dd></div>
               <div><dt>slipstream</dt><dd>tuck in close behind a rival for a tow, then pull out to pass</dd></div>
               <div><dt>the ghost</dt><dd>your best lap on this world, replayed beside you; VS BEST is how far up or down you are</dd></div>
+              <div><dt>weather</dt><dd>rain, snow and sand cost you grip in the corners — the readout top-left tells you how much</dd></div>
+              <div><dt>the crossing</dt><dd>the striped band: something sweeps across it on a cycle. Beacons flash before it moves</dd></div>
+              <div><dt>alt route</dt><dd>the fork sign means a second road. Take the whole thing for a chain link</dd></div>
               <div><dt>E</dt><dd>fire (Space Wars)</dd></div>
               <div><dt>SHIFT</dt><dd>fly (mech)</dd></div>
               <div><dt>C</dt><dd>change camera</dd></div>

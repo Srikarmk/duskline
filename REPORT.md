@@ -381,6 +381,76 @@ as road markings and started reading as a purple road. And anisotropy, which
 `textures.ts` itself calls the biggest single sharpness win available, was
 still 8 on the road and 4 on the cars while the GLTF maps were on 16.
 
+## 6d. The four that were left (2026-09-18)
+
+**Weather stopped being scenery.** It already rolled over mid-race and already
+changed the sky; it had no consequence. Rain, snow, sand and ash now take
+lateral grip and nothing else, because that is the interesting half: the
+straights are unchanged, every corner becomes a decision, and since the drift
+threshold is a side-slip *speed* the car breaks loose earlier — so a wet lap
+pays more style than a dry one. Eased in over a couple of seconds rather than
+switched, with the road surface visibly wetting first and the HUD naming both
+the cause and the number, because a car that has quietly lost a fifth of its
+grip with nothing on screen is indistinguishable from a car that has started
+handling badly, and the player will blame the game rather than the rain. The
+AI lifts on the same curve; a weather effect only the human felt would be a
+handicap, not a condition.
+
+**The pack tows.** The personality system was already there — apex hunting,
+corner caution, preferred line, weave, nitro style, mistake rate, all seeded
+from the racer's name. What was missing is that a rival could never reel in a
+car it was following, so one that dropped two lengths back stayed there and
+the field never fought over anything. Their tow gain is lower than the
+player's, because the AI holds a line and never thinks to pull out, so it sits
+in dirty air far more of the time; the player's number compounded into the
+pack circulating faster than anyone driving it.
+
+**The crossing** is the only thing on the circuit whose answer changes. Two
+boulders sweep across a painted hazard band on a cycle, behind flashing
+beacons and a HUD callout, so the same corner is a different problem on lap 1
+and lap 3. Almost all the work was finding out where a boulder is allowed to
+be. One is nothing to do — nine metres of road stay clear. Two with a 4.5 m
+gap turned out to be a *wall*, because each blocks 2.8 m once the car's own
+width is counted, so the "gap" was negative. And there is no good place to
+park them beside the road: at Sunset Bay a parked boulder sat in mid-air over
+a ten-metre drop to the beach, on a slope steep enough that fifteen
+centimetres of sideways slide moved it more than a metre vertically. They now
+exist only while they are over the tarmac, which is also the only surface they
+were ever meant to be touching.
+
+**The fork** was the one I said would need the corridor that had been removed,
+and the note explaining its removal — that it let the car wander off-road and
+sink, and that the separate curve felt bad — turned out to be blaming the
+feature for the engine's ignorance of it. `freeDrive` had always been able to
+put you on a second road and keep you there. Nothing else knew. Every system
+in the game reads the car's lateral offset as metres from the main centreline,
+and on a branch that number means metres from the *branch*, so parked on the
+fork the game believed the car was dead on the racing line — seventeen metres
+from where it actually was, with thirteen pickups in reach that were on a road
+I was not driving.
+
+That is nine separate faults sharing one cause, and they are the interesting
+part of the day: the height read from the wrong road (the "sink"), the
+steering assist dutifully steering you back off the fork it had just let you
+take, the scenery bands planting a forest down the middle of it, an island
+sized by formula that overlapped both roads, a branch ribbon narrower than its
+own containment walls, and a gantry sign with its posts on the racing line
+that you drove through at 115 mph. Each one is small. Together they are a
+feature that "feels bad" for reasons no single reading of the code explains,
+which is exactly how it came to be deleted instead of fixed.
+
+The last of the nine was the only one that is a design question rather than a
+bug: a fork on a straight is geometrically always the longer road, because a
+lens is longer than its chord. It now finds the bendiest stretch of the lap and
+bows to the measured inside of it, which on the Void Circuit makes it a
+genuine shortcut and on the gentler Forest circuit leaves it eight metres
+down — and when it is the slower road it pays a style-chain link for seeing it
+through, which is the one currency available. It cannot pay in pickups:
+entities are addressed in main-track coordinates, and on a branch the second
+of those coordinates means something else, so "a boost pad on the fork" is not
+expressible without re-addressing every entity in the game. That is written
+down rather than worked around.
+
 ## 7. The rename
 
 Fantasy Racer → **Duskline**. Code, UI, manifest, share tags, package name,
