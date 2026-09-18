@@ -498,6 +498,10 @@ export class Game {
   /** the branch you're currently driving (null = on the main track), and how far
    *  along it (arc-length metres). */
   private onBranch: BranchPath | null = null;
+  private tmpSurface = new THREE.Vector3();
+  /** Which branch we are part-way along, and how far into it we joined. */
+  private branchRunIdx = -1;
+  private branchRunStart = 0;
   private branchU = 0;
   /** free-roam driving body (world-space physics; the rail position/playerX are
    *  derived from it by projecting onto the track each frame). */
@@ -959,6 +963,7 @@ export class Game {
     this.ghostRec = null;
     this.driftZones = [];
     this.setPiece = null;
+    this.branchRunIdx = -1;
     this.dzAt = -1;
     this.dzHeld = 0;
     this.dzFill = 0;
@@ -1369,7 +1374,10 @@ export class Game {
    *  onto the racing line (usually a prop the track curves back toward) is left
    *  passable, so there are no invisible walls in your way. */
   private obstacleClear(x: number, z: number, r: number): boolean {
-    return Math.abs(this.track.project(x, z).lateral) - r > ROAD_HALF_WIDTH + 0.5;
+    if (Math.abs(this.track.project(x, z).lateral) - r <= ROAD_HALF_WIDTH + 0.5) return false;
+    // A solid obstacle on a branch would be a wall you cannot see coming on a
+    // road the game invited you onto.
+    return !this.nearBranch(x, z, ROAD_HALF_WIDTH + 0.5 + r);
   }
   /** Bucket the recorded obstacles into a spatial grid for cheap per-frame lookup. */
   private buildObstacleGrid() {
@@ -1868,11 +1876,28 @@ export class Game {
     if (this.roadSamples) return this.roadSamples;
     const step = 4;
     const n = Math.max(64, Math.ceil(this.track.length / step));
-    const x = new Float64Array(n), z = new Float64Array(n);
+    // THE BRANCHES ARE ROAD. Everything that asks "is this spot clear of the
+    // circuit" goes through here, so including the alternate routes in the same
+    // sample set is what keeps a monument out of the middle of a fork — rather
+    // than adding a second test at each of the half-dozen call sites and
+    // forgetting one. Requires placeBranches() to have run first, which it has:
+    // decorate() builds the forks before it places any scenery.
+    const bn: number[] = [];
+    const bx: number[] = [], bz: number[] = [];
+    for (const br of this.branches) {
+      const m = Math.max(8, Math.ceil(br.path.length / step));
+      for (let i = 0; i <= m; i++) {
+        const p = br.path.pointAt((br.path.length * i) / m, 0);
+        bx.push(p.x); bz.push(p.z);
+      }
+      bn.push(m);
+    }
+    const x = new Float64Array(n + bx.length), z = new Float64Array(n + bz.length);
     for (let i = 0; i < n; i++) {
       const p = this.track.pointAt((this.track.length * i) / n, 0);
       x[i] = p.x; z[i] = p.z;
     }
+    for (let i = 0; i < bx.length; i++) { x[n + i] = bx[i]; z[n + i] = bz[i]; }
     this.roadSamples = { x, z };
     return this.roadSamples;
   }
@@ -2540,10 +2565,25 @@ export class Game {
     }
   }
 
-  /** Build the TRUE fork routes from REALM_SPLITS: at each fork the road peels
-   *  onto a SEPARATE alternate road that bows away to one side (optionally rising
-   *  into an overpass) and rejoins the main track later. A big fork sign marks the
-   *  mouth; steering toward the branch side takes it (see maybeEnterBranch). */
+  /**
+   * Build the fork routes from REALM_SPLITS: a SEPARATE alternate road that
+   * peels off the main track, bows to one side, and rejoins later. A big fork
+   * sign marks the mouth; steering toward the branch side takes it, and
+   * `freeDrive` then walls you onto whichever road you are nearest.
+   *
+   * WHICH SIDE IS THE POINT. The old version picked the side from a character
+   * code, which on a straight makes the branch a lens — and a lens is always
+   * LONGER than its chord. Measured: a 130 m fork span produced a 152 m branch,
+   * 22 m and half a second of pure penalty for nothing, and the geometry cannot
+   * be tightened out of it because the two roads need 13.2 m between their
+   * centrelines just not to overlap.
+   *
+   * So the bow goes to the INSIDE of a bend, where it is a chord rather than a
+   * lens — a genuine shortcut you pay for with a tighter radius. `outsideSign`
+   * measures which side that is (see there for why it is measured rather than
+   * derived from the sign of the curvature), and the fork slides along the lap
+   * to find a bend worth cutting.
+   */
   private placeBranches() {
     const pal = this.realm.palette;
     const len = this.track.length;
@@ -2559,31 +2599,78 @@ export class Game {
     const forks = REALM_SPLITS[this.realm.id] ?? [];
     for (let fi = 0; fi < forks.length; fi++) {
       const s = forks[fi];
-      const startDist = s.at * len;
+      // Slide the configured position along the lap until the span actually
+      // bends. A fork on a straight can only ever be the slower road.
+      const bendAt = (at: number) => {
+        let sum = 0;
+        for (let o = 0; o <= s.len; o += 10) sum += Math.abs(this.track.curvatureAt(this.track.wrap(at + o)));
+        return sum / (s.len / 10 + 1);
+      };
+      let startDist = s.at * len;
+      let best = bendAt(startDist);
+      for (let k = 1; k <= 24; k++) {
+        const cand = s.at * len + k * 25;
+        const score = bendAt(cand);
+        if (score > best) { best = score; startDist = cand; }
+      }
       const endDist = startDist + s.len;
       this.splits.push({ d0: this.track.wrap(startDist), d1: this.track.wrap(endDist) });
-      // which way the lens bows — varied per realm so it's not always the same side
-      const side: 1 | -1 = (this.realm.id.charCodeAt(0) + fi) % 2 === 0 ? 1 : -1;
-      // a wide lens (so the two roads clearly separate around the island), flat so
-      // the island reads cleanly between them
-      const bulge = clamp(15 + s.len * 0.02, 16, 20); // TIGHT parallel-lane offset — a small island split, like the sketch
+      // INSIDE of the bend: the shorter way round. outsideSign returns the
+      // longer side, measured rather than derived, so negate it.
+      const side: 1 | -1 = this.outsideSign(startDist, endDist) > 0 ? -1 : 1;
+      // Just enough separation that the two ribbons never touch: each is
+      // drivable to 6.6 m from its own centreline, so 13.2 m is the floor and
+      // 16 leaves a 2.8 m median. Wider costs branch length quadratically.
+      const bulge = 16;
       const branch = new BranchPath(sampleP, sampleT, startDist, endDist, { side, bulge, rise: 0, seed: 100 + fi });
-      this.scene.add(branch.buildRoad(roadMat, ROAD_HALF_WIDTH));
+      // Same ribbon half-width as the main road (which is ROAD_HALF_WIDTH *
+      // 1.25, not ROAD_HALF_WIDTH). Built at 5 m the branch was visibly
+      // NARROWER than the road it forks off, while the containment walls — which
+      // are absolute, at 5.6 m soft and 6.6 m hard — sat outside its edge. So
+      // the fork could be driven a metre and a half past its own tarmac, and
+      // measured, the car spent 47% of the branch flagged off-road, grinding
+      // the wall out over nothing.
+      this.scene.add(branch.buildRoad(roadMat, ROAD_HALF_WIDTH * 1.25));
       this.branches.push({ path: branch, side });
-      // the island sitting in the pocket between the main road and the branch
-      this.placeSplitIsland((startDist + endDist) / 2, side, bulge);
-      // big fork sign at the mouth, facing oncoming cars
+      // the divider sitting in the median between the main road and the branch
+      this.placeSplitIsland((startDist + endDist) / 2, side, branch);
+      // Fork sign on the VERGE, 34 m before the mouth, on the side the branch
+      // goes. It was placed on the centreline at the mouth — and it is built as
+      // a gantry with two narrow central posts (|x| < 1.05), so those posts
+      // stood in the middle of the racing line. They are not registered as
+      // solid, so you drove straight through a steel sign at 115 mph. Moving it
+      // upstream also makes it do its job: a direction sign you reach at the
+      // same instant as the junction is not a direction sign.
       const sign = makeForkArrowSign(pal);
-      this.placeOnTrack(sign, startDist);
+      const signD = this.track.wrap(startDist - 34);
+      const sp = this.track.pointAt(signD, side * (ROAD_HALF_WIDTH * 1.25 + 2.2));
+      const stan = this.track.tangentAt(signD);
+      sign.position.set(sp.x, this.terrainYAt(signD, side * (ROAD_HALF_WIDTH * 1.25 + 2.2)), sp.z);
+      sign.rotation.order = "YXZ";
+      sign.rotation.y = Math.atan2(stan.x, stan.z);
       this.scene.add(sign);
     }
   }
 
-  /** A scenic island in the pocket of a fork — a themed mound topped by a glowing
-   *  beacon, so the split reads as "two roads around an island" (see the sketch). */
-  private placeSplitIsland(midDist: number, side: number, bulge: number) {
+  /**
+   * The divider in the median of a fork — a themed mound topped by a glowing
+   * beacon, so the split reads as two roads around something rather than a road
+   * that inexplicably doubles.
+   *
+   * SIZED FROM THE GAP THAT IS ACTUALLY THERE, by measuring where the branch's
+   * inner edge falls. Derived from `bulge` it was a 6.6 m cone in a 4.6 m
+   * median: it overlapped the main road at 5.5 m (drivable to 6.6) and the
+   * branch at 12.1 m (inner edge 11.2), so both roads had a hill in them. That
+   * is a good part of what "the separate curve felt bad" was.
+   */
+  private placeSplitIsland(midDist: number, side: number, branch: BranchPath) {
     const pal = this.realm.palette;
-    const r = clamp((bulge - 11) / 2, 3, 5); // small island that fits the tight gap
+    // Where the branch centreline sits, in main-road metres, at the apex.
+    const apex = branch.pointAt(branch.length / 2, 0);
+    const gapOuter = Math.abs(this.track.project(apex.x, apex.z).lateral) - (ROAD_HALF_WIDTH + 1.6);
+    const gapInner = ROAD_HALF_WIDTH + 1.6;
+    const r = Math.max(0.8, (gapOuter - gapInner) / 2 - 0.5);
+    const centreOff = (gapInner + gapOuter) / 2;
     const island = new THREE.Group();
     const mound = new THREE.Mesh(
       new THREE.ConeGeometry(r, r * 0.55, 8),
@@ -2599,11 +2686,105 @@ export class Game {
     );
     beacon.position.y = r * 0.55 + r * 0.75; // perched on top of the mound
     island.add(beacon);
-    // pocket centre: halfway between the main road centre and the branch apex,
-    // which bows ~`bulge` metres out — pointAt takes a lateral offset in metres
-    const p = this.track.pointAt(this.track.wrap(midDist), (side * bulge) / 2, undefined, true);
+    // median centre: halfway between the two roads' drivable edges
+    const p = this.track.pointAt(this.track.wrap(midDist), side * centreOff, undefined, true);
     island.position.set(p.x, p.y, p.z);
     this.scene.add(island);
+  }
+
+  /**
+   * Pay for committing to an alternate route.
+   *
+   * The fork has to be worth taking, and measurement says it is not on pace
+   * alone: bowed to the inside of a bend it still comes out 11.6 m longer than
+   * the main span (0.26 s) AND on a tighter radius, because the peel-off and
+   * merge cost more than 16 m of offset saves over 130 m. Tuning got it from
+   * 24 m to 11.6 m and no further — the endpoints are pinned to the main
+   * centreline, so that is close to the geometric floor.
+   *
+   * Nor can the branch be made to pay in pickups: entities live in main-track
+   * (distance, lateral) space, and on a branch `freeDrive.lateral` means
+   * something else entirely, so there is no way to express "a boost pad on the
+   * fork" without re-addressing every entity in the game.
+   *
+   * What it CAN pay in is style. The chain is already the game's currency for
+   * "did something harder than necessary", it banks on a clean lapse and it is
+   * lost on contact — so a fork that costs a quarter of a second and demands a
+   * tighter line, in exchange for a chain link, is a real decision rather than
+   * a trap. You have to see it through: bail back onto the main road half way
+   * and it pays nothing.
+   */
+  private settleBranchRun() {
+    const i = this.branchRunIdx;
+    this.branchRunIdx = -1;
+    if (i < 0 || i >= this.branches.length || this.phase !== "racing") return;
+    const b = this.branches[i].path;
+    const u = b.project(this.freeDrive.x, this.freeDrive.z).u;
+    // Left it near the far end, having joined near the near end.
+    if (this.branchRunStart > b.length * 0.25 || u < b.length * 0.75) return;
+    this.addChain("ALT ROUTE", 150);
+  }
+
+  /**
+   * True while the car is on the MAIN circuit rather than an alternate route.
+   *
+   * This is the guard the fork could not work without, and the reason it was
+   * torn out rather than fixed. Everything in the game reads
+   * `freeDrive.lateral` as "metres from the main centreline" — entity hits, the
+   * ramp ride-up, the drift zones, the crossing, near misses, car-to-car
+   * contact, the lane bonus, the slipstream. But `freeDrive` reports the
+   * lateral of whichever road it has you on, so out on a branch bowing 17 m
+   * away it reports ZERO, and every one of those systems silently believes you
+   * are on the racing line.
+   *
+   * Measured before this guard: parked on the branch centreline at the apex,
+   * `freeDrive.lateral` was 0.00 while `track.project` put the car 17.23 m off
+   * the main road — with thirteen entities in the fork span all sitting at a
+   * lateral the collision test would have matched. Taking the fork would have
+   * vacuumed up every chip on the road you did not drive.
+   *
+   * The branch is a different road. What is on the main road is not there.
+   */
+  private get onMainRoad(): boolean {
+    return this.freeDrive.onBranchIdx < 0;
+  }
+
+  /**
+   * Height of the road the car is ACTUALLY ON, at a given lateral offset.
+   *
+   * This one function is why the fork used to sink the car. `freeDrive` picks
+   * whichever road is nearer and keeps you on it, and reports `lateral`
+   * relative to THAT road — but the height was read from
+   * `track.pointAt(position, lateral)`, the main road, every time. Out on a
+   * branch bowing 24 m away, the main road at the mapped distance is a
+   * different piece of geometry at a different height, so the car rode at the
+   * main road's elevation while its wheels were over the branch. Where the
+   * branch was lower you floated; where it was higher you were buried.
+   *
+   * @param lateralM lateral offset in metres on the current road.
+   */
+  private surfaceY(lateralM: number): number {
+    const bi = this.freeDrive.onBranchIdx;
+    if (bi >= 0 && bi < this.branches.length) {
+      const b = this.branches[bi].path;
+      const u = b.project(this.freeDrive.x, this.freeDrive.z).u;
+      return b.pointAt(u, lateralM, this.tmpSurface).y;
+    }
+    return this.track.pointAt(this.position, lateralM, this.tmpSurface, false).y;
+  }
+
+  /** True when (x,z) is on or close to an alternate route — used to keep the
+   *  scenery bands, which are laid out from the MAIN centreline, from planting
+   *  a forest across the middle of the branch road. */
+  private nearBranch(x: number, z: number, clearance: number): boolean {
+    for (const br of this.branches) {
+      const p = br.path.project(x, z);
+      // project() is an open path: a point beyond either end clamps to it, so a
+      // near-zero lateral there is not really "on the branch". Guard with u.
+      if (p.u <= 0.5 || p.u >= br.path.length - 0.5) continue;
+      if (Math.abs(p.lateral) < clearance) return true;
+    }
+    return false;
   }
 
   /** Enter a branch if we're at its fork mouth and leaning toward its side. */
@@ -2889,9 +3070,19 @@ export class Game {
     const pal = realm.palette;
     this.placeTunnels();
     this.placeRivers();
-    // branches REMOVED — the open fork corridor let the car wander off-road (OOB
-    // + sink) and the separate curve felt bad. One clean road, firm walls everywhere.
-    this.freeDrive.branches = [];
+    // THE FORK, back on. It was removed because the corridor let the car wander
+    // off-road and sink — but the cause was never the fork itself: the engine
+    // simply had no idea the branch existed. `freeDrive` projects onto whichever
+    // road is nearer and walls you onto it, while the CAR'S HEIGHT and the
+    // camera floor were both read from the main track, and the scenery bands
+    // were planted straight across the alternate road. Each of those is fixed
+    // below; see surfaceY(), the camera clamp, and nearBranch().
+    this.placeBranches();
+    this.freeDrive.branches = this.branches.map((b) => ({
+      path: b.path,
+      startDist: b.path.startDist,
+      endDist: b.path.endDist,
+    }));
     this.placeSkyProps();
     this.treeMats = makeTreeMaterials(pal); // shared bark/foliage tree materials
     const lane = () => LANE_CENTERS[Math.floor(rand() * 3)];
@@ -3021,6 +3212,12 @@ export class Game {
                 const off = side * (ROAD_HALF_WIDTH + 4 + row * 11 + rand() * 9);
                 const jd = d + rand() * 3;
                 const p = track.pointAt(this.track.wrap(jd), off);
+                // NOT ON THE FORK. These bands are laid out from the MAIN
+                // centreline and reach 40+ m out, while a branch bows 24 m to
+                // one side — so rows 2 and 3 planted a forest straight down the
+                // middle of the alternate road. This is the other half of why
+                // the fork "felt bad": you turned onto it and drove into trees.
+                if (this.nearBranch(p.x, p.z, ROAD_HALF_WIDTH + 4)) continue;
                 spots.push({
                   kind, x: p.x, y: this.terrainYAt(jd, off), z: p.z,
                   s: 0.95 + rand() * 1.0, r: rand() * Math.PI * 2,
@@ -4311,7 +4508,7 @@ export class Game {
     // ±16 m of collision band while invisible, so a car running wide onto the
     // verge could be flattened by a boulder that was not on screen.
     const onRoad = (lat: number) => Math.abs(lat) < SP_ON_ROAD;
-    if (Math.abs(gap) < 5.5 && this.alt < 2.2) {
+    if (Math.abs(gap) < 5.5 && this.alt < 2.2 && this.onMainRoad) {
       for (const lat of sp.lats) {
         if (!onRoad(lat)) continue;
         if (Math.abs(this.freeDrive.lateral - lat) < SP_ROCK_HALF + 1.1) {
@@ -4371,6 +4568,13 @@ export class Game {
    */
   private updateDriftZone(dt: number): void {
     if (!this.driftZones.length) return;
+    // The band is painted on the main road; a slide on the fork is not in it.
+    if (!this.onMainRoad) {
+      if (this.dzAt >= 0) this.settleDriftZone();
+      this.dzAt = -1;
+      this.dzFill = 0;
+      return;
+    }
     const d = this.position;
     let inside = -1;
     for (let i = 0; i < this.driftZones.length; i++) {
@@ -4807,6 +5011,18 @@ export class Game {
     // must run AFTER `drifting` is up to date for this frame, or the zone
     // credits you for a slide you have already ended
     this.updateDriftZone(dt);
+    // Joined or left an alternate route — see settleBranchRun.
+    {
+      const bi = this.freeDrive.onBranchIdx;
+      if (bi !== this.branchRunIdx) {
+        if (this.branchRunIdx >= 0) this.settleBranchRun();
+        this.branchRunIdx = bi;
+        if (bi >= 0) {
+          this.branchRunStart = this.branches[bi].path.project(this.freeDrive.x, this.freeDrive.z).u;
+          this.toast("ALT ROUTE", "#67e8f9");
+        }
+      }
+    }
     this.crossingHitCd = Math.max(0, this.crossingHitCd - dt);
     this.updateSetPiece(dt);
 
@@ -4864,7 +5080,9 @@ export class Game {
     // get a partial pop, not a clean launch (hit it sideways at your peril).
     let onRamp: (typeof this.ramps)[number] | null = null;
     let rampT = 0;
-    if (!this.transformed && !this.onBranch) {
+    // `onBranch` was the rail-era branch field and is now always null, so this
+    // guard had quietly stopped guarding. The live one is onMainRoad.
+    if (!this.transformed && this.onMainRoad) {
       const trackLen = this.track.length;
       for (const r of this.ramps) {
         let gap = this.position - r.dist;
@@ -5013,7 +5231,7 @@ export class Game {
     // one lane arrow-straight. Whichever a player chases, the other one is
     // telling them they got it wrong. Inside a zone the zone wins, because the
     // zone is the thing the circuit went to the trouble of painting.
-    if (!airborne && this.dzAt < 0 && Math.abs(this.playerX) <= 1 && speedPercent > 0.3) {
+    if (!airborne && this.dzAt < 0 && this.onMainRoad && Math.abs(this.playerX) <= 1 && speedPercent > 0.3) {
       const laneIdx = this.playerX < -1 / 3 ? 0 : this.playerX > 1 / 3 ? 2 : 1;
       if (laneIdx === this.lastLane) {
         this.laneT += dt;
@@ -5148,7 +5366,8 @@ export class Game {
       if (o === self || o.finished) continue;
       consider(signed(o.dist), o.lane * ROAD_HALF_WIDTH * 0.9);
     }
-    if (this.phase === "racing" && this.alt < 1.2) {
+    // …and off the player, but only while the player is on the same road.
+    if (this.phase === "racing" && this.alt < 1.2 && this.onMainRoad) {
       consider(signed(this.position), this.freeDrive.lateral);
     }
     return best;
@@ -5169,7 +5388,7 @@ export class Game {
       // you choose at the exact moment you could instead have lifted. Wants
       // real speed, real proximity, and NO contact — the bump handler breaks
       // the chain, so brushing a rival costs you the pot you were building.
-      if (this.nearMissCd <= 0 && this.speed > MAX_SPEED * 0.45) {
+      if (this.nearMissCd <= 0 && this.speed > MAX_SPEED * 0.45 && this.onMainRoad) {
         const dd = Math.abs(this.track.wrap(this.position - o.dist + len / 2) - len / 2);
         const dl = Math.abs(this.freeDrive.lateral - o.lane * ROAD_HALF_WIDTH);
         if (dd < 4.5 && dl > 1.5 && dl < 3.2) {
@@ -5230,7 +5449,8 @@ export class Game {
       // gap behind a rival somewhere you WANT to be for a few seconds, and
       // turns every straight into a decision about when to pull out — which is
       // the whole texture of real wheel-to-wheel racing, for about forty lines.
-      if (!o.finished && d > 4 && d < 30 && this.alt < 1.2 && this.speed > MAX_SPEED * 0.42) {
+      if (!o.finished && d > 4 && d < 30 && this.alt < 1.2 && this.speed > MAX_SPEED * 0.42
+          && this.onMainRoad) {
         const dl = Math.abs(this.freeDrive.lateral - o.lane * ROAD_HALF_WIDTH);
         if (dl < TOW_WIDTH) {
           // Strongest right behind the gearbox, gone by 30 m, and only if you
@@ -5241,7 +5461,8 @@ export class Game {
       }
 
       const laneGap = this.playerX - o.lane;
-      if (Math.abs(d) < 4.2 && Math.abs(laneGap) < 0.62 && this.phase === "racing" && !o.finished) {
+      if (Math.abs(d) < 4.2 && Math.abs(laneGap) < 0.62 && this.phase === "racing" && !o.finished
+          && this.onMainRoad) {
         const dir = laneGap >= 0 ? 1 : -1;   // push player this way, rival the other
         const rel = this.speed - o.speed;    // closing speed (+ = player faster)
         const pp = this.playerRoot.position, op = o.obj.position;
@@ -5464,6 +5685,8 @@ export class Game {
   }
 
   private collide(speedPercent: number) {
+    // Chips, cans, ramps and pads are all on the MAIN road. See onMainRoad.
+    if (!this.onMainRoad) return;
     const key = Math.floor(this.position / BUCKET_METERS);
     const totalBuckets = Math.ceil(this.track.length / BUCKET_METERS);
     for (let k = key - 1; k <= key + 1; k++) {
@@ -5776,7 +5999,7 @@ export class Game {
       // the terrain sits below the ribbon by design — so the car dropped
       // through the road surface at the edge. This eases from the banked road
       // height to the terrain over 6 m, which is the width of the verge.
-      const roadSurfaceY = this.track.pointAt(this.position, this.freeDrive.lateral, undefined, false).y;
+      const roadSurfaceY = this.surfaceY(this.freeDrive.lateral);
       const terrainY = this.groundHeightAtXZ(this.freeDrive.x, this.freeDrive.z);
       const offK = clamp((Math.abs(this.freeDrive.lateral) - ROAD_HALF_WIDTH) / 6, 0, 1);
       const groundY = roadSurfaceY * (1 - offK) + terrainY * offK;
@@ -5985,6 +6208,17 @@ export class Game {
         if (Math.abs(pr.lateral) < ROAD_HALF_WIDTH * 2.2) {
           const rp = this.track.pointAt(pr.dist, pr.lateral, this.tmpCamFloor, false);
           if (rp.y > floor) floor = rp.y;
+        }
+        // …and the alternate routes are roads too. Out on a branch the main
+        // track's projection is 20-odd metres wide of the camera, so the test
+        // above declines to use it and the clamp falls back to terrain — which
+        // is the same "under the tarmac" case, on the fork.
+        for (const br of this.branches) {
+          const bp = br.path.project(cx, cz);
+          if (bp.u <= 0.5 || bp.u >= br.path.length - 0.5) continue;
+          if (Math.abs(bp.lateral) > ROAD_HALF_WIDTH * 2.2) continue;
+          const by = br.path.pointAt(bp.u, bp.lateral, this.tmpCamFloor).y;
+          if (by > floor) floor = by;
         }
         floor += 1.1;
         if (this.camPos.y < floor) this.camPos.y = floor;

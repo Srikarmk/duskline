@@ -83,7 +83,14 @@ export class BranchPath {
     // lead length: how far the branch runs along the main tangent before/after
     // bending, so it leaves and rejoins without a kink.
     const chordLen = pEnd.clone().sub(pStart).length() || 1;
-    const lead = clampN(chordLen * 0.14, 3, 26);
+    // SHORT leads. These two control points sit on the main road's tangent
+    // LINE, so on a bend the branch runs straight out past the corner before
+    // turning back toward its lane — distance spent going the wrong way. At
+    // 0.14 of a 125 m chord that was 17.5 m at each end, and together with the
+    // wide taper below it turned a lane whose ideal length was 119.8 m into a
+    // 154 m detour on a 130 m span (measured). Enough lead to leave without a
+    // kink, no more.
+    const lead = clampN(chordLen * 0.05, 2, 9);
 
     // A PARALLEL exit lane, NOT a side-bulge: each mid point is the MAIN road
     // point at that fraction, offset sideways by its OWN local perpendicular, so
@@ -91,7 +98,16 @@ export class BranchPath {
     // holds constant (run parallel around the island), then ramps down (merge) —
     // reads as a road division / exit, not a random curve out to the side.
     const span = endDist - startDist;
-    const edge = 0.3; // fraction of the branch spent diverging / converging
+    // Fraction of the branch spent diverging / converging.
+    //
+    // A three-way trade, all of it measured. Long (0.3): only 40% of the span
+    // is actually at the full offset, so the middle gives back what the ends
+    // cost and the branch came out 24 m longer than the main span. Short
+    // (0.18): the branch swings its full 16 m sideways in 23 m of span, a ~35°
+    // divergence the steering assist cannot hold at 34 m/s — the car overshot
+    // and spent 21% of the fork off the tarmac against the main road's 0%.
+    // 0.26 keeps the length penalty at ~12 m and the divergence driveable.
+    const edge = 0.26;
     const plateau = (s: number): number => {
       if (s < edge) { const t = s / edge; return t * t * (3 - 2 * t); }
       if (s > 1 - edge) { const t = (1 - s) / edge; return t * t * (3 - 2 * t); }
@@ -112,11 +128,13 @@ export class BranchPath {
     const pts: THREE.Vector3[] = [
       pStart.clone(),
       pStart.clone().addScaledVector(tStart, lead),
-      mid(0.14),
-      mid(0.3),
+      mid(0.09),
+      mid(0.2),
+      mid(0.35),
       mid(0.5),
-      mid(0.7),
-      mid(0.86),
+      mid(0.65),
+      mid(0.8),
+      mid(0.91),
       pEnd.clone().addScaledVector(tEnd, -lead),
       pEnd.clone(),
     ];

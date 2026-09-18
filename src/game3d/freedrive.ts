@@ -140,6 +140,31 @@ export class FreeDrive {
     // as you steer, is off while drifting, and only helps when you're already
     // pointing roughly down the road and on the ribbon.
     if (tuning.assist && !input.handbrake && vf > 5) {
+      // AIM DOWN THE ROAD YOU ARE ON. The assist is pure pursuit to a point on
+      // the centreline, and that point was always taken from the MAIN track —
+      // so the moment you turned onto a fork it steered you straight back off
+      // it. Measured: holding the throttle after joining a branch, the car was
+      // on it for 34 frames out of 600. An alternate route you cannot stay on
+      // is not an alternate route.
+      if (kind >= 0) {
+        const b = this.branches[kind];
+        const bu = b.path.project(this.x, this.z).u;
+        // Look ahead LESS on a branch than on the main road. A branch is an
+        // open path a couple of hundred metres long, so a 41 m look-ahead
+        // clamps to its final point near the exit and the car then aims at a
+        // fixed spot instead of following the road — which is running wide,
+        // exactly where the fork is already tightest.
+        const look = 10 + Math.min(16, vf * 0.32);
+        // Let pointAt allocate: this module deliberately holds no runtime three.js
+        // import, and one Vector3 a frame is not worth breaking that for.
+        const aim = b.path.pointAt(clampN(bu + look, 0, b.path.length), 0);
+        let toAim = Math.atan2(aim.x - this.x, aim.z - this.z) - this.heading;
+        toAim = Math.atan2(Math.sin(toAim), Math.cos(toAim));
+        if (Math.abs(toAim) < 1.4) {
+          const yieldToInput = 1 - Math.min(1, Math.abs(steer)) * 0.7;
+          this.heading += toAim * tuning.assist * yieldToInput * dt;
+        }
+      } else {
       // PURE PURSUIT: aim at a point down the CENTRELINE (not just along the road's
       // tangent). Aiming at the tangent only held the car parallel to the road, so
       // one that had run wide ground along the wall forever with no way back; an
@@ -152,6 +177,7 @@ export class FreeDrive {
       if (Math.abs(toAim) < 1.4) {
         const yieldToInput = 1 - Math.min(1, Math.abs(steer)) * 0.7; // your input wins
         this.heading += toAim * tuning.assist * yieldToInput * dt;
+      }
       }
     }
 
