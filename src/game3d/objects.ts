@@ -3680,3 +3680,38 @@ export function makeTreeField(
   }
   return out;
 }
+
+/**
+ * A roadside warning beacon: a post with a lamp on top that the engine flashes
+ * while a hazard is about to cross.
+ *
+ * The lamp is its own mesh so the caller can drive `emissiveIntensity` and
+ * `visible` directly — a flash is one number per frame, not a material swap.
+ * Returned as `{ group, lamp }` rather than requiring a traverse to find it,
+ * because this is on the per-frame path.
+ */
+export function makeHazardBeacon(): { group: THREE.Group; lamp: THREE.Mesh } {
+  const g = new THREE.Group();
+  const post = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.11, 0.14, 2.6, 8),
+    new THREE.MeshStandardMaterial({ color: 0x1b2433, metalness: 0.5, roughness: 0.6 }),
+  );
+  post.position.y = 1.3;
+  g.add(post);
+  // black-and-amber banding down the post, the same language as the road paint
+  const bandMat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: 0.55 });
+  for (let i = 0; i < 3; i++) {
+    const b = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.22, 8), bandMat);
+    b.position.y = 0.45 + i * 0.6;
+    g.add(b);
+  }
+  const lamp = new THREE.Mesh(
+    new THREE.SphereGeometry(0.34, 12, 10),
+    new THREE.MeshStandardMaterial({
+      color: 0xffd27a, emissive: 0xf59e0b, emissiveIntensity: 0, roughness: 0.3,
+    }),
+  );
+  lamp.position.y = 2.75;
+  g.add(lamp);
+  return { group: g, lamp };
+}

@@ -782,3 +782,43 @@ export function makeDriftZoneTexture(): THREE.Texture {
   tex.anisotropy = ANISO;
   return tex;
 }
+
+/**
+ * Diagonal hazard stripes — the marking painted across a road where something
+ * crosses it.
+ *
+ * Deliberately NOT the drift-zone chevron in another colour. A chevron says
+ * "go this way"; a hazard says "something happens here", and the two must not
+ * be confusable at 160 mph from 200 m out, because one of them is asking you
+ * to commit and the other is asking you to time it. Stripes read as a barrier
+ * at any distance and at any angle, which is exactly why every road authority
+ * in the world uses them for this.
+ *
+ * Tiled ACROSS the road (u) rather than along it, so the stripes stay the same
+ * width whatever length of road the band covers.
+ */
+export function makeHazardTexture(): THREE.Texture {
+  const W = 128, H = 128;
+  const c = document.createElement("canvas");
+  c.width = W;
+  c.height = H;
+  const ctx = c.getContext("2d")!;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = "rgba(255,255,255,0.88)";
+  // 45° bars with gaps, so the tarmac underneath still shows the surface
+  for (let i = -2; i < 6; i++) {
+    const x = i * 44;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x + 22, 0);
+    ctx.lineTo(x + 22 + H, H);
+    ctx.lineTo(x + H, H);
+    ctx.closePath();
+    ctx.fill();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = ANISO;
+  return tex;
+}

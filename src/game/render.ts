@@ -544,6 +544,10 @@ export interface HudState {
   driftZone?: number | null;
   /** 0..1 slipstream behind the car in front. */
   tow?: number;
+  /** Grip left, as a fraction of dry (1 = dry). Only shown when below dry. */
+  grip?: number;
+  /** What is taking the grip away — "RAIN", "SNOW", "SAND"… */
+  gripCause?: string;
   transformT: number;
   crashFlash: number;
   position?: number;
@@ -792,6 +796,31 @@ export function drawHud(
     ctx.font = "8px monospace";
     ctx.fillText("VS BEST", vw / 2, 116);
     ctx.textAlign = "left";
+  }
+
+  // --- surface / grip ------------------------------------------------------
+  // Only on screen while the weather is actually taking grip away, and it names
+  // the cause. A car that has quietly lost a fifth of its cornering grip with
+  // nothing on the HUD is indistinguishable from a car that has started
+  // handling badly, and the player will blame the game rather than the rain.
+  if ((hud.grip ?? 1) < 0.995) {
+    const g = Math.max(0, Math.min(1, hud.grip ?? 1));
+    const w = 104, x = 18, y = 96;
+    ctx.fillStyle = "rgba(20,17,34,0.7)";
+    ctx.fillRect(x - 6, y - 15, w + 12, 30);
+    ctx.textAlign = "left";
+    // amber for a nuisance, red once it is genuinely treacherous
+    const col = g < 0.85 ? "#f87171" : "#fbbf24";
+    ctx.fillStyle = col;
+    ctx.font = "bold 11px monospace";
+    ctx.fillText(`${hud.gripCause ?? "SURFACE"}`, x, y - 4);
+    ctx.fillStyle = "#6f6a8a";
+    ctx.font = "9px monospace";
+    ctx.fillText(`GRIP ${Math.round(g * 100)}%`, x + 58, y - 4);
+    ctx.fillStyle = "#2a2340";
+    ctx.fillRect(x, y + 3, w, 4);
+    ctx.fillStyle = col;
+    ctx.fillRect(x, y + 3, w * g, 4);
   }
 
   // --- drift zone gauge ----------------------------------------------------

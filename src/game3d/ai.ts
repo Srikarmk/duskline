@@ -4,6 +4,12 @@ import { ROAD_HALF_WIDTH, LANE_CENTERS, GRAVITY, MAX_SPEED, CAR_LIFT } from "./c
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
+/** Top speed a racer gains at full tow. Slightly under the player's 0.12: the
+ *  AI sits in a tow far more of the time than a human does (it holds a line and
+ *  does not think to pull out), so the same number compounded into the pack
+ *  circulating faster than anyone driving it. */
+const AI_TOW_GAIN = 0.09;
+
 /** FNV-1a hash of the racer's name — a stable per-racer seed so the same name
  *  always yields the same personality. */
 function hashName(name: string): number {
@@ -130,7 +136,13 @@ export class Opponent {
     if (this.alt < 0.4) this.vAlt = 7.5 * power;
   }
 
-  update(dt: number, track: Track, baseSpeed: number, totalLaps: number) {
+  /**
+   * @param grip 1 = dry. Below that the racer lifts more for corners, exactly
+   *   as the player has to — a weather effect that only slowed the human down
+   *   would not be a race condition, it would be a handicap.
+   * @param tow 0..1 slipstream off the car ahead, set by the engine each frame.
+   */
+  update(dt: number, track: Track, baseSpeed: number, totalLaps: number, grip = 1, tow = 0) {
     // ballistic ramp hop, independent of driving state
     if (this.alt > 0 || this.vAlt > 0) {
       this.vAlt -= GRAVITY * dt;
@@ -220,10 +232,20 @@ export class Opponent {
 
     // ease off through curves (cautious racers lift more, cleanly; send-it racers
     // carry speed but scrub grip when they overcook and run wide)
-    const cornerLift = Math.min(curve * 9 * this.cornerCaution, this.cornerCap);
+    // A wet road costs a racer corner speed, not top speed — the same trade the
+    // player gets. Divided by grip so a slippery surface widens the lift AND
+    // raises the cap: on a dry track a cautious racer already lifts to its cap
+    // through a hairpin, so scaling the lift alone would have changed nothing
+    // for exactly the racers that should be most affected.
+    const cornerLift = Math.min(curve * 9 * this.cornerCaution / grip, this.cornerCap / grip);
     const gripScrub = Math.min(overcook * 2.2, 0.14);
     let target = baseSpeed * (1 - cornerLift) * (1 - gripScrub) * slipMult;
     if (this.boostT > 0) target *= this.boostMult;
+    // SLIPSTREAM, for the pack as well as for the player. Without it the AI
+    // could never reel in a car it was following, so a rival that fell two
+    // lengths back stayed two lengths back for the rest of the race and the
+    // field never fought over anything.
+    target *= 1 + tow * AI_TOW_GAIN;
     // Cap relative to a fast kart's nitro ceiling rather than raw MAX_SPEED: the
     // old 1.34x was measured against the base figure, so on a quick kart the
     // player simply out-ran the ceiling and lapped the field. Still a cap, so

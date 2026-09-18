@@ -25,13 +25,14 @@ import {
   MISSILE_SPEED, MISSILE_MAX_DIST, STUN_DURATION, ITEM_LATERAL_TOL,
   SCORE_HIT, OPPONENT_MINE_CHANCE,
 } from "./constants";
-import { Track, makeRoadTexture, makeCheckerTexture, makeDriftZoneTexture } from "./track";
+import { Track, makeRoadTexture, makeCheckerTexture, makeDriftZoneTexture, makeHazardTexture } from "./track";
 import { loadModels, instantiate, type ModelLibrary } from "./assets";
 import {
   makeSkyDome, makePosterSky, makeCloudLayer, makeEnvMap, windTime, makeGround, makeGrassTexture,
   makeGrassField, makeRockField, makeMountainRing,
   makeGem, makeNitroCan, makeOrb, makeRamp, RAMP_SPECS, type RampKind,
   makeBoostPad,
+  makeHazardBeacon,
   makeCrystalCluster, makeMonster,
   makeMech, makeSlash, makeFlame, makeUnderGlow,
   makeItemBox, makeMissile, makeMine, makeShieldBubble,
@@ -71,6 +72,42 @@ type Phase = "loading" | "countdown" | "racing" | "finished";
 
 type EntityType = "gem" | "airGem" | "nitro" | "orb" | "ramp" | "rock" | "monster" | "itembox" | "boostpad" | "boostgate";
 
+/**
+ * What each kind of weather does to grip.
+ *
+ * The weather already rolled over mid-race and already changed the sky; it just
+ * had no consequence, which made it scenery. These are multipliers on lateral
+ * traction only — NOT on top speed. Losing grip is the interesting lever: the
+ * straights are unchanged, every corner has to be taken slower or sideways, and
+ * because the drift threshold is a side-slip SPEED the car breaks loose earlier,
+ * so a wet lap genuinely pays more style than a dry one. Cutting top speed
+ * instead would only have made the race longer.
+ *
+ * Deliberately shallow. 0.78 in the rain is about a car's width of extra runoff
+ * on a fast corner — enough to feel and to have to drive around, nowhere near
+ * enough to make a realm unplayable for someone who cannot feel it.
+ */
+const WEATHER_GRIP: Record<WeatherKind, number> = {
+  none: 1,
+  mist: 0.95,      // damp air, barely anything — mist is a visibility effect
+  spores: 0.97,
+  ember: 0.92,     // grit and ash over the surface
+  sand: 0.88,      // loose sand on tarmac is the classic low-grip surface
+  snow: 0.82,
+  rain: 0.78,      // standing water, the slipperiest thing here
+};
+
+/** How wet the road LOOKS at full effect, as a blend target for the ribbon's
+ *  material. A grip change with no visual cue is just a car that has randomly
+ *  stopped turning, so the surface has to show what it is doing. */
+const WET_LOOK = { rough: 0.24, metal: 0.2, env: 2.6 };
+
+/** What the HUD calls the thing taking your grip away. */
+const WEATHER_LABEL: Record<WeatherKind, string> = {
+  none: "DRY", mist: "DAMP", spores: "SPORES", ember: "ASH",
+  sand: "SAND", snow: "SNOW", rain: "WET",
+};
+
 /** How far off a rival's line the tow still reaches, in metres. Half a car's
  *  width either side of dead astern — enough to be findable, tight enough that
  *  you have to aim for it. */
@@ -82,6 +119,84 @@ const TOW_GAIN = 0.12;
 /** Drift-zone band colours: violet when idle, amber when you have filled it. */
 const DZ_IDLE = 0xa855f7;
 const DZ_HOT = new THREE.Color(0xfbbf24);
+
+/**
+ * THE CROSSING — one telegraphed hazard per circuit that sweeps across the road
+ * on a cycle.
+ *
+ * Every other thing on the track is static: you learn where it is once and then
+ * it is the same lap after lap. A set piece is the one feature whose answer
+ * changes every time you arrive at it, so the same corner is a different
+ * problem on lap 1 and lap 3. That is what "interesting" means on a circuit you
+ * are going round three times.
+ *
+ * Telegraphed, hard, on purpose. The band is painted permanently so you learn
+ * the spot; the beacons flash before the sweep; the HUD warns you while you can
+ * still do something about it. Nothing about it should ever be a surprise —
+ * the skill is timing and line, not memorising where the game cheats.
+ */
+interface SetPiece {
+  dist: number;
+  label: string;
+  /** Sweeping boulders. Parked off the road between sweeps so you can see them
+   *  waiting, rather than materialising out of nothing. */
+  rocks: THREE.Object3D[];
+  lamps: THREE.Mesh[];
+  /** Seconds into the cycle. */
+  t: number;
+  /** The side the NEXT sweep departs from. Flips the instant a sweep ends, so
+   *  the idle position derived from it is where the boulders actually are. */
+  side: 1 | -1;
+  /** Has this cycle's sweep already finished and turned the pair round? */
+  swept: boolean;
+  /** Current lateral offsets, in metres — what the collision reads. */
+  lats: number[];
+  warned: boolean;
+}
+
+/** Seconds per crossing cycle, and how it is divided up. */
+const SP_PERIOD = 9.5;
+const SP_TELEGRAPH = 2.4;
+const SP_SWEEP = 2.0;
+/**
+ * THE BOULDERS ONLY EXIST ON THE ROAD.
+ *
+ * Every attempt to give them a resting place beside the tarmac went wrong,
+ * because there is no such place: the ground next to the ribbon is whatever the
+ * realm put there, and at Sunset Bay it is a ten-metre drop to the beach. On
+ * the terrain a parked boulder sat in mid-air over the sea, and the slope was
+ * steep enough that sliding 15 cm sideways moved it 1.1 m vertically — a hop,
+ * every cycle. On the road plane it simply hung in the sky.
+ *
+ * So they are drawn only while they are over the tarmac, at tarmac height,
+ * which is the one surface that is smooth by construction and the only one they
+ * are ever supposed to be touching. They roll on at one edge and off at the
+ * other. Nothing is lost: the telegraph was never the boulders anyway — it is
+ * the painted band, the beacons and the HUD callout, all of which are visible
+ * for the whole approach.
+ */
+/** Where a sweep starts and ends, in metres — just past the ribbon edge (6.25)
+ *  so both boulders are already hidden before they get there. */
+const SP_EDGE = 8.5;
+/** Gap between the pair. Each boulder blocks ~2.8 m of road once the car's own
+ *  width is counted, so the slot has to clear 5.6 m to be a slot at all — at
+ *  the first attempt's 4.5 m the "gap" was negative and the pair was a wall. */
+const SP_GAP = 7.5;
+/** Drawn (and able to hit anything) only inside this, the ribbon's own edge. */
+const SP_ON_ROAD = ROAD_HALF_WIDTH * 1.25 + 0.5;
+/** Half-width of a boulder for collision, metres. Kept a little under the prop
+ *  so a near miss is a near miss rather than an unexplained wipeout. */
+const SP_ROCK_HALF = 1.7;
+
+/** What each realm calls its crossing. One mechanic, named for the world it is
+ *  in — "ROCKFALL" on a mountain pass and in a space tube would read as a bug. */
+const SP_LABEL: Record<string, string> = {
+  peaks: "ROCKFALL", hokkai: "ROCKFALL", cape: "ROCKFALL", hills: "ROCKFALL",
+  basin: "ROCKSLIDE", forest: "FALLEN TIMBER", ember: "MAGMA BOMBS",
+  sands: "SANDSLIDE", mirage: "SANDSLIDE", castle: "ROLLING STONES",
+  void: "ASTEROIDS", nebula: "ASTEROIDS",
+  circuit: "DEBRIS", metro: "DEBRIS", azur: "DEBRIS", neon: "DEBRIS", bay: "DEBRIS",
+};
 
 /** A painted stretch of corner that pays you for holding a slide through it. */
 interface DriftZone {
@@ -334,6 +449,14 @@ export class Game {
   private weather: WeatherSystem | null = null;
   private weatherKind: WeatherKind = "none";
   private weatherT = 0;   // seconds until the next roll of the weather dice
+  /** Lateral-grip multiplier from the current weather, EASED rather than
+   *  snapped: the sky takes a few seconds to turn, so the road has to as well,
+   *  or the car's handling changes under you between one frame and the next. */
+  private gripMul = 1;
+  /** The road ribbon's material and the look it has when dry, so a shower can
+   *  wet it and clearing can dry it back to whatever this realm's finish was. */
+  private roadMat: THREE.MeshStandardMaterial | null = null;
+  private dryLook = { rough: 0.5, metal: 0.12, env: 1.7 };
   private input = new Input();
   private sound = new Sound();
   private slashCooldown = 0;
@@ -576,6 +699,8 @@ export class Game {
    */
   // --- circuit gimmicks -------------------------------------------------
   private driftZones: DriftZone[] = [];
+  private setPiece: SetPiece | null = null;
+  private crossingHitCd = 0;
   private dzAt = -1;               // index of the zone we are in, -1 = none
   private dzHeld = 0;              // metres of it covered sideways
   private dzFill = 0;              // 0..1, for the HUD
@@ -833,6 +958,7 @@ export class Game {
     this.ghostPlay = null;
     this.ghostRec = null;
     this.driftZones = [];
+    this.setPiece = null;
     this.dzAt = -1;
     this.dzHeld = 0;
     this.dzFill = 0;
@@ -1078,7 +1204,18 @@ export class Game {
       scene.add(this.buildCoastApron(beach ? makeSandTexture(pal) : makeGrassTexture(pal), beach));
     }
     else if (!isVoid) scene.add(track.buildVergeMesh(makeGrassTexture(pal)));
-    scene.add(track.buildRoadMesh(makeRoadTexture(pal), pal.roadFinish));
+    const roadMesh = track.buildRoadMesh(makeRoadTexture(pal), pal.roadFinish);
+    scene.add(roadMesh);
+    // Hold on to the ribbon's material and its dry values so the weather can
+    // wet the surface and dry it again. Read back rather than looked up from a
+    // table: buildRoadMesh owns the finish presets, and a second copy of those
+    // numbers here would drift out of step the first time one is re-tuned.
+    this.roadMat = roadMesh.material as THREE.MeshStandardMaterial;
+    this.dryLook = {
+      rough: this.roadMat.roughness,
+      metal: this.roadMat.metalness,
+      env: this.roadMat.envMapIntensity,
+    };
     this.buildPuddles(pal); // reflective puddles on wet/icy tracks
     if (!isVoid) scene.add(track.buildEdgePosts(pal.rumbleB, pal.edgeLine));
     scene.add(track.buildStartLine(makeCheckerTexture()));
@@ -1165,6 +1302,28 @@ export class Game {
     // deliberately silent. A full-screen "MIST ROLLING IN" callout every 25-45 s
     // is pure interruption — you can SEE the weather change, it doesn't need
     // announcing over the racing.
+  }
+
+  /**
+   * Ease the road's grip and its appearance toward whatever the weather is now.
+   *
+   * Eased over ~2.5 s rather than switched. A shower that took hold instantly
+   * would change the car's handling between one frame and the next, mid-corner,
+   * with no warning — which reads as a bug however well it is signposted. At
+   * this rate the surface visibly darkens for a second or so before the grip
+   * has fully gone, which is the order a driver can actually react to.
+   */
+  private updateSurface(dt: number) {
+    const target = WEATHER_GRIP[this.weatherKind] ?? 1;
+    this.gripMul += (target - this.gripMul) * Math.min(1, dt / 2.5);
+    if (!this.roadMat) return;
+    // 1 at full grip → 0 in the wet; used as the blend toward the wet look, so
+    // a realm that is ALREADY wet or icy only gets wetter, never drier.
+    const wet = clamp((1 - this.gripMul) / (1 - WEATHER_GRIP.rain), 0, 1);
+    const m = this.roadMat;
+    m.roughness = this.dryLook.rough + (WET_LOOK.rough - this.dryLook.rough) * wet;
+    m.metalness = this.dryLook.metal + (WET_LOOK.metal - this.dryLook.metal) * wet;
+    m.envMapIntensity = this.dryLook.env + (WET_LOOK.env - this.dryLook.env) * wet;
   }
 
   /** three.js reads `aoMap` from the SECOND uv channel (`uv1`), which none of
@@ -3029,6 +3188,7 @@ export class Game {
     // the same places and read as one feature rather than two sprinklings.
     this.placeDriftZones();
     this.placeBoostChains();
+    this.placeSetPiece(rand);
   }
 
   /** Place a handful (~3-6) of BIG signature landmarks per ground realm at
@@ -3986,6 +4146,223 @@ export class Game {
   }
 
   /**
+   * Place the circuit's one crossing: a painted hazard band, a beacon each
+   * side, and two boulders that sweep across it with a gap between them.
+   *
+   * Two, not one. A single boulder on a 10 m road always leaves seven metres of
+   * clear tarmac, so there is nothing to do but notice it. A pair with a gap
+   * makes a moving slot: you either thread it or take whichever side is open,
+   * and which of those is available depends on when you arrive — so the hazard
+   * is a question about your speed on the approach rather than a thing you
+   * steer around at the last moment.
+   */
+  private placeSetPiece(rand: () => number) {
+    if (this.cfg.endless || this.cfg.combat) return;
+    const len = this.track.length;
+    // On a STRAIGHT, and well clear of both the start line and any drift zone.
+    // On a bend the boulders' sweep line is a chord across a curving road, so
+    // one end of it leaves the tarmac; stacking it on a drift zone would ask
+    // for a committed slide through a hazard that wants a precise line.
+    const clearOfZones = (d: number) =>
+      this.driftZones.every((z) => d < z.from - 120 || d > z.to + 120);
+    const straightAt = (at: number) => {
+      for (let o = -40; o <= 40; o += 10) {
+        if (Math.abs(this.track.curvatureAt(this.track.wrap(at + o))) > 0.004) return false;
+      }
+      return true;
+    };
+    let dist = -1;
+    for (let d = Math.round(len * 0.35); d < len - 150; d += 15) {
+      if (straightAt(d) && clearOfZones(d)) { dist = d; break; }
+    }
+    // Fall back to any straight at all rather than skipping the feature: a
+    // circuit with no 80 m straight past the halfway point is possible.
+    if (dist < 0) {
+      for (let d = 400; d < len - 150; d += 15) if (straightAt(d)) { dist = d; break; }
+    }
+    if (dist < 0) return;
+
+    const label = SP_LABEL[this.realm.id] ?? "ROCKFALL";
+    const mat = new THREE.MeshBasicMaterial({
+      map: makeHazardTexture(),
+      color: 0xf59e0b,
+      transparent: true,
+      opacity: 0.6,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -5,
+      polygonOffsetUnits: -5,
+    });
+    const band = this.track.buildRoadBand(dist - 7, dist + 7, mat, 5);
+    band.renderOrder = 2;
+    this.scene.add(band);
+
+    const lamps: THREE.Mesh[] = [];
+    for (const side of [-1, 1]) {
+      const { group, lamp } = makeHazardBeacon();
+      const p = this.track.pointAt(this.track.wrap(dist), side * (ROAD_HALF_WIDTH + 2.4));
+      group.position.set(p.x, p.y, p.z);
+      this.scene.add(group);
+      lamps.push(lamp);
+    }
+
+    const rocks: THREE.Object3D[] = [];
+    for (let i = 0; i < 2; i++) {
+      const r = makeRockProp(rand);
+      r.scale.setScalar(1.5 + rand() * 0.4);
+      this.scene.add(r);
+      rocks.push(r);
+    }
+    this.setPiece = {
+      dist: this.track.wrap(dist), label, rocks, lamps,
+      // Start mid-cycle so the first lap does not always meet it at the same
+      // point of its sweep — otherwise the "answer" is the same every race.
+      t: rand() * SP_PERIOD,
+      side: rand() < 0.5 ? 1 : -1,
+      lats: [SP_EDGE, SP_EDGE + SP_GAP],
+      swept: false,
+      warned: false,
+    };
+    // Put the boulders where they belong now, before anything renders — see
+    // updateSetPiece for why this cannot wait for the first frame of the race.
+    this.updateSetPiece(0);
+  }
+
+  /**
+   * Run the crossing: flash, sweep, hit whatever is in the way, repeat.
+   *
+   * The boulders' lateral positions are the authority for collision, not their
+   * meshes — the meshes are placed FROM those numbers. Reading world positions
+   * back out of the scene graph to do physics is how the two quietly disagree.
+   */
+  private updateSetPiece(dt: number) {
+    const sp = this.setPiece;
+    if (!sp) return;
+    // This function POSITIONS the boulder meshes, so it must have run at least
+    // once before the first frame is drawn. `update()` returns early while the
+    // phase is "loading" or "countdown", so it does not — which left both
+    // boulders sitting at the world ORIGIN for the whole countdown and then
+    // teleporting 422 m to the crossing on the first racing frame (measured).
+    // `placeSetPiece` therefore calls this once with dt 0; the warning and the
+    // contact below are separately gated on "racing".
+    sp.t += dt;
+    if (sp.t >= SP_PERIOD) {
+      sp.t -= SP_PERIOD;
+      sp.swept = false;
+      sp.warned = false;
+    }
+
+    const sweeping = sp.t >= SP_TELEGRAPH && sp.t < SP_TELEGRAPH + SP_SWEEP;
+    const telegraphing = sp.t < SP_TELEGRAPH;
+
+    // Turn the pair round THE MOMENT THE SWEEP ENDS, not at the end of the
+    // cycle. `side` is the side the next sweep departs from, and the idle
+    // position is derived from it — so while it still said "left" for the five
+    // idle seconds after a left-to-right sweep, the boulders teleported 22 m
+    // back across the scenery to the side they had just left. Measured as a
+    // 31 m single-frame jump.
+    if (!sp.swept && sp.t >= SP_TELEGRAPH + SP_SWEEP) {
+      sp.swept = true;
+      sp.side = sp.side === 1 ? -1 : 1;
+      // The boulder that led the sweep out is the one now furthest from the
+      // road on the far side, so it TRAILS on the way back. Reversing the array
+      // keeps index 0 as the leader without either mesh having to move.
+      sp.rocks.reverse();
+    }
+    // Beacons: a 5 Hz flash through the telegraph, held on through the sweep,
+    // dark the rest of the time.
+    const lit = sweeping ? 1.6 : telegraphing ? (Math.sin(sp.t * 32) > 0 ? 2.2 : 0) : 0;
+    for (const l of sp.lamps) (l.material as THREE.MeshStandardMaterial).emissiveIntensity = lit;
+
+    // Where the pair is across the road. `u` runs 0 → 1 over the sweep, and the
+    // sweep spans the whole ribbon plus the gap at both ends, so both boulders
+    // are off the road (and hidden) at each extreme.
+    const u = sweeping ? (sp.t - SP_TELEGRAPH) / SP_SWEEP : 0;
+    const from = sp.side * SP_EDGE;
+    const to = -sp.side * (SP_EDGE + SP_GAP);
+    const lead = sweeping ? from + (to - from) * u : from;
+    for (let i = 0; i < sp.rocks.length; i++) {
+      const lat = lead + sp.side * i * SP_GAP;
+      sp.lats[i] = lat;
+      const p = this.track.pointAt(sp.dist, lat, undefined, false);
+      const r = sp.rocks[i];
+      // Road plane, and only while on the road — see SP_EDGE.
+      r.position.set(p.x, p.y + 0.6, p.z);
+      r.visible = sweeping && Math.abs(lat) < SP_ON_ROAD;
+      // roll it, so a boulder crossing the road reads as rolling, not sliding
+      if (sweeping) r.rotation.x -= (sp.side > 0 ? 1 : -1) * dt * 3.4;
+    }
+
+    // --- warn the player while there is still time to do something ----------
+    let gap = sp.dist - this.position;
+    if (gap > this.track.length / 2) gap -= this.track.length;
+    else if (gap < -this.track.length / 2) gap += this.track.length;
+    if (this.phase === "racing" && !sp.warned && gap > 40 && gap < 240 && sp.t < SP_TELEGRAPH + SP_SWEEP) {
+      sp.warned = true;
+      this.announce(sp.label, "AHEAD — TIME IT", "#fbbf24", 1.1);
+      this.sound.play("oob");
+    }
+
+    if (!sweeping || this.phase !== "racing") return;
+
+    // --- contact -------------------------------------------------------------
+    // Only boulders that are ON the road (and therefore drawn) can hit
+    // anything. Without this bound the pair would still be swinging through
+    // ±16 m of collision band while invisible, so a car running wide onto the
+    // verge could be flattened by a boulder that was not on screen.
+    const onRoad = (lat: number) => Math.abs(lat) < SP_ON_ROAD;
+    if (Math.abs(gap) < 5.5 && this.alt < 2.2) {
+      for (const lat of sp.lats) {
+        if (!onRoad(lat)) continue;
+        if (Math.abs(this.freeDrive.lateral - lat) < SP_ROCK_HALF + 1.1) {
+          this.hitByCrossing(lat);
+          break;
+        }
+      }
+    }
+    const len = this.track.length;
+    for (const o of this.opponents) {
+      if (o.finished || o.stunnedT > 0 || o.alt > 2.2) continue;
+      let d = sp.dist - o.dist;
+      if (d > len / 2) d -= len; else if (d < -len / 2) d += len;
+      if (Math.abs(d) > 5.5) continue;
+      const ol = o.lane * ROAD_HALF_WIDTH * 0.9;
+      for (const lat of sp.lats) {
+        if (onRoad(lat) && Math.abs(ol - lat) < SP_ROCK_HALF + 1.1) { o.stun(1.3); break; }
+      }
+    }
+  }
+
+  /**
+   * The player drove into the crossing. Costs speed, the chain and your line —
+   * not the race.
+   *
+   * @param rockLat lateral of the boulder that got you, so the shove is away
+   *   from it. A boulder does not spin a car on its axis, it knocks it off
+   *   line, and being deflected is both more readable and more recoverable
+   *   than being spun.
+   */
+  private hitByCrossing(rockLat: number) {
+    if (this.crossingHitCd > 0) return;
+    this.crossingHitCd = 1.4;
+    this.breakChain();
+    this.freeDrive.vx *= 0.42;
+    this.freeDrive.vz *= 0.42;
+    // Road-space "right", in pointAt's convention, so the push is across the
+    // road rather than in some world direction. `spinRate` was the first
+    // attempt and did nothing: it is only integrated while airborne.
+    const tan = this.track.tangentAt(this.position);
+    const away = this.freeDrive.lateral >= rockLat ? 1 : -1;
+    this.freeDrive.vx += -tan.z * away * 9;
+    this.freeDrive.vz += tan.x * away * 9;
+    this.shake = Math.max(this.shake, 1);
+    this.crashFlash = 0.4;
+    this.sound.play("crash");
+    this.spawnSparks(this.playerRoot.position.x, this.playerRoot.position.y + 0.5, this.playerRoot.position.z, 24);
+    this.toast("HIT!", "#f87171");
+  }
+
+  /**
    * Bookkeeping for the zone you are in: fill it by sliding, pay out on exit.
    *
    * The band itself is the gauge — it warms from violet to amber as you fill
@@ -4350,6 +4727,7 @@ export class Game {
     // weather turns over every ~25-45 s so a long race visibly changes mood
     this.weatherT -= dt;
     if (this.weatherT <= 0) { this.rollWeather(); this.weatherT = 25 + Math.random() * 20; }
+    this.updateSurface(dt);
     const speedPercent = Math.min(this.speed / MAX_SPEED, 1);
     const airborne = this.alt > 0.15;
     this.shake = Math.max(0, this.shake - dt * 2.2);
@@ -4388,7 +4766,10 @@ export class Game {
         // is pressed in and finds grip; over a crest it goes light and the back
         // steps out. Clamped tight — this is meant to be felt, not to become a
         // second handbrake.
-        grip: FREE_GRIP * clamp(1 + this.gLoad * 0.22, 0.72, 1.28),
+        // …and so does the weather. Rain and snow take traction away without
+        // touching top speed, so the straights are unchanged and every corner
+        // becomes a decision. See WEATHER_GRIP.
+        grip: FREE_GRIP * clamp(1 + this.gLoad * 0.22, 0.72, 1.28) * this.gripMul,
         // Free flight only while the mech is ACTUALLY AIRBORNE. Gating these on
         // `transformed` alone meant that the instant you grabbed an orb you lost
         // the walls, the steering assist AND the off-track respawn all at once —
@@ -4426,6 +4807,8 @@ export class Game {
     // must run AFTER `drifting` is up to date for this frame, or the zone
     // credits you for a slide you have already ended
     this.updateDriftZone(dt);
+    this.crossingHitCd = Math.max(0, this.crossingHitCd - dt);
+    this.updateSetPiece(dt);
 
     // visual body yaw: lean into the slip + steer on the ground; barrel-roll in air
     if (this.stuntAir) {
@@ -4733,6 +5116,44 @@ export class Game {
     this.animateCar(dt);
   }
 
+  /**
+   * How much tow a rival is getting from whatever is directly in front of it —
+   * another rival, or the player.
+   *
+   * The player's own tow is eased over time because it is a thing you feel
+   * building; a rival's is computed fresh each frame and applied to its target
+   * speed, which the AI already eases toward at its own rate. Cheap enough not
+   * to care: nine rivals is at most 90 gap checks a frame, and it only looks at
+   * the car it is closest behind rather than summing a queue.
+   */
+  private rivalTow(self: Opponent, len: number): number {
+    if (self.finished || self.stunnedT > 0) return 0;
+    const signed = (aheadOf: number) => {
+      let d = aheadOf - self.dist;
+      if (d > len / 2) d -= len;
+      else if (d < -len / 2) d += len;
+      return d;
+    };
+    let best = 0;
+    const consider = (d: number, lane: number) => {
+      if (d <= 4 || d >= 30) return;
+      // Both laterals in METRES. `lane` is in ROAD_HALF_WIDTH*0.9 units for a
+      // rival (that is what ai.place() uses) and the player's is already metres.
+      const dl = Math.abs(self.lane * ROAD_HALF_WIDTH * 0.9 - lane);
+      if (dl >= TOW_WIDTH) return;
+      const t = (1 - (d - 4) / 26) * (1 - dl / TOW_WIDTH);
+      if (t > best) best = t;
+    };
+    for (const o of this.opponents) {
+      if (o === self || o.finished) continue;
+      consider(signed(o.dist), o.lane * ROAD_HALF_WIDTH * 0.9);
+    }
+    if (this.phase === "racing" && this.alt < 1.2) {
+      consider(signed(this.position), this.freeDrive.lateral);
+    }
+    return best;
+  }
+
   private updateOpponents(dt: number) {
     const mine = this.playerProgress();
     const len = this.track.length;
@@ -4772,7 +5193,7 @@ export class Game {
       // so a gap is closable rather than terminal.
       const cruise = MAX_SPEED * this.carStat.speed;
       const base = cruise * o.pace * (1 + clamp(gap / 300, -0.10, 0.20));
-      o.update(dt, this.track, base, this.cfg.laps);
+      o.update(dt, this.track, base, this.cfg.laps, this.gripMul, this.rivalTow(o, len));
       // stamp the true finishing order the instant a rival crosses the final line
       if (o.finished && o.finishOrder === 0) o.finishOrder = ++this.finishSeq;
 
@@ -5666,6 +6087,8 @@ export class Game {
       ghostDelta: this.ghostDelta,
       driftZone: this.dzAt >= 0 ? this.dzFill : null,
       tow: this.tow,
+      grip: this.gripMul,
+      gripCause: WEATHER_LABEL[this.weatherKind],
       transformT: this.transformed ? this.transformT : 0,
       crashFlash: this.crashFlash,
       position,
