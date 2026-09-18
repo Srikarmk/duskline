@@ -9,7 +9,7 @@ export { groundTextureFor };
  *  this frame is draw-call bound, not texture-bandwidth bound, so it is close to
  *  free. three.js clamps this to the GPU's max anisotropy on upload, so a
  *  device that only supports 8 quietly gets 8. */
-const ANISO = 16;
+export const ANISO = 16;
 
 // ---------------------------------------------------------------------------
 // real CC0 PBR textures (Poly Haven) — loaded from /public/textures

@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { mergeStaticParts } from "./merge";
 import type { CarId } from "../game/engine";
-import { metalDetail, pbr } from "./textures";
+import { metalDetail, pbr, ANISO } from "./textures";
 
 // A car type is a distinct hull silhouette + a set of driving stats. The livery
 // color is supplied at build time (the player's pick, or an opponent's team
@@ -204,7 +204,7 @@ function liveryTexture(baseHex: number, darkHex: number, accentHex: number, stri
 
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
+  tex.anisotropy = ANISO;
   _livery.set(key, tex);
   return tex;
 }

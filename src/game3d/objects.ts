@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { ROAD_HALF_WIDTH } from "./constants";
-import { terrainBump, stoneMaps, pbr, tileSet } from "./textures";
+import { terrainBump, stoneMaps, pbr, tileSet, ANISO } from "./textures";
 import type { RealmPalette } from "./realms";
 import type { RealmId } from "../game/engine";
 import type { CarId } from "./cars";
@@ -731,7 +731,7 @@ export function makeCloudLayer(pal: RealmPalette): THREE.Mesh {
   tex.generateMipmaps = false;
   tex.minFilter = THREE.LinearFilter;
   tex.magFilter = THREE.LinearFilter;
-  tex.anisotropy = 16;
+  tex.anisotropy = ANISO;
   // depthTest MUST stay on. A transparent mesh is drawn in the transparent
   // pass, i.e. after every opaque object, and renderOrder only sorts it within
   // that pass — so with depthTest off this dome painted its blurry cloud
@@ -1002,7 +1002,7 @@ function noiseTexture(base: string, speck: string, dark: string, tile: number): 
   tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(tile, tile);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
+  tex.anisotropy = ANISO;
   return tex;
 }
 
@@ -1744,9 +1744,17 @@ export function makeItemBox(): THREE.Group {
  *  Drive over it for a speed surge. Sits just above the road surface. */
 /** A flat "travelator" boost strip flush with the road: a ribbed metal deck with
  *  glowing side rails and forward chevrons — drive onto it for a speed surge. */
-export function makeBoostPad(): THREE.Group {
+/**
+ * A boost pad.
+ *
+ * @param width Deck width in metres. The default is nearly the whole road,
+ *   which is what it was built for when pads spanned the circuit — but a pad
+ *   you cannot avoid is a conveyor belt, not a decision, so the chains placed
+ *   on corner exits ask for a single lane's worth instead.
+ */
+export function makeBoostPad(width = ROAD_HALF_WIDTH * 1.7): THREE.Group {
   const g = new THREE.Group();
-  const W = ROAD_HALF_WIDTH * 1.7;
+  const W = width;
   const L = 13;
   // dark ribbed deck, sitting flush with the road
   const deck = new THREE.Mesh(
@@ -2057,7 +2065,7 @@ function barkTexture(): THREE.Texture {
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(1, 3);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
+  tex.anisotropy = ANISO;
   return tex;
 }
 
@@ -2099,7 +2107,7 @@ function leafTexture(): THREE.Texture {
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(3, 3);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
+  tex.anisotropy = ANISO;
   return tex;
 }
 

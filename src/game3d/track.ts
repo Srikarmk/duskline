@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { ROAD_HALF_WIDTH } from "./constants";
-import { asphaltBump, pbr, tileSet } from "./textures";
+import { asphaltBump, pbr, tileSet, ANISO } from "./textures";
 import { TRACK_SCALE } from "./constants";
 import type { RealmPalette } from "./realms";
 
@@ -517,21 +517,57 @@ export class Track {
    * painted 2 m past it.
    */
   buildStartLine(texture: THREE.Texture): THREE.Mesh {
-    const HALF_LEN = 2.0;        // metres of track the band covers
-    const COLS = 10;             // across the road
-    const ROWS = 6;              // along it — enough to follow a tight corner
-    // 7 cm, not 1 cm. The strip's vertices land within ~2 cm of the ribbon's
-    // own (measured), but depth precision 20+ m from the camera on a far plane
-    // of 1600 is far coarser than that, so a hairline lift simply loses the
-    // depth test and the line vanishes entirely — which is worse than the
-    // half-sunk rectangle it replaced. The old flat plane used 10 cm for the
-    // same reason. At 7 cm a painted line is not perceptibly proud of the road.
-    const LIFT = 0.07;
+    // 7 cm of lift, not 1 cm. The strip's vertices land within ~2 cm of the
+    // ribbon's own (measured), but depth precision 20+ m from the camera on a
+    // far plane of 1600 is far coarser than that, so a hairline lift simply
+    // loses the depth test and the line vanishes entirely — worse than the
+    // half-sunk rectangle it replaced. At 7 cm it is not perceptibly proud.
+    const geo = this.stripGeometry(-2.0, 2.0, 6, 10, 0.07, 7, 1);
+    const map = texture.clone();
+    map.wrapS = map.wrapT = THREE.RepeatWrapping;
+    map.needsUpdate = true;
+    const mat = new THREE.MeshBasicMaterial({
+      map, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+    });
+    return new THREE.Mesh(geo, mat);
+  }
+
+  /**
+   * A painted band of road between two distances — the geometry behind drift
+   * zones and any other "this stretch is special" marking.
+   *
+   * Long bands need many rows: the strip is a chord-wise approximation of a
+   * curve, so a 60 m zone through a hairpin drawn with 6 rows cuts the corner
+   * and floats off the tarmac on the outside. One row every ~3 m keeps it
+   * glued down through anything the circuit generator can produce.
+   */
+  buildRoadBand(from: number, to: number, mat: THREE.Material, uRepeat = 1): THREE.Mesh {
+    const span = Math.abs(to - from);
+    const rows = Math.max(6, Math.min(160, Math.ceil(span / 3)));
+    // 6 cm: under the start line's 7 cm so an overlap layers predictably, still
+    // clear of the depth precision that swallowed a 1 cm lift.
+    // One texture tile every 22 m. At 12 m the chevrons came out one every six
+    // metres and the corner read as painted-over rather than marked.
+    const geo = this.stripGeometry(from, to, rows, 8, 0.06, uRepeat, span / 22);
+    return new THREE.Mesh(geo, mat);
+  }
+
+  /**
+   * The shared vertex maths for anything painted ON the road.
+   *
+   * COPIED FROM `buildRoadMesh`, not re-derived via pointAt(): the ribbon sits
+   * at `max(GROUND_FLOOR, p.y) + 0.1 + lift` and spans `ROAD_HALF_WIDTH * 1.25`.
+   * A pointAt-derived strip lands ~8 cm low and disappears under the tarmac.
+   */
+  private stripGeometry(
+    from: number, to: number, ROWS: number, COLS: number,
+    LIFT: number, uRepeat: number, vRepeat: number,
+  ): THREE.BufferGeometry {
     const edge = ROAD_HALF_WIDTH * 1.25;   // the ribbon's own half-width
 
     const pos: number[] = [], uv: number[] = [], idx: number[] = [];
     for (let r = 0; r <= ROWS; r++) {
-      const d = this.wrap(-HALF_LEN + (r / ROWS) * HALF_LEN * 2);
+      const d = this.wrap(from + (r / ROWS) * (to - from));
       const t = this.wrap(d) / this.length;
       const p = this.curve.getPointAt(t);
       const tan = this.curve.getTangentAt(t);
@@ -552,9 +588,9 @@ export class Track {
         const u = c / COLS;
         const off = (u * 2 - 1) * edge;
         pos.push(p.x + rx * off, cy + ry * off, p.z + rz * off);
-        // Tile the checker across the width so the squares stay square rather
-        // than stretching with the road.
-        uv.push(u * 7, r / ROWS);
+        // Tile across the width so a checker's squares stay square rather than
+        // stretching with the road.
+        uv.push(u * uRepeat, (r / ROWS) * vRepeat);
       }
     }
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
@@ -569,14 +605,7 @@ export class Track {
     geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
     geo.setIndex(idx);
     geo.computeVertexNormals();
-
-    const map = texture.clone();
-    map.wrapS = map.wrapT = THREE.RepeatWrapping;
-    map.needsUpdate = true;
-    const mat = new THREE.MeshBasicMaterial({
-      map, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
-    });
-    return new THREE.Mesh(geo, mat);
+    return geo;
   }
 }
 
@@ -666,7 +695,7 @@ export function makeRoadTexture(pal: RealmPalette): THREE.Texture {
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
+  tex.anisotropy = ANISO;
   return tex;
 }
 
@@ -683,5 +712,73 @@ export function makeCheckerTexture(): THREE.Texture {
   }
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/**
+ * The drift-zone surface: hatched shoulders with chevrons running down the
+ * middle, pointing the way you are going.
+ *
+ * Painted rather than modelled, and with an alpha channel, so the zone reads
+ * as markings on the tarmac you can still see through to. A solid slab of
+ * colour on twelve different road palettes either disappears (Neon Metro's wet
+ * asphalt) or looks like a hole (Crystal Peaks' ice); markings with holes in
+ * them work on all of them, because the road underneath is still doing the
+ * work of telling you what surface you are on.
+ *
+ * Tiled ALONG the zone (v), stretched across it (u), so one texture covers a
+ * 40 m corner and a 120 m sweeper at the same visual density.
+ */
+export function makeDriftZoneTexture(): THREE.Texture {
+  const W = 128, H = 128;
+  const c = document.createElement("canvas");
+  c.width = W;
+  c.height = H;
+  const ctx = c.getContext("2d")!;
+  ctx.clearRect(0, 0, W, H);
+
+  // hatched shoulders: diagonal bars down both edges, the universal "this bit
+  // of road means something" marking
+  ctx.save();
+  ctx.fillStyle = "rgba(255,255,255,0.62)";
+  for (const x0 of [0, W - 13]) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x0, 0, 13, H);
+    ctx.clip();
+    for (let y = -H; y < H * 2; y += 26) {
+      ctx.beginPath();
+      ctx.moveTo(x0 - 4, y);
+      ctx.lineTo(x0 + 17, y + 21);
+      ctx.lineTo(x0 + 17, y + 29);
+      ctx.lineTo(x0 - 4, y + 8);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+  ctx.restore();
+
+  // ONE chevron per tile, pointing down-track (+v), drawn as a thin outline so
+  // the tarmac still shows through the middle of the lane.
+  //
+  // The first version had two per tile with a 7 px stroke, tiled every 12 m:
+  // on screen that is a 0.7 m thick violet arrow every 6 metres, which stopped
+  // reading as road markings and started reading as a purple road. Half the
+  // count, two thirds the thickness, and tiled at half the rate below.
+  ctx.strokeStyle = "rgba(255,255,255,0.92)";
+  ctx.lineWidth = 5;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(34, 78);
+  ctx.lineTo(W / 2, 40);
+  ctx.lineTo(W - 34, 78);
+  ctx.stroke();
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = ANISO;
   return tex;
 }

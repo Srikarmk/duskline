@@ -25,12 +25,13 @@ import {
   MISSILE_SPEED, MISSILE_MAX_DIST, STUN_DURATION, ITEM_LATERAL_TOL,
   SCORE_HIT, OPPONENT_MINE_CHANCE,
 } from "./constants";
-import { Track, makeRoadTexture, makeCheckerTexture } from "./track";
+import { Track, makeRoadTexture, makeCheckerTexture, makeDriftZoneTexture } from "./track";
 import { loadModels, instantiate, type ModelLibrary } from "./assets";
 import {
   makeSkyDome, makePosterSky, makeCloudLayer, makeEnvMap, windTime, makeGround, makeGrassTexture,
   makeGrassField, makeRockField, makeMountainRing,
   makeGem, makeNitroCan, makeOrb, makeRamp, RAMP_SPECS, type RampKind,
+  makeBoostPad,
   makeCrystalCluster, makeMonster,
   makeMech, makeSlash, makeFlame, makeUnderGlow,
   makeItemBox, makeMissile, makeMine, makeShieldBubble,
@@ -48,6 +49,7 @@ import { BranchPath } from "./branch";
 import { FreeDrive } from "./freedrive";
 import { loadPBR, pbr, groundTextureFor } from "./textures";
 import { makeKart, setCarEnvTint, setCarPosterMode, CAR_SPECS, CAR_IDS, type CarStat } from "./cars";
+import { GhostRecorder, GhostPlayer, loadGhost, saveGhostIfBest } from "./ghost";
 import { REALMS, pickScenery, REALM_WEATHER, REALM_WEATHER_POOL, REALM_AMBIENCE, REALM_TUNNELS, REALM_RIVERS, REALM_SPLITS, type RealmSpec, type SceneryKind, type RealmPalette, type WeatherKind } from "./realms";
 import { makePyramid, makeObelisk, makeSphinx, makeSandRock } from "./props/egyptian";
 import { makeTower, makeGatehouse, makeCastleWall, makeBanner, makeTorch } from "./props/castle";
@@ -60,12 +62,36 @@ import { Minimap } from "./minimap";
 import { Sound } from "./sound";
 import { loadSetting, loadSettings, type Settings, QUALITY, type Quality } from "../ui/settings";
 import { Input } from "../game/input";
-import { drawHud, drawToasts, drawCallout, drawCenterText, drawSpeedFx, drawFrameGrade, drawStartLights, type Toast } from "../game/render";
+import { drawHud, drawToasts, drawCallout, drawCenterText, drawSpeedFx, drawFrameGrade, drawStartLights, type Toast,
+  calloutCenterY,
+} from "../game/render";
 import type { GameMode, GameResult, GameOptions, RaceStanding, CarId } from "../game/engine";
 
 type Phase = "loading" | "countdown" | "racing" | "finished";
 
 type EntityType = "gem" | "airGem" | "nitro" | "orb" | "ramp" | "rock" | "monster" | "itembox" | "boostpad" | "boostgate";
+
+/** How far off a rival's line the tow still reaches, in metres. Half a car's
+ *  width either side of dead astern — enough to be findable, tight enough that
+ *  you have to aim for it. */
+const TOW_WIDTH = 2.4;
+/** Top speed gained at full tow. 12% is roughly a second a lap: worth chasing,
+ *  not enough to make following better than leading. */
+const TOW_GAIN = 0.12;
+
+/** Drift-zone band colours: violet when idle, amber when you have filled it. */
+const DZ_IDLE = 0xa855f7;
+const DZ_HOT = new THREE.Color(0xfbbf24);
+
+/** A painted stretch of corner that pays you for holding a slide through it. */
+interface DriftZone {
+  from: number;
+  to: number;
+  /** Metres of sliding needed to fill it — shorter than the zone, so a good
+   *  drift through a long sweeper can still bank a perfect. */
+  target: number;
+  mat: THREE.MeshBasicMaterial;
+}
 
 type ItemKind = "boost" | "shield" | "missile" | "mine";
 const ITEM_LABEL: Record<ItemKind, string> = {
@@ -124,7 +150,12 @@ const MODE_CONFIG: Record<GameMode, ModeConfig> = {
  *  aim — while hazards (rock/monster) stay tight so you're never hit unfairly. */
 const COLLIDE_WIDTH: Record<EntityType, number> = {
   gem: 0.5, airGem: 0.55, nitro: 0.5, orb: 0.58, ramp: 1.45, rock: 0.34, monster: 0.38, itembox: 0.7,
-  boostpad: 1.0, boostgate: 0.5,
+  // 0.36 = 1.8 m either side, matching the lane-width deck the corner-exit
+  // chains are built from. It was 1.0 — a FIVE metre half-band, the whole road —
+  // left over from when a pad spanned the circuit. At 1.0 a pad placed out by
+  // the kerb still fires when you drive down the middle, which quietly undoes
+  // the entire point of putting it off the racing line.
+  boostpad: 0.36, boostgate: 0.5,
 };
 
 const BUCKET_METERS = 5;
@@ -351,6 +382,8 @@ export class Game {
   private lapProgress = 0;   // cumulative signed distance travelled this lap
   /** Where the backmost grid slot sits, in metres behind the start line. */
   private gridStart = 0;
+  /** Scratch for the camera floor probe — this runs every frame. */
+  private readonly tmpCamFloor = new THREE.Vector3();
   private lastFreeDist = 0;  // previous frame's projected distance (for lap wrap)
   private wasOnRamp = false;
   private lastRampPower = 1;
@@ -501,11 +534,66 @@ export class Game {
 
   private crashFlash = 0;
   private toasts: Toast[] = [];
+  /** The live "+N" chip tally, so a gem run is one counting line not six. */
+  private gemTick: Toast | null = null;
+  private gemTickT = 0;
+  private gemTickSum = 0;
   // big centre-screen race-drama callouts (overtakes, final lap) — distinct
   // from the small stacked toasts; one at a time, with a pop + fade
   private callout: { text: string; sub: string; color: string; t: number; life: number } | null = null;
   private lastPosition = 0;   // player's rank last frame, to detect overtakes
   private overtakeCd = 0;     // debounce so grid shuffles don't spam callouts
+
+  /**
+   * STYLE CHAIN.
+   *
+   * Drifting already granted a boost and ramps already granted a stunt bonus,
+   * but nothing connected them — every flourish was a separate, immediately
+   * banked little payout, so driving beautifully scored the same as driving
+   * adequately plus one lucky ramp.
+   *
+   * The chain makes them compound. Every stylish act extends a short timer and
+   * raises a multiplier; the points sit PENDING while the chain is alive. Let
+   * the timer lapse and they bank. Crash, spin out, or leave the road and the
+   * whole pending pot is lost.
+   *
+   * That last rule is the entire design. Without it a chain is just a slower
+   * way to receive points you had already earned; with it, every extra link is
+   * a decision to risk what you are holding.
+   */
+  private chainLinks = 0;
+  private chainPending = 0;
+  private chainT = 0;
+  private chainBest = 0;      // longest chain this race, for the results screen
+  private nearMissCd = 0;
+
+  /**
+   * GHOST — your own best lap, replayed beside you.
+   *
+   * Only in modes with laps and a fixed circuit. The recorder runs every lap
+   * and the best one is kept; the player replays from the same start, so the
+   * two are directly comparable at every point on the road.
+   */
+  // --- circuit gimmicks -------------------------------------------------
+  private driftZones: DriftZone[] = [];
+  private dzAt = -1;               // index of the zone we are in, -1 = none
+  private dzHeld = 0;              // metres of it covered sideways
+  private dzFill = 0;              // 0..1, for the HUD
+  /** 0..1 slipstream from sitting in a rival's dirty air. */
+  private tow = 0;
+  private towCallout = 0;
+
+  private ghostRec: GhostRecorder | null = null;
+  /** Lap 1 runs from the grid, some way BEHIND the line, so its recorded time
+   *  includes a standing start and is not comparable to a flying lap. Record it
+   *  (the delta readout still wants something to draw) but never store it. */
+  private ghostStanding = true;
+  private ghostPlay: GhostPlayer | null = null;
+  private ghostCar: THREE.Group | null = null;
+  private ghostT = 0;              // seconds into the ghost's lap
+  private lapT = 0;                // seconds into YOUR current lap
+  private ghostDelta: number | null = null;
+  private readonly tmpGhost = new THREE.Vector3();
 
   constructor(container: HTMLElement, options: GameOptions) {
     this.container = container;
@@ -741,6 +829,14 @@ export class Game {
     this.sound.dispose();
     this.weather?.dispose();
     this.composer.dispose();
+    this.ghostCar = null;
+    this.ghostPlay = null;
+    this.ghostRec = null;
+    this.driftZones = [];
+    this.dzAt = -1;
+    this.dzHeld = 0;
+    this.dzFill = 0;
+    this.tow = 0;
     this.disposeScene();
     this.renderer.dispose();
     // renderer.dispose() releases three's own GL objects but leaves the
@@ -799,6 +895,7 @@ export class Game {
     // counting honest: it reaches `len` exactly when the car returns to the
     // line, not `gridStart` metres early. Without this the first lap would tick
     // over before crossing the line, every race.
+    this.setupGhost();
     this.freeDrive.reset(this.track, this.track.wrap(this.gridStart));
     this.lastFreeDist = this.track.wrap(this.gridStart);
     this.lapProgress = this.gridStart;
@@ -1162,6 +1259,10 @@ export class Game {
       this.shake = Math.max(this.shake, 0.45);
       this.sound.play("bump");
       this.obstacleHitCd = 0.18;
+      // Clipping scenery is the risk a near miss is played against — without
+      // this, threading the gap would be free and there would be no decision
+      // in it.
+      this.breakChain();
     }
   }
 
@@ -1192,13 +1293,20 @@ export class Game {
     // fills the windscreen on the grid, far enough that nobody is on top of it.
     const GRID_BACK = 7;
     const rowStep = 8.0;    // metres between ROWS
-    const stagger = 1.6;    // the right-hand slot of each row sits this far up
+    const stagger = 1.6;    // the right-hand slot of each row sits this far BACK
     const colLane = 0.38;   // the two columns, ± this in playerX units
     const gridN = Math.min(OPPONENT_COUNT, OPPONENTS.length);
     const playerSlot = gridN;                 // player is last (behind every rival)
     const rowOf = (slot: number) => Math.floor(slot / 2);
+    // The odd slot of each row sits BACK from its partner, not forward. With
+    // the stagger added rather than subtracted, slot 1 sat 1.6 m ahead of slot
+    // 0 — so the car on pole was not actually on pole, every row was ordered
+    // backwards, and the player (the odd slot of the last row) started 1.6 m
+    // AHEAD of the ninth rival instead of behind it. Measured: rivals at -5.4
+    // to -39, player at -37.4, ninth of ten on a grid that is supposed to put
+    // them last. One sign fixes the row ordering and the back of the grid at once.
     const slotDist = (slot: number) =>
-      -(GRID_BACK + rowOf(slot) * rowStep) + (slot % 2 === 1 ? stagger : 0);
+      -(GRID_BACK + rowOf(slot) * rowStep) - (slot % 2 === 1 ? stagger : 0);
     const slotLane = (slot: number) => (slot % 2 === 0 ? -colLane : colLane);
     this.gridStart = slotDist(playerSlot);   // the player's own slot, for init()
 
@@ -2915,6 +3023,12 @@ export class Game {
         }
       }
     }
+
+    // Drift zones first: they pick the circuit's best corners, and the boost
+    // chains then hang off those same corner exits, so the two gimmicks land in
+    // the same places and read as one feature rather than two sprinklings.
+    this.placeDriftZones();
+    this.placeBoostChains();
   }
 
   /** Place a handful (~3-6) of BIG signature landmarks per ground realm at
@@ -3696,6 +3810,28 @@ export class Game {
     if (this.toasts.length > 4) this.toasts.length = 4;
   }
 
+  /**
+   * One counting line for a run of chips, instead of one line per chip.
+   *
+   * A gem run is six chips 3.5 m apart — at racing speed that is six toasts in
+   * half a second, and the stack only holds four, so collecting a run reliably
+   * pushed every line that actually meant something (NEAR MISS, DRIFT ZONE,
+   * CHAIN BANKED) straight off the top. The score notifications were drowning
+   * out the skill notifications.
+   */
+  private gemToast(value: number) {
+    this.gemTickSum = this.gemTickT > 0 ? this.gemTickSum + value : value;
+    this.gemTickT = 1.2;
+    if (this.gemTick && this.toasts.includes(this.gemTick)) {
+      this.gemTick.text = `+${this.gemTickSum}`;
+      this.gemTick.t = 2;               // keep it alive while the run continues
+      return;
+    }
+    this.gemTick = { text: `+${this.gemTickSum}`, color: "#67e8f9", t: 2 };
+    this.toasts.unshift(this.gemTick);
+    if (this.toasts.length > 4) this.toasts.length = 4;
+  }
+
   /** Register a mech kill: bump the combo, return the score multiplier and shout
    *  about it once the chain is worth shouting about. */
   private mechCombo(): number {
@@ -3707,6 +3843,323 @@ export class Game {
       this.shake = Math.max(this.shake, 0.5);
     }
     return mult;
+  }
+
+  /**
+   * Build the ghost for this race, if the mode has laps worth comparing.
+   *
+   * Endless and combat modes are excluded: there is no repeatable lap to be
+   * better than. A ghost car is the player's own kart, unlit and translucent,
+   * with collisions off — it is a recording, not a rival, and must never
+   * deflect you.
+   */
+  private setupGhost(): void {
+    if (this.cfg.endless || this.cfg.combat) return;
+    const len = this.track.length;
+    this.ghostRec = new GhostRecorder(len);
+    this.ghostStanding = this.cfg.laps > 1;
+    const best = loadGhost(this.realm.id, len);
+    if (!best) return;
+
+    this.ghostPlay = new GhostPlayer(best);
+    const car = makeKart(this.carId, CAR_SPECS[this.carId].color);
+    car.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      const mats = Array.isArray(m.material) ? m.material : [m.material];
+      m.material = mats.map((src) => {
+        // Unlit and see-through, so it reads as a replay rather than a car you
+        // could hit. depthWrite off keeps it from punching a hole in whatever
+        // is behind it when it overlaps your own car.
+        const mat = new THREE.MeshBasicMaterial({
+          color: (src as THREE.MeshStandardMaterial).color ?? new THREE.Color(0x67e8f9),
+          transparent: true,
+          // 0.45, not 0.34. At a third opacity against a bright sunset road the
+          // ghost was a smear you could lose entirely — and a pace reference
+          // you cannot see is not a pace reference. Still obviously a replay.
+          opacity: 0.45,
+          depthWrite: false,
+        });
+        mat.color.lerp(new THREE.Color(0x67e8f9), 0.55);
+        return mat;
+      }) as THREE.Material[];
+    });
+    car.visible = false;
+    this.ghostCar = car;
+    this.scene.add(car);
+  }
+
+  /**
+   * DRIFT ZONES — the circuit asking you to do the most fun thing it has.
+   *
+   * Drifting is the deepest mechanic in the game and the one nothing ever
+   * asked for. You could finish a whole race without sliding once and the
+   * track would never notice. A drift zone is the track noticing: a painted
+   * corner that pays into the style chain in proportion to how much of it you
+   * spent sideways, which turns the corner from something to survive into
+   * something to attack.
+   *
+   * WHERE the zones go is measured, not authored. Twelve realms each generate
+   * their own circuit, so a hard-coded curvature threshold would find eight
+   * zones on Crystal Peaks and none on Apex Speedway. Instead the whole lap's
+   * curvature is sampled and the zones are placed on its own busiest corners —
+   * a percentile, so every circuit gets a comparable handful whatever its
+   * character.
+   */
+  private placeDriftZones(): void {
+    // Not on the endless cruise (it is a drive, not a stunt course) and not in
+    // combat, where being sideways is how you get shot.
+    if (this.cfg.endless || this.cfg.combat) return;
+    const len = this.track.length;
+    const STEP = 5;
+
+    // Curvature profile of the lap, then its own percentiles as thresholds.
+    const ks: number[] = [];
+    for (let d = 0; d < len; d += STEP) ks.push(Math.abs(this.track.curvatureAt(d)));
+    const sorted = ks.slice().sort((a, b) => a - b);
+    const pct = (q: number) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))];
+    // Hysteresis: turn-in is stricter than turn-out, so one corner produces one
+    // zone instead of flickering into three as the curvature wobbles.
+    //
+    // The absolute floors are a guard against a circuit with no corners at all
+    // (a near-oval would otherwise get four zones on its own gentlest kinks),
+    // and they have to be LOW to do only that job. A first pass used 0.010,
+    // which on a measured circuit was 0.0116 at the single tightest hairpin and
+    // above the 90th percentile everywhere else — the floor silently replaced
+    // the percentile and the whole lap got exactly one zone.
+    const IN = Math.max(0.0025, pct(0.78));
+    const OUT = Math.max(0.0018, pct(0.58));
+
+    const MIN_SPAN = 40, MAX_SPAN = 130, GAP = 200, MAX_ZONES = 4;
+    // Walk from well after the seam to just before it. Not straddling distance 0
+    // is a hard requirement (the progress bookkeeping below assumes from < to);
+    // starting at 120 m rather than 20 is taste — a drift zone immediately off
+    // the line, with the whole field still three abreast, is not a corner you
+    // get to attack.
+    const found: { from: number; to: number }[] = [];
+    let open = -1;
+    for (let d = 120; d < len - 20; d += STEP) {
+      const k = Math.abs(this.track.curvatureAt(d));
+      if (open < 0) {
+        if (k > IN) open = d;
+      } else if (k < OUT) {
+        const span = Math.min(d - open, MAX_SPAN);
+        const prev = found.length ? found[found.length - 1].to : -Infinity;
+        if (span >= MIN_SPAN && open - prev > GAP) found.push({ from: open, to: open + span });
+        open = -1;
+      }
+    }
+    if (!found.length) return;
+
+    // Keep the longest few — a 120 m sweeper is a better zone than a 40 m kink,
+    // and four is already one every quarter-lap.
+    found.sort((a, b) => (b.to - b.from) - (a.to - a.from));
+    const keep = found.slice(0, MAX_ZONES).sort((a, b) => a.from - b.from);
+
+    const tex = makeDriftZoneTexture();
+    for (const z of keep) {
+      const span = z.to - z.from;
+      const mat = new THREE.MeshBasicMaterial({
+        map: tex,
+        color: DZ_IDLE,
+        transparent: true,
+        opacity: 0.42,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -5,
+        polygonOffsetUnits: -5,
+      });
+      const mesh = this.track.buildRoadBand(z.from, z.to, mat, 1);
+      mesh.renderOrder = 2;          // over the road, under the start line
+      this.scene.add(mesh);
+      this.driftZones.push({
+        from: z.from, to: z.to,
+        // 70% of the zone, not all of it: you have to get the car turned in and
+        // straightened out at the ends, so demanding 100% would make a perfect
+        // physically impossible and the gauge would never fill. Capped at 75 m
+        // besides, because a 130 m sweeper does not need three seconds of
+        // unbroken slide to have been driven well.
+        target: Math.min(span * 0.7, 75),
+        mat,
+      });
+    }
+  }
+
+  /**
+   * Bookkeeping for the zone you are in: fill it by sliding, pay out on exit.
+   *
+   * The band itself is the gauge — it warms from violet to amber as you fill
+   * it, so the feedback is on the road you are looking at rather than only in
+   * the corner of the HUD.
+   */
+  private updateDriftZone(dt: number): void {
+    if (!this.driftZones.length) return;
+    const d = this.position;
+    let inside = -1;
+    for (let i = 0; i < this.driftZones.length; i++) {
+      const z = this.driftZones[i];
+      if (d >= z.from && d <= z.to) { inside = i; break; }
+    }
+    if (inside !== this.dzAt) {
+      if (this.dzAt >= 0) this.settleDriftZone();
+      this.dzAt = inside;
+      this.dzHeld = 0;
+      // No entry toast. The gauge sliding in at the bottom of the screen already
+      // says "drift zone", and a toast on top of it meant the words DRIFT ZONE
+      // appeared twice in one second — once on entry, once from the chain when
+      // it paid out.
+      if (inside >= 0 && this.phase === "racing") this.sound.play("lane");
+    }
+    if (this.dzAt < 0) { this.dzFill = 0; return; }
+    const z = this.driftZones[this.dzAt];
+    // Airborne does not count: a ramp through a zone would otherwise fill it
+    // for free, and a drift is a thing you do with the tyres on the ground.
+    //
+    // Neither does the grass. A zone is a piece of TARMAC, and the grass is
+    // looser than asphalt precisely so the car slides on it — measured, a run
+    // wide onto the verge filled the gauge faster than a proper slide did,
+    // which would have made the reward for a drift zone "steer off the road".
+    const planted = this.drifting && this.alt < 0.6 && !this.freeDrive.offRoad;
+    if (planted) this.dzHeld += this.speed * dt;
+    this.dzFill = Math.min(1, this.dzHeld / z.target);
+    z.mat.color.setHex(DZ_IDLE).lerp(DZ_HOT, this.dzFill);
+    z.mat.opacity = 0.42 + this.dzFill * 0.45;
+  }
+
+  /** Left a zone: pay what was earned and reset the band. */
+  private settleDriftZone(): void {
+    const z = this.driftZones[this.dzAt];
+    const frac = Math.min(1, this.dzHeld / z.target);
+    z.mat.color.setHex(DZ_IDLE);
+    z.mat.opacity = 0.42;
+    this.dzHeld = 0;
+    if (this.phase !== "racing" || frac < 0.22) return;   // barely tried
+    const perfect = frac > 0.85;
+    this.addChain(perfect ? "PERFECT ZONE" : "DRIFT ZONE", Math.round(140 + frac * 420));
+    if (perfect) this.announce("PERFECT ZONE", "SIDEWAYS ALL THE WAY", "#f0abfc", 1.1);
+  }
+
+  /**
+   * Which side of the road is the OUTSIDE of the bend between two distances.
+   *
+   * MEASURED, not derived from the sign of the curvature: the outside is simply
+   * the side whose offset path through the corner is longer, which is true
+   * whatever sign convention `pointAt` happens to use. This codebase has
+   * already been bitten once by a lateral sign mismatch that silently mirrored
+   * every placement on the circuit, and this returns the right answer even if
+   * that convention flips again.
+   *
+   * @returns +1 or -1, in the lateral units `addEntity` takes.
+   */
+  private outsideSign(from: number, to: number): number {
+    const off = ROAD_HALF_WIDTH * 0.7;
+    const walk = (side: number) => {
+      let sum = 0;
+      let prev = this.track.pointAt(this.track.wrap(from), side * off);
+      for (let d = from + 6; d <= to; d += 6) {
+        const p = this.track.pointAt(this.track.wrap(d), side * off);
+        sum += prev.distanceTo(p);
+        prev = p;
+      }
+      return sum;
+    };
+    return walk(1) >= walk(-1) ? 1 : -1;
+  }
+
+  /**
+   * BOOST PADS, back on the circuit — but only where taking them costs you.
+   *
+   * They were pulled from the track because they were everywhere and on the
+   * racing line, which made them a conveyor belt: you gained nothing by
+   * noticing them, because you could not miss them. The fix is not fewer pads,
+   * it is pads somewhere you would not otherwise be. A chain of three on the
+   * OUTSIDE of a corner exit is a real decision — the long way round, giving up
+   * entry speed and a couple of metres of track, for a surge onto the straight
+   * that follows. Take the tight line or take the pads; both are defensible,
+   * which is what makes it interesting.
+   */
+  private placeBoostChains(): void {
+    if (this.cfg.endless || !this.driftZones.length) return;
+    for (const z of this.driftZones) {
+      // Exit half of the corner and a little beyond: the pads should fire you
+      // ONTO the straight, not mid-bend where the extra speed just runs you wide.
+      const start = z.from + (z.to - z.from) * 0.55;
+      const side = this.outsideSign(z.from, z.to);
+      for (let i = 0; i < 3; i++) {
+        const d = start + i * 13;
+        // 0.78 of the road half-width: out in the last quarter of the lane, off
+        // any line you would drive by accident, but still inside the kerb.
+        // 0.68 of a half-width = 3.4 m out, so a 3.2 m deck runs from 1.8 m to
+        // the 5 m road edge: clear of the centre line, entirely on the tarmac.
+        this.addEntity("boostpad", d, side * 0.68, makeBoostPad(3.2));
+      }
+    }
+  }
+
+  /** A lap ended: keep it if it beat the stored one, then start recording again. */
+  private finishGhostLap(): void {
+    if (this.ghostRec) {
+      if (this.ghostStanding) {
+        this.ghostStanding = false;       // the next lap is a flying one
+      } else {
+        const lap = this.ghostRec.finish(this.realm.id, this.carId);
+        if (lap && saveGhostIfBest(this.realm.id, lap)) {
+          this.toast("NEW BEST LAP", "#a7f3d0");
+        }
+      }
+      this.ghostRec.reset();
+    }
+    this.lapT = 0;
+    this.ghostT = 0;
+    this.ghostPlay?.reset();
+  }
+
+  /** Current multiplier: x1 at the start, +1 every two links, capped at x6. */
+  private get chainMult(): number {
+    return Math.min(6, 1 + Math.floor(this.chainLinks / 2));
+  }
+
+  /**
+   * Add a link. `base` is the points this act is worth before the multiplier.
+   *
+   * Deliberately does NOT add to `score` — that happens in bankChain(). The
+   * whole tension is that these points are not yours yet.
+   */
+  private addChain(label: string, base: number): void {
+    this.chainLinks++;
+    const mult = this.chainMult;
+    this.chainPending += Math.round(base * mult);
+    this.chainT = 3.6;
+    if (this.chainLinks > this.chainBest) this.chainBest = this.chainLinks;
+    this.toast(`${label} x${mult}`, "#67e8f9");
+    if (this.chainLinks === 4) this.announce("CHAIN x3", "KEEP IT ALIVE", "#67e8f9", 1.0);
+    else if (this.chainLinks === 8) this.announce("CHAIN x5", "DO NOT TOUCH ANYTHING", "#fbbf24", 1.2);
+  }
+
+  /** Timer lapsed cleanly: the pending pot is yours. */
+  private bankChain(): void {
+    if (this.chainPending <= 0) { this.chainLinks = 0; return; }
+    const won = this.chainPending;
+    const links = this.chainLinks;
+    this.score += won;
+    this.chainPending = 0;
+    this.chainLinks = 0;
+    this.sound.play("gem");
+    this.toast(`CHAIN BANKED +${won}`, "#a7f3d0");
+    if (links >= 4) this.announce("BANKED", `${links} LINKS · +${won}`, "#a7f3d0", 1.0);
+  }
+
+  /** Crashed, spun, or left the road: lose the lot. */
+  private breakChain(): void {
+    if (this.chainPending <= 0 && this.chainLinks === 0) return;
+    const lost = this.chainPending;
+    this.chainPending = 0;
+    this.chainLinks = 0;
+    this.chainT = 0;
+    if (lost > 0) {
+      this.sound.play("powerDown");
+      this.toast(`CHAIN LOST -${lost}`, "#f87171");
+    }
   }
 
   /** Fire a big centre-screen callout (overtake, final lap, …). Overwrites any
@@ -3727,6 +4180,7 @@ export class Game {
       const ord = (n: number) => ["1ST", "2ND", "3RD", "4TH", "5TH", "6TH", "7TH", "8TH", "9TH"][n - 1] ?? `${n}TH`;
       if (p < this.lastPosition) {
         this.announce("OVERTAKE!", p === 1 ? "TAKING THE LEAD" : `UP TO ${ord(p)}`, p === 1 ? "#fbbf24" : "#a7f3d0");
+        this.addChain("OVERTAKE", 120);
         this.sound.play("lane");
       } else {
         this.announce("PASSED", `DOWN TO ${ord(p)}`, "#f87171");
@@ -3743,6 +4197,7 @@ export class Game {
     if (this.nitroT > 0) max *= NITRO_SPEED_FACTOR;
     if (this.driftBoostT > 0) max *= DRIFT_BOOST_FACTOR;
     if (this.boostT > 0) max *= ITEM_BOOST_FACTOR;
+    max *= 1 + this.tow * TOW_GAIN;
     return max;
   }
 
@@ -3751,7 +4206,9 @@ export class Game {
       const charge = Math.min(this.driftCharge, 2.5);
       this.driftBoostT = 0.4 + charge * 0.35;
       this.sound.play("nitro");
-      this.toast("DRIFT BOOST!", "#67e8f9");
+      // A long slide is worth more than a flick, so the base scales with how
+      // much charge was actually built rather than paying a flat rate.
+      this.addChain("DRIFT", Math.round(60 + charge * 80));
     }
     this.drifting = false;
     this.driftCharge = 0;
@@ -3760,6 +4217,7 @@ export class Game {
   /** Snap the car back onto the centre of the track at its current progress,
    *  facing down-course, after it's roamed off the terrain too long. No penalty. */
   private respawnOnTrack() {
+    this.breakChain();          // off the road is the clearest possible fumble
     this.freeDrive.reset(this.track, this.offTrackExitDist); // back where you left, not wherever you wandered to
     this.alt = 0; this.vAlt = 0; this.spin = 0; this.flip = 0; this.spinRate = 0;
     this.carPitch = 0; this.stuntAir = false;
@@ -3830,6 +4288,10 @@ export class Game {
     this.crashFlash = Math.max(0, this.crashFlash - dt);
     this.swingT = Math.max(0, this.swingT - dt);
     if (this.comboT > 0) { this.comboT -= dt; if (this.comboT <= 0) this.combo = 0; }
+    // The style chain banks on a clean lapse — see addChain/bankChain.
+    if (this.gemTickT > 0) this.gemTickT -= dt;
+    if (this.chainT > 0) { this.chainT -= dt; if (this.chainT <= 0) this.bankChain(); }
+    this.nearMissCd = Math.max(0, this.nearMissCd - dt);
     this.slashCooldown = Math.max(0, this.slashCooldown - dt);
     this.bumpCd = Math.max(0, this.bumpCd - dt);
     this.slotFullCd = Math.max(0, this.slotFullCd - dt);
@@ -3961,6 +4423,9 @@ export class Game {
     } else if (this.drifting) {
       this.endDrift();
     }
+    // must run AFTER `drifting` is up to date for this frame, or the zone
+    // credits you for a slide you have already ended
+    this.updateDriftZone(dt);
 
     // visual body yaw: lean into the slip + steer on the ground; barrel-roll in air
     if (this.stuntAir) {
@@ -4158,8 +4623,14 @@ export class Game {
       this.offTrackT = 0; // back on the road (or race over) — clear the warning
     }
 
-    // lane discipline bonus
-    if (!airborne && Math.abs(this.playerX) <= 1 && speedPercent > 0.3) {
+    // Lane discipline bonus — but NOT inside a drift zone.
+    //
+    // These two were paying for opposite things at the same moment: the zone
+    // asks for a slide across the whole road, the lane bonus pays for holding
+    // one lane arrow-straight. Whichever a player chases, the other one is
+    // telling them they got it wrong. Inside a zone the zone wins, because the
+    // zone is the thing the circuit went to the trouble of painting.
+    if (!airborne && this.dzAt < 0 && Math.abs(this.playerX) <= 1 && speedPercent > 0.3) {
       const laneIdx = this.playerX < -1 / 3 ? 0 : this.playerX > 1 / 3 ? 2 : 1;
       if (laneIdx === this.lastLane) {
         this.laneT += dt;
@@ -4204,9 +4675,34 @@ export class Game {
     this.lastFreeDist = this.position;
     if (this.phase === "racing") {
       this.lapProgress += delta;
+
+      // --- ghost: record this lap, and play back the best one ---------------
+      this.lapT += dt;
+      if (this.ghostRec) {
+        this.ghostRec.sample(dt, Math.max(0, this.lapProgress), this.freeDrive.lateral, this.freeDrive.heading);
+      }
+      if (this.ghostPlay && this.ghostCar) {
+        this.ghostT += dt;
+        const at = this.ghostPlay.at(this.ghostT);
+        if (at) {
+          const gp = this.track.pointAt(this.track.wrap(at.dist), at.lateral, this.tmpGhost, false);
+          this.ghostCar.position.set(gp.x, gp.y + CAR_LIFT, gp.z);
+          this.ghostCar.rotation.y = at.yaw;
+          this.ghostCar.visible = true;
+          // The number a driver actually wants: how long the best lap took to
+          // reach exactly where you are, minus how long you have taken. A
+          // positive delta means you are up on it.
+          this.ghostDelta = this.ghostPlay.timeAt(Math.max(0, this.lapProgress)) - this.lapT;
+        } else {
+          this.ghostCar.visible = false;    // its lap is done; yours is not
+          this.ghostDelta = null;
+        }
+      }
+
       if (this.lapProgress >= len) {
         this.lapProgress -= len;
         this.lap++;
+        this.finishGhostLap();
         if (this.lap > this.cfg.laps) {
           this.phase = "finished";
           this.finishT = 2.5;
@@ -4241,8 +4737,25 @@ export class Game {
     const mine = this.playerProgress();
     const len = this.track.length;
     this.takedownCd = Math.max(0, this.takedownCd - dt);
+    let towTarget = 0;
     for (const o of this.opponents) {
       const gap = mine - o.progress(len); // + means player ahead
+
+      // NEAR MISS — threading a gap without touching it.
+      //
+      // The link that makes the chain about nerve rather than luck: drifts and
+      // ramps are things the track offers you, but a near miss is something
+      // you choose at the exact moment you could instead have lifted. Wants
+      // real speed, real proximity, and NO contact — the bump handler breaks
+      // the chain, so brushing a rival costs you the pot you were building.
+      if (this.nearMissCd <= 0 && this.speed > MAX_SPEED * 0.45) {
+        const dd = Math.abs(this.track.wrap(this.position - o.dist + len / 2) - len / 2);
+        const dl = Math.abs(this.freeDrive.lateral - o.lane * ROAD_HALF_WIDTH);
+        if (dd < 4.5 && dl > 1.5 && dl < 3.2) {
+          this.addChain("NEAR MISS", 90);
+          this.nearMissCd = 1.2;      // one per pass, not one per frame
+        }
+      }
       // each racer holds its own pace so the field strings out; only a gentle
       // rubber-band keeps it competitive around the player
       // rubber-band: rivals dig in HARD when you pull away (up to +26%) and ease
@@ -4287,6 +4800,25 @@ export class Game {
       let d = o.dist - this.position;        // + = rival ahead of the player
       if (d > len / 2) d -= len;
       if (d < -len / 2) d += len;
+
+      // SLIPSTREAM — the hole in the air behind the car in front.
+      //
+      // Without it, following a rival is strictly worse than being alone: you
+      // are the same speed, in their spoiled air, with nowhere to go. That is
+      // why the pack used to string out and stay strung out. A tow makes the
+      // gap behind a rival somewhere you WANT to be for a few seconds, and
+      // turns every straight into a decision about when to pull out — which is
+      // the whole texture of real wheel-to-wheel racing, for about forty lines.
+      if (!o.finished && d > 4 && d < 30 && this.alt < 1.2 && this.speed > MAX_SPEED * 0.42) {
+        const dl = Math.abs(this.freeDrive.lateral - o.lane * ROAD_HALF_WIDTH);
+        if (dl < TOW_WIDTH) {
+          // Strongest right behind the gearbox, gone by 30 m, and only if you
+          // are actually lined up — tucking in is a skill, not a proximity check.
+          const near = 1 - (d - 4) / 26;
+          towTarget = Math.max(towTarget, near * (1 - dl / TOW_WIDTH));
+        }
+      }
+
       const laneGap = this.playerX - o.lane;
       if (Math.abs(d) < 4.2 && Math.abs(laneGap) < 0.62 && this.phase === "racing" && !o.finished) {
         const dir = laneGap >= 0 ? 1 : -1;   // push player this way, rival the other
@@ -4331,6 +4863,17 @@ export class Game {
         }
         if (this.bumpCd <= 0) { this.sound.play("bump"); this.shake = Math.max(this.shake, 0.4); this.bumpCd = 0.3; }
       }
+    }
+
+    // Build fast, bleed slow. The tow arrives the moment you tuck in, and
+    // lingers for most of a second after you pull out — which is exactly what
+    // makes a slingshot pass feel like one instead of the speed switching off
+    // the instant you move to overtake.
+    this.tow += (towTarget - this.tow) * Math.min(1, dt * (towTarget > this.tow ? 3.2 : 1.3));
+    this.towCallout = Math.max(0, this.towCallout - dt);
+    if (this.tow > 0.75 && this.towCallout <= 0 && this.phase === "racing") {
+      this.toast("SLIPSTREAM", "#a7f3d0");
+      this.towCallout = 4;
     }
 
     // rival-vs-rival collision: keep cars from driving THROUGH each other. If two
@@ -4399,16 +4942,17 @@ export class Game {
         bonus += SCORE_STUNT * rollRevs;
       }
       if (tricks.length === 2) bonus = Math.round(bonus * 1.5); // combo bonus
-      this.score += bonus;
       this.stunts += tricks.length;
       this.sound.play("stunt");
-      const label = (tricks.length === 2 ? "COMBO! " : "") + tricks.join(" + ");
-      this.toast(`${label} +${bonus}`, "#fbbf24");
+      // Into the chain, not straight into the score: a trick landed mid-chain
+      // is worth several times a trick landed cold, which is the whole point.
+      this.addChain((tricks.length === 2 ? "COMBO! " : "") + tricks.join(" + "), bonus);
     } else if (attempted) {
       this.speed *= 0.55;
       this.crashFlash = 0.4;
       this.sound.play("land");
       this.toast("WIPEOUT!", "#f87171");
+      this.breakChain();       // a botched landing is exactly the risk
     }
     this.spin = 0;
     this.flip = 0;
@@ -4529,7 +5073,7 @@ export class Game {
           this.score += value;
           this.gems++;
           this.sound.play("gem");
-          this.toast(`+${value}`, "#67e8f9");
+          this.gemToast(value);
         }
         break;
       case "airGem":
@@ -4550,13 +5094,21 @@ export class Game {
         }
         break;
       case "boostpad":
-        // reusable pad — refresh the boost while driving over it
+        // Reusable, and it pays for COMMITMENT. Clipping the first deck of a
+        // chain and cutting back to the racing line should be worth less than
+        // holding the wide line over all three, so a pad taken while the last
+        // one is still burning extends the surge rather than merely refreshing
+        // it — and from the second deck on it feeds the style chain too.
         if (this.alt < 1.0) {
-          if (this.boostT < 0.35) {
+          const fresh = this.boostT < 0.35;
+          if (fresh) {
             this.sound.play("nitro");
             this.toast("BOOST!", "#22d3ee");
+            this.boostT = PAD_BOOST_DURATION;
+          } else {
+            this.boostT = Math.min(PAD_BOOST_DURATION * 2.4, this.boostT + PAD_BOOST_DURATION * 0.7);
+            this.addChain("PAD CHAIN", 70);
           }
-          this.boostT = Math.max(this.boostT, PAD_BOOST_DURATION);
         }
         break;
       case "boostgate":
@@ -4992,8 +5544,28 @@ export class Game {
       // at the underside of the road with the car nowhere in frame. Sample the
       // ground where the camera actually IS and hold it clear.
       {
-        const cgy = this.groundHeightAtXZ(this.camPos.x, this.camPos.z);
-        const floor = cgy + 1.1;
+        // The floor has to be the ROAD, not the terrain.
+        //
+        // An earlier pass clamped to groundHeightAtXZ and that is not the
+        // surface you fall through. The terrain is deliberately held BELOW the
+        // road ribbon (see the CLEAR ramp), so on a descent the camera — which
+        // trails several metres behind, where the road you just came down is
+        // still high — can sit above the terrain and under the tarmac at the
+        // same time. That is exactly the "I can see the underside of the road"
+        // case: the clamp was satisfied and the view was still beneath it.
+        //
+        // So: sample the road surface at the camera's own position via
+        // project(), take whichever of road and terrain is higher, and hold
+        // clear of that. Only when the camera is actually over the ribbon —
+        // out in a field the road's height is irrelevant.
+        const cx = this.camPos.x, cz = this.camPos.z;
+        let floor = this.groundHeightAtXZ(cx, cz);
+        const pr = this.track.project(cx, cz);
+        if (Math.abs(pr.lateral) < ROAD_HALF_WIDTH * 2.2) {
+          const rp = this.track.pointAt(pr.dist, pr.lateral, this.tmpCamFloor, false);
+          if (rp.y > floor) floor = rp.y;
+        }
+        floor += 1.1;
         if (this.camPos.y < floor) this.camPos.y = floor;
       }
       // PHOTO MODE takes the camera over completely: an orbit around the car
@@ -5088,6 +5660,12 @@ export class Game {
       nitroFill: this.nitroFill,
       nitroActive: this.nitroT > 0,
       nitroBurn: this.nitroT / NITRO_DURATION,
+      chainLinks: this.chainLinks,
+      chainPending: this.chainPending,
+      chainT: this.chainT,
+      ghostDelta: this.ghostDelta,
+      driftZone: this.dzAt >= 0 ? this.dzFill : null,
+      tow: this.tow,
       transformT: this.transformed ? this.transformT : 0,
       crashFlash: this.crashFlash,
       position,
@@ -5122,7 +5700,10 @@ export class Game {
       );
     }
 
-    drawToasts(ctx, this.toasts, vw);
+    // Below the callout while one is up, so score notifications never print
+    // through the middle of "FINAL LAP".
+    drawToasts(ctx, this.toasts, vw,
+      this.callout && this.phase !== "finished" ? Math.round(calloutCenterY(vh)) + 62 : 190);
     // race-drama callout (overtake / final lap) sits above the toasts; hide it
     // once finished so it doesn't fight the FINISH! banner
     if (this.callout && this.phase !== "finished") drawCallout(ctx, this.callout, vw, vh);

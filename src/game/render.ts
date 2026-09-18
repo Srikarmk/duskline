@@ -534,6 +534,16 @@ export interface HudState {
   /** 0..1 of the current boost still to burn. Lets the bar show it draining
    *  rather than just recolouring, and explains why SPACE is refused. */
   nitroBurn?: number;
+  /** Style chain: links held, points at stake, and how long they have left. */
+  chainLinks?: number;
+  chainPending?: number;
+  chainT?: number;
+  /** Seconds the ghost is ahead (+) or behind (−) you right now. */
+  ghostDelta?: number | null;
+  /** 0..1 of the drift zone you are in, or null when you are not in one. */
+  driftZone?: number | null;
+  /** 0..1 slipstream behind the car in front. */
+  tow?: number;
   transformT: number;
   crashFlash: number;
   position?: number;
@@ -734,6 +744,101 @@ export function drawHud(
     ctx.textAlign = "left";
   }
 
+  // --- style chain ----------------------------------------------------------
+  // Only on screen while a chain is alive. It has to show the thing at stake,
+  // because the pending pot is the whole reason to keep going or back off.
+  if ((hud.chainLinks ?? 0) > 0 && (hud.chainT ?? 0) > 0) {
+    const links = hud.chainLinks ?? 0;
+    const pending = hud.chainPending ?? 0;
+    const mult = Math.min(6, 1 + Math.floor(links / 2));
+    const w = 176, h = 44, x = Math.round(vw / 2 - w / 2), y = 132;
+    panel(ctx, x, y, w, h);
+
+    // the fuse: how long until it banks
+    const frac = Math.max(0, Math.min(1, (hud.chainT ?? 0) / 3.6));
+    ctx.fillStyle = "#241f38";
+    ctx.fillRect(x + 8, y + h - 9, w - 16, 3);
+    ctx.fillStyle = frac < 0.3 ? "#fbbf24" : "#67e8f9";
+    ctx.fillRect(x + 8, y + h - 9, (w - 16) * frac, 3);
+
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#67e8f9";
+    ctx.font = "bold 22px monospace";
+    ctx.fillText(`x${mult}`, x + 12, y + 26);
+
+    ctx.fillStyle = "#e8e0ff";
+    ctx.font = "bold 18px monospace";
+    ctx.textAlign = "right";
+    ctx.fillText(`+${pending.toLocaleString()}`, x + w - 12, y + 26);
+
+    ctx.fillStyle = "#8b85a8";
+    ctx.font = "8px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText(`${links} LINK${links === 1 ? "" : "S"} AT STAKE`, x + w / 2, y + 38);
+    ctx.textAlign = "left";
+  }
+
+  // --- ghost delta ----------------------------------------------------------
+  // One number, because that is the only question: am I up or down on my best?
+  if (hud.ghostDelta !== null && hud.ghostDelta !== undefined) {
+    const d = hud.ghostDelta;
+    const ahead = d > 0;
+    const txt = `${ahead ? "-" : "+"}${Math.abs(d).toFixed(2)}`;
+    ctx.textAlign = "center";
+    ctx.fillStyle = ahead ? "#a7f3d0" : "#f87171";
+    ctx.font = "bold 20px monospace";
+    ctx.fillText(txt, vw / 2, 104);
+    ctx.fillStyle = "#6f6a8a";
+    ctx.font = "8px monospace";
+    ctx.fillText("VS BEST", vw / 2, 116);
+    ctx.textAlign = "left";
+  }
+
+  // --- drift zone gauge ----------------------------------------------------
+  // Only while you are in one, and placed low-centre rather than up with the
+  // chain: you read this one WHILE cornering, with your eyes near the road, so
+  // it belongs in the bottom of your vision and not at the top of the screen.
+  if (hud.driftZone !== null && hud.driftZone !== undefined) {
+    const f = Math.max(0, Math.min(1, hud.driftZone));
+    const w = 200, h = 10, x = Math.round(vw / 2 - w / 2), y = vh - 116;
+    ctx.fillStyle = "rgba(20,17,34,0.72)";
+    ctx.fillRect(x - 2, y - 2, w + 4, h + 4);
+    ctx.fillStyle = "#2a2340";
+    ctx.fillRect(x, y, w, h);
+    // violet → amber, the same warming the painted band does under the car, so
+    // the two readouts are obviously the same gauge
+    ctx.fillStyle = f > 0.85 ? "#fbbf24" : f > 0.5 ? "#e879f9" : "#a855f7";
+    ctx.fillRect(x, y, w * f, h);
+    ctx.strokeStyle = "rgba(251,191,36,0.55)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();                       // the "perfect" mark
+    ctx.moveTo(x + w * 0.85, y - 3);
+    ctx.lineTo(x + w * 0.85, y + h + 3);
+    ctx.stroke();
+    ctx.textAlign = "center";
+    ctx.fillStyle = f > 0.85 ? "#fbbf24" : "#c9a8ff";
+    ctx.font = "bold 9px monospace";
+    ctx.fillText(f > 0.85 ? "PERFECT — HOLD IT" : "DRIFT ZONE · SLIDE", vw / 2, y - 7);
+    ctx.textAlign = "left";
+  }
+
+  // --- slipstream ----------------------------------------------------------
+  // A tow is invisible otherwise: the car just feels faster for no reason you
+  // can see. One bar that fills as you tuck in makes it a thing you can aim at.
+  if ((hud.tow ?? 0) > 0.06) {
+    const f = Math.min(1, hud.tow ?? 0);
+    const w = 86, h = 6, x = Math.round(vw / 2 - w / 2), y = vh - 96;
+    ctx.fillStyle = "#231f34";
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = f > 0.7 ? "#a7f3d0" : "#5eead4";
+    ctx.fillRect(x, y, w * f, h);
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#5eead4";
+    ctx.font = "bold 8px monospace";
+    ctx.fillText("SLIPSTREAM", vw / 2, y - 4);
+    ctx.textAlign = "left";
+  }
+
   // --- control hints (bottom-left, above nitro) ---
   if (hud.cameraName) {
     ctx.fillStyle = "#6f6a8a";
@@ -883,16 +988,34 @@ export interface Toast {
   t: number; // remaining seconds
 }
 
-export function drawToasts(ctx: CanvasRenderingContext2D, toasts: Toast[], vw = WIDTH) {
+/**
+ * Where the big drama callout is centred.
+ *
+ * Exported because the toast stack has to start BELOW it, and the two used to
+ * be laid out by two independent magic numbers — 150 for the toasts, `vh * 0.3`
+ * for the callout — which on a 600 px view put "NEAR MISS x1" directly through
+ * the middle of "PASSED". Anything that stacks under the callout should ask
+ * this rather than guess.
+ *
+ * The floor keeps it clear of the style-chain panel (which ends at y 168) on
+ * short viewports, where a pure fraction of the height would ride up into it.
+ */
+export function calloutCenterY(vh: number): number {
+  return Math.max(vh * 0.32, 196);
+}
+
+export function drawToasts(
+  ctx: CanvasRenderingContext2D, toasts: Toast[], vw = WIDTH, baseY = 190,
+) {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.font = "bold 22px monospace";
   toasts.forEach((toast, i) => {
     ctx.globalAlpha = Math.min(1, toast.t * 2);
     ctx.fillStyle = "rgba(0,0,0,0.5)";
-    ctx.fillText(toast.text, vw / 2 + 1, 151 + i * 30);
+    ctx.fillText(toast.text, vw / 2 + 1, baseY + 1 + i * 30);
     ctx.fillStyle = toast.color;
-    ctx.fillText(toast.text, vw / 2, 150 + i * 30);
+    ctx.fillText(toast.text, vw / 2, baseY + i * 30);
   });
   ctx.globalAlpha = 1;
 }
@@ -910,7 +1033,7 @@ export function drawCallout(
   const ease = 1 - Math.pow(1 - popIn, 3);            // ease-out cubic
   const scale = 0.72 + ease * 0.28;                   // 0.72 → 1.0
   const alpha = Math.min(1, popIn) * Math.min(1, t / 0.4); // fade in fast, out over last 0.4s
-  const cx = vw / 2, cy = vh * 0.3;
+  const cx = vw / 2, cy = calloutCenterY(vh);
 
   ctx.save();
   ctx.globalAlpha = alpha;
