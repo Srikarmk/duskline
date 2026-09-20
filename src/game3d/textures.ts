@@ -248,3 +248,101 @@ export function stoneMaps(hex: number): { map: THREE.Texture; bump: THREE.Textur
   }
   return { map: toTex(c, 1, true), bump: toTex(cb, 1, false) };
 }
+
+/**
+ * Recolour a photographic albedo through a three-stop ramp, keeping its detail.
+ *
+ * Ten of the seventeen realms borrow another realm's ground photo and recolour
+ * it with `color: groundTint` — which is a MULTIPLY, and a multiply can only
+ * darken. It cannot move a hue. The code already admitted this in a comment:
+ * the coast road could not use the forest albedo because "forest tinted straw
+ * stays GREEN". So every realm that is not Enchanted Forest or Ember Wastes
+ * ends up standing on the same pale rock: snow, sand, red desert, dusty
+ * waterfront and a night city, all one photograph with the brightness turned
+ * down.
+ *
+ * This maps the source's LUMINANCE through the realm's own dark → base →
+ * speck ramp, which every realm already carries (they were written for the
+ * procedural fallback and never used on the PBR path). Grain, cracks and
+ * variation all survive because they live in the luminance; the colour is
+ * replaced outright, so snow can be white with cool shadows and the desert
+ * can be genuinely red.
+ *
+ * The source's own luminance range is measured and stretched first. A rock
+ * photo occupies maybe 0.25-0.75 of the range, and feeding that straight into
+ * a ramp would use only the middle of it and come out flat.
+ */
+export function recolourAlbedo(
+  src: THREE.Texture, dark: THREE.Color, base: THREE.Color, speck: THREE.Color,
+): THREE.Texture | null {
+  const img = src.image as (HTMLImageElement | ImageBitmap | null);
+  if (!img || !(img as HTMLImageElement).width) return null;
+  const w = (img as HTMLImageElement).width, h = (img as HTMLImageElement).height;
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
+  ctx.drawImage(img as CanvasImageSource, 0, 0);
+  let px: ImageData;
+  try {
+    px = ctx.getImageData(0, 0, w, h);
+  } catch {
+    return null;                 // tainted canvas — leave the original alone
+  }
+  const d = px.data;
+
+  // luminance histogram, so the ramp uses the photo's actual range
+  const hist = new Uint32Array(256);
+  for (let i = 0; i < d.length; i += 4) {
+    hist[(d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114) | 0]++;
+  }
+  const total = w * h;
+  let lo = 0, hi = 255, acc = 0;
+  for (let i = 0; i < 256; i++) { acc += hist[i]; if (acc > total * 0.02) { lo = i; break; } }
+  acc = 0;
+  for (let i = 255; i >= 0; i--) { acc += hist[i]; if (acc > total * 0.02) { hi = i; break; } }
+  const span = Math.max(1, hi - lo);
+
+  // THE RAMP HAS TO BE IN sRGB BYTES.
+  //
+  // `new THREE.Color(0xd9b47e)` does not store 0xd9b47e: with colour management
+  // on, the constructor converts that sRGB hex into the LINEAR working space,
+  // so `.r/.g/.b` come out around 0.71/0.46/0.22 rather than 0.85/0.71/0.49.
+  // Writing those straight into an 8-bit canvas treats linear values as sRGB
+  // ones, which darkens and over-saturates everything. Measured: Mirage Mile
+  // asked for #d9b47e and the ground came out #bf8540. `getHex(SRGBColorSpace)`
+  // asks for the number back in the space it was written in.
+  const bytes = (c: THREE.Color) => {
+    const hex = c.getHex(THREE.SRGBColorSpace);
+    return [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255];
+  };
+  const [dr, dg, db] = bytes(dark);
+  const [br, bg, bb] = bytes(base);
+  const [sr, sg, sb] = bytes(speck);
+
+  for (let i = 0; i < d.length; i += 4) {
+    const lum = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+    const t = Math.max(0, Math.min(1, (lum - lo) / span));
+    // dark → base over the lower half, base → speck over the upper
+    if (t < 0.5) {
+      const k = t * 2;
+      d[i] = dr + (br - dr) * k;
+      d[i + 1] = dg + (bg - dg) * k;
+      d[i + 2] = db + (bb - db) * k;
+    } else {
+      const k = (t - 0.5) * 2;
+      d[i] = br + (sr - br) * k;
+      d[i + 1] = bg + (sg - bg) * k;
+      d[i + 2] = bb + (sb - bb) * k;
+    }
+  }
+  ctx.putImageData(px, 0, 0);
+
+  const out = new THREE.CanvasTexture(c);
+  out.wrapS = out.wrapT = THREE.RepeatWrapping;
+  out.colorSpace = THREE.SRGBColorSpace;
+  out.anisotropy = ANISO;
+  out.needsUpdate = true;
+  return out;
+}

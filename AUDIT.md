@@ -480,11 +480,37 @@ containment wall and predates all of this.
    state. **Page 295 kB → 23 kB; first-load JS 398 kB → 126 kB, a 68% cut.**
    The engine downloads while the player is choosing a world.
 2. ✅ **Recompress the textures** — see B1. 12.1 MB → 916 KB.
-3. ◻ **Per-realm texture sets.** Still ships snow to a beach: a race at Sunset
-   Bay downloads `ground_peaks_*`. Now a 916 KB problem rather than a 12 MB
-   one, and making each set optional means 13 call sites have to cope with a
-   missing one — a white untextured prop discovered mid-race is a worse trade
-   than the ~300 kB it would save. Deliberately parked.
+3. ✅ **Per-realm ground, from one photograph.** Ten of the seventeen realms
+   borrowed another realm's ground albedo and recoloured it with
+   `color: groundTint` — a MULTIPLY, which can only darken and cannot move a
+   hue. The code already admitted the consequence in a comment: the coast road
+   could not use the forest albedo because "forest tinted straw stays GREEN".
+   So snow, sand, red desert, dusty waterfront and a night city were all the
+   same pale rock with the brightness turned down.
+
+   `recolourAlbedo` maps the source's LUMINANCE through the realm's own
+   dark → base → speck ramp — colours every realm already carried, written for
+   the procedural fallback and never used on the PBR path. Grain and cracks
+   survive because they live in the luminance; the colour is replaced outright.
+   No new files, so no size-budget cost.
+
+   Measured, same source photo:
+
+   | realm | palette asks for | ground renders |
+   | --- | --- | --- |
+   | Hokkai Pass | `#eef4fb` snow | cool blue-white |
+   | Mirage Mile | `#d9b47e` sand | `#e0be88` |
+   | Basin Run | `#b5673f` red rock | `#9f5a38` |
+
+   One bug worth recording: `new THREE.Color(0xd9b47e)` does not store that
+   number. With colour management on, the constructor converts the sRGB hex
+   into the LINEAR working space, so `.r/.g/.b` are ~0.71/0.46/0.22 rather than
+   0.85/0.71/0.49 — and writing those into an 8-bit canvas darkens and
+   over-saturates everything. Mirage rendered `#bf8540` against a requested
+   `#d9b47e`. I first misdiagnosed it as a luminance-distribution problem and
+   added a gamma, which made it worse; `getHex(THREE.SRGBColorSpace)` is the
+   fix.
+
 4. ✅ **Merge the city geometry.** Profiling the scene graph first was the whole
    trick: Neon Run held **21,151 meshes, 18,066 of them plain 24-vertex boxes**
    — ~100 boxes per tower across 176 towers. Most are culled, but every one

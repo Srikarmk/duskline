@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { ROAD_HALF_WIDTH } from "./constants";
-import { terrainBump, stoneMaps, pbr, tileSet, ANISO } from "./textures";
+import { terrainBump, stoneMaps, pbr, tileSet, recolourAlbedo, ANISO } from "./textures";
 import type { RealmPalette } from "./realms";
 import type { RealmId } from "../game/engine";
 import type { CarId } from "./cars";
@@ -1022,10 +1022,29 @@ export function makeGround(pal: RealmPalette): THREE.Mesh {
     // real CC0 ground albedo + normal, tiled across the terrain. Realms that
     // borrow another realm's albedo set `groundTint` to recolour it to theirs.
     const t = tileSet(lib.ground, 220);
+    // Realms that BORROW another realm's albedo get it genuinely recoloured
+    // through their own dark → base → speck ramp, rather than multiplied by a
+    // tint. A multiply can only darken: it cannot turn pale rock into snow, or
+    // into red desert, and ten of the seventeen realms were relying on it. See
+    // recolourAlbedo. Realms that own their photo (forest, ember, peaks) keep
+    // it untouched.
+    let albedo = t.diff;
+    if (pal.groundTint !== undefined) {
+      const ramped = recolourAlbedo(
+        t.diff,
+        new THREE.Color(pal.groundDark),
+        new THREE.Color(pal.groundBase),
+        new THREE.Color(pal.groundSpeck),
+      );
+      if (ramped) {
+        ramped.repeat.copy(t.diff.repeat);
+        albedo = ramped;
+      }
+    }
     mat = new THREE.MeshStandardMaterial({
-      map: t.diff, normalMap: t.nor, normalScale: new THREE.Vector2(1, 1),
+      map: albedo, normalMap: t.nor, normalScale: new THREE.Vector2(1, 1),
       metalness: 0, roughness: 1,
-      color: pal.groundTint !== undefined ? new THREE.Color(pal.groundTint) : 0xffffff,
+      // no `color` multiply: the albedo itself now carries the realm's colour
     });
     // real per-texel roughness (ARM .g); base stays 1 so the map defines it
     if (t.arm) { mat.roughnessMap = t.arm; mat.roughness = 1; mat.aoMap = t.arm; mat.aoMapIntensity = 0.85; }
