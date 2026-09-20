@@ -35,6 +35,12 @@ jobs:
       # floor. All of these have shipped here, none of them break the types.
       - name: Realm data invariants
         run: npm run test:data
+      # The render settings that decide whether this holds 60 — GTAO's default,
+      # MSAA on the composer target, the per-tier shadow map. Every one has
+      # been measured, turned off, and turned back on again by a later commit;
+      # none of them break the build, the types or the lint.
+      - name: Render budget
+        run: npm run test:render
       - name: Build
         run: npm run build
       # Budgets AFTER the build, because they measure it. The first-load figure

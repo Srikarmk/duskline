@@ -588,8 +588,22 @@ on one circuit at once.
     because they are data pointing at files. Proven to fail: deleting one
     preview makes it exit 1 naming the realm. Physics helpers are still
     uncovered.
-24. ◻ **A frame-budget test in CI** — assert draw calls and triangle counts
-    stay under a ceiling, so a scenery change cannot quietly double them.
+24. ✅ **A render-budget test in CI** — `npm run test:render`. Not frame time:
+    that needs a GPU and real hardware, and is still open. This guards the
+    INPUTS to it, which is where the regressions actually come from — GTAO's
+    default, MSAA on the composer target, the per-tier shadow map, bloom
+    strength and resolution.
+
+    Every one of those has been measured, turned off, and turned back on by a
+    later commit. GTAO alone costs ~5.6 ms on a frame already sitting at ~11,
+    which lands it exactly on the 60 fps line with no margin; 4x MSAA on a
+    retina HDR target was pure bandwidth for edges the post chain resolves
+    anyway. None of them break the build, the types or the lint — they are
+    numbers that look harmless in a diff and cost a third of the frame.
+
+    Proven the same way as the size budget: by reintroducing the regressions.
+    Flipping GTAO's default to `true`, the composer target to `samples: 4` and
+    the `low` tier to shadows-on fails 6 checks and exits 1.
 25. ✅ **A signed race token.** `src/server/raceToken.ts` + `/api/race-token`.
     A ticket is issued when a race STARTS, and `/api/scores` refuses anything
     without one. The server checks the HMAC, the age, that at least 80% of the

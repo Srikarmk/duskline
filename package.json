@@ -11,8 +11,9 @@
     "textures": "node scripts/optimize-textures.mjs",
     "lint": "eslint .",
     "test:data": "node --experimental-strip-types --no-warnings test/data-invariants.mjs",
-    "test": "npm run test:sw && npm run test:data",
-    "test:budget": "node test/budgets.mjs"
+    "test": "npm run test:sw && npm run test:data && npm run test:render",
+    "test:budget": "node test/budgets.mjs",
+    "test:render": "node test/render-budget.mjs"
   },
   "dependencies": {
     "next": "^15.3.0",
