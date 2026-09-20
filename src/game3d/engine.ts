@@ -25,15 +25,12 @@ import {
   MISSILE_SPEED, MISSILE_MAX_DIST, STUN_DURATION, ITEM_LATERAL_TOL,
   SCORE_HIT, OPPONENT_MINE_CHANCE,
 } from "./constants";
-import { Track, makeRoadTexture, makeCheckerTexture, makeHazardTexture } from "./track";
+import { Track, makeRoadTexture, makeCheckerTexture } from "./track";
 import { loadModels, instantiate, type ModelLibrary } from "./assets";
 import {
   makeSkyDome, makePosterSky, makeCloudLayer, makeEnvMap, windTime, makeGround, makeGrassTexture,
   makeGrassField, makeRockField, makeMountainRing,
   makeGem, makeNitroCan, makeOrb, makeRamp, RAMP_SPECS, type RampKind,
-  makeBoostPad,
-  makeHazardBeacon,
-  makeApexMarker,
   makeCrystalCluster, makeMonster,
   makeMech, makeSlash, makeFlame, makeUnderGlow,
   makeItemBox, makeMissile, makeMine, makeShieldBubble,
@@ -51,7 +48,6 @@ import { BranchPath } from "./branch";
 import { FreeDrive } from "./freedrive";
 import { loadPBR, pbr, groundTextureFor } from "./textures";
 import { makeKart, setCarEnvTint, setCarPosterMode, CAR_SPECS, CAR_IDS, type CarStat } from "./cars";
-import { GhostRecorder, GhostPlayer, loadGhost, saveGhostIfBest } from "./ghost";
 import { REALMS, pickScenery, REALM_WEATHER, REALM_WEATHER_POOL, REALM_AMBIENCE, REALM_TUNNELS, REALM_RIVERS, REALM_SPLITS, type RealmSpec, type SceneryKind, type RealmPalette, type WeatherKind } from "./realms";
 import { makePyramid, makeObelisk, makeSphinx, makeSandRock } from "./props/egyptian";
 import { makeTower, makeGatehouse, makeCastleWall, makeBanner, makeTorch } from "./props/castle";
@@ -102,52 +98,24 @@ const WEATHER_GRIP: Record<WeatherKind, number> = {
  *  stopped turning, so the surface has to show what it is doing. */
 const WET_LOOK = { rough: 0.24, metal: 0.2, env: 2.6 };
 
+/**
+ * The speedometer is a DIAL, not a measurement.
+ *
+ * `speed` is metres per second and MAX_SPEED is 46, which is not a number
+ * anybody wants on a racing HUD. The readout scales it into something that
+ * reads like a car, and the scale is chosen so the numbers land where they
+ * mean something: flat out on the quickest kart is ~127, and nitro takes it to
+ * the 150 ceiling. Stacking a drift boost, a pad and a tow on top of nitro can
+ * exceed that, which is what the clamp is for — 150 is the top of the dial.
+ */
+const SPEEDO_SCALE = 118;
+const SPEEDO_MAX = 150;
+
 /** What the HUD calls the thing taking your grip away. */
 const WEATHER_LABEL: Record<WeatherKind, string> = {
   none: "DRY", mist: "DAMP", spores: "SPORES", ember: "ASH",
   sand: "SAND", snow: "SNOW", rain: "WET",
 };
-
-/**
- * A corner the circuit thinks is worth naming, and the apex it wants you to
- * clip.
- *
- * This replaced DRIFT ZONES — 130 m bands of violet chevrons painted down the
- * road on the lap's four best corners. The mechanic was sound and the paint was
- * not: four of them covered a tenth of the circuit, and on a game whose whole
- * pitch is its art direction, the cost of a scoring hook should not be hiding
- * the thing you came to look at. An apex is a POINT, so marking it takes two
- * kerbside markers and no paint at all.
- *
- * It also asks for a different skill. A drift zone paid for being sideways,
- * which the drift boost and the style chain already pay for twice over; an apex
- * pays for the line, which nothing did.
- */
-interface Corner {
-  from: number;
-  to: number;
-  /** Distance of the tightest point — where the markers go. */
-  apex: number;
-  /** Inside of the bend, +1 or -1, measured (see outsideSign). */
-  side: number;
-  /** Already clipped this pass? Re-arms once you are well clear of it. */
-  armed: boolean;
-}
-
-/** How close to the inside kerb counts as clipping the apex, in metres. */
-const APEX_BAND = 2.4;
-/**
- * Where the markers sit, in metres from the centreline.
- *
- * Right on the kerb — the ribbon's own edge is 6.25 m, so this is a hand's
- * width off the tarmac, which is where a kerb marker belongs and also as far
- * from the roadside scenery as it is possible to get. It is not far enough on
- * its own: `obstacleClear` lets a tree's collision circle reach 5.5 m from the
- * centreline, so nowhere outside the ribbon is guaranteed empty, and at 7.35 m
- * a marker landed inside a row-0 tree on a measured circuit. See placeCorners
- * for the prune that finishes the job.
- */
-const APEX_OFFSET = ROAD_HALF_WIDTH * 1.25 + 0.35;
 
 /** How far off a rival's line the tow still reaches, in metres. Half a car's
  *  width either side of dead astern — enough to be findable, tight enough that
@@ -156,84 +124,6 @@ const TOW_WIDTH = 2.4;
 /** Top speed gained at full tow. 12% is roughly a second a lap: worth chasing,
  *  not enough to make following better than leading. */
 const TOW_GAIN = 0.12;
-
-/**
- * THE CROSSING — one telegraphed hazard per circuit that sweeps across the road
- * on a cycle.
- *
- * Every other thing on the track is static: you learn where it is once and then
- * it is the same lap after lap. A set piece is the one feature whose answer
- * changes every time you arrive at it, so the same corner is a different
- * problem on lap 1 and lap 3. That is what "interesting" means on a circuit you
- * are going round three times.
- *
- * Telegraphed, hard, on purpose. The band is painted permanently so you learn
- * the spot; the beacons flash before the sweep; the HUD warns you while you can
- * still do something about it. Nothing about it should ever be a surprise —
- * the skill is timing and line, not memorising where the game cheats.
- */
-interface SetPiece {
-  dist: number;
-  label: string;
-  /** Sweeping boulders. Parked off the road between sweeps so you can see them
-   *  waiting, rather than materialising out of nothing. */
-  rocks: THREE.Object3D[];
-  lamps: THREE.Mesh[];
-  /** Seconds into the cycle. */
-  t: number;
-  /** The side the NEXT sweep departs from. Flips the instant a sweep ends, so
-   *  the idle position derived from it is where the boulders actually are. */
-  side: 1 | -1;
-  /** Has this cycle's sweep already finished and turned the pair round? */
-  swept: boolean;
-  /** Current lateral offsets, in metres — what the collision reads. */
-  lats: number[];
-  warned: boolean;
-}
-
-/** Seconds per crossing cycle, and how it is divided up. */
-const SP_PERIOD = 9.5;
-const SP_TELEGRAPH = 2.4;
-const SP_SWEEP = 2.0;
-/**
- * THE BOULDERS ONLY EXIST ON THE ROAD.
- *
- * Every attempt to give them a resting place beside the tarmac went wrong,
- * because there is no such place: the ground next to the ribbon is whatever the
- * realm put there, and at Sunset Bay it is a ten-metre drop to the beach. On
- * the terrain a parked boulder sat in mid-air over the sea, and the slope was
- * steep enough that sliding 15 cm sideways moved it 1.1 m vertically — a hop,
- * every cycle. On the road plane it simply hung in the sky.
- *
- * So they are drawn only while they are over the tarmac, at tarmac height,
- * which is the one surface that is smooth by construction and the only one they
- * are ever supposed to be touching. They roll on at one edge and off at the
- * other. Nothing is lost: the telegraph was never the boulders anyway — it is
- * the painted band, the beacons and the HUD callout, all of which are visible
- * for the whole approach.
- */
-/** Where a sweep starts and ends, in metres — just past the ribbon edge (6.25)
- *  so both boulders are already hidden before they get there. */
-const SP_EDGE = 8.5;
-/** Gap between the pair. Each boulder blocks ~2.8 m of road once the car's own
- *  width is counted, so the slot has to clear 5.6 m to be a slot at all — at
- *  the first attempt's 4.5 m the "gap" was negative and the pair was a wall. */
-const SP_GAP = 7.5;
-/** Drawn (and able to hit anything) only inside this, the ribbon's own edge. */
-const SP_ON_ROAD = ROAD_HALF_WIDTH * 1.25 + 0.5;
-/** Half-width of a boulder for collision, metres. Kept a little under the prop
- *  so a near miss is a near miss rather than an unexplained wipeout. */
-const SP_ROCK_HALF = 1.7;
-
-/** What each realm calls its crossing. One mechanic, named for the world it is
- *  in — "ROCKFALL" on a mountain pass and in a space tube would read as a bug. */
-const SP_LABEL: Record<string, string> = {
-  peaks: "ROCKFALL", hokkai: "ROCKFALL", cape: "ROCKFALL", hills: "ROCKFALL",
-  basin: "ROCKSLIDE", forest: "FALLEN TIMBER", ember: "MAGMA BOMBS",
-  sands: "SANDSLIDE", mirage: "SANDSLIDE", castle: "ROLLING STONES",
-  void: "ASTEROIDS", nebula: "ASTEROIDS",
-  circuit: "DEBRIS", metro: "DEBRIS", azur: "DEBRIS", neon: "DEBRIS", bay: "DEBRIS",
-};
 
 type ItemKind = "boost" | "shield" | "missile" | "mine";
 const ITEM_LABEL: Record<ItemKind, string> = {
@@ -526,9 +416,6 @@ export class Game {
    *  along it (arc-length metres). */
   private onBranch: BranchPath | null = null;
   private tmpSurface = new THREE.Vector3();
-  /** Which branch we are part-way along, and how far into it we joined. */
-  private branchRunIdx = -1;
-  private branchRunStart = 0;
   private branchU = 0;
   /** free-roam driving body (world-space physics; the rail position/playerX are
    *  derived from it by projecting onto the track each frame). */
@@ -729,24 +616,9 @@ export class Game {
    * two are directly comparable at every point on the road.
    */
   // --- circuit gimmicks -------------------------------------------------
-  private corners: Corner[] = [];
-  private setPiece: SetPiece | null = null;
-  private crossingHitCd = 0;
   /** 0..1 slipstream from sitting in a rival's dirty air. */
   private tow = 0;
   private towCallout = 0;
-
-  private ghostRec: GhostRecorder | null = null;
-  /** Lap 1 runs from the grid, some way BEHIND the line, so its recorded time
-   *  includes a standing start and is not comparable to a flying lap. Record it
-   *  (the delta readout still wants something to draw) but never store it. */
-  private ghostStanding = true;
-  private ghostPlay: GhostPlayer | null = null;
-  private ghostCar: THREE.Group | null = null;
-  private ghostT = 0;              // seconds into the ghost's lap
-  private lapT = 0;                // seconds into YOUR current lap
-  private ghostDelta: number | null = null;
-  private readonly tmpGhost = new THREE.Vector3();
 
   constructor(container: HTMLElement, options: GameOptions) {
     this.container = container;
@@ -982,12 +854,6 @@ export class Game {
     this.sound.dispose();
     this.weather?.dispose();
     this.composer.dispose();
-    this.ghostCar = null;
-    this.ghostPlay = null;
-    this.ghostRec = null;
-    this.corners = [];
-    this.setPiece = null;
-    this.branchRunIdx = -1;
     this.tow = 0;
     this.disposeScene();
     this.renderer.dispose();
@@ -1047,7 +913,6 @@ export class Game {
     // counting honest: it reaches `len` exactly when the car returns to the
     // line, not `gridStart` metres early. Without this the first lap would tick
     // over before crossing the line, every race.
-    this.setupGhost();
     this.freeDrive.reset(this.track, this.track.wrap(this.gridStart));
     this.lastFreeDist = this.track.wrap(this.gridStart);
     this.lapProgress = this.gridStart;
@@ -2714,39 +2579,6 @@ export class Game {
   }
 
   /**
-   * Pay for committing to an alternate route.
-   *
-   * The fork has to be worth taking, and measurement says it is not on pace
-   * alone: bowed to the inside of a bend it still comes out 11.6 m longer than
-   * the main span (0.26 s) AND on a tighter radius, because the peel-off and
-   * merge cost more than 16 m of offset saves over 130 m. Tuning got it from
-   * 24 m to 11.6 m and no further — the endpoints are pinned to the main
-   * centreline, so that is close to the geometric floor.
-   *
-   * Nor can the branch be made to pay in pickups: entities live in main-track
-   * (distance, lateral) space, and on a branch `freeDrive.lateral` means
-   * something else entirely, so there is no way to express "a boost pad on the
-   * fork" without re-addressing every entity in the game.
-   *
-   * What it CAN pay in is style. The chain is already the game's currency for
-   * "did something harder than necessary", it banks on a clean lapse and it is
-   * lost on contact — so a fork that costs a quarter of a second and demands a
-   * tighter line, in exchange for a chain link, is a real decision rather than
-   * a trap. You have to see it through: bail back onto the main road half way
-   * and it pays nothing.
-   */
-  private settleBranchRun() {
-    const i = this.branchRunIdx;
-    this.branchRunIdx = -1;
-    if (i < 0 || i >= this.branches.length || this.phase !== "racing") return;
-    const b = this.branches[i].path;
-    const u = b.project(this.freeDrive.x, this.freeDrive.z).u;
-    // Left it near the far end, having joined near the near end.
-    if (this.branchRunStart > b.length * 0.25 || u < b.length * 0.75) return;
-    this.addChain("ALT ROUTE", 150);
-  }
-
-  /**
    * True while the car is on the MAIN circuit rather than an alternate route.
    *
    * This is the guard the fork could not work without, and the reason it was
@@ -3091,19 +2923,25 @@ export class Game {
     const pal = realm.palette;
     this.placeTunnels();
     this.placeRivers();
-    // THE FORK, back on. It was removed because the corridor let the car wander
-    // off-road and sink — but the cause was never the fork itself: the engine
-    // simply had no idea the branch existed. `freeDrive` projects onto whichever
-    // road is nearer and walls you onto it, while the CAR'S HEIGHT and the
-    // camera floor were both read from the main track, and the scenery bands
-    // were planted straight across the alternate road. Each of those is fixed
-    // below; see surfaceY(), the camera clamp, and nearBranch().
-    this.placeBranches();
-    this.freeDrive.branches = this.branches.map((b) => ({
-      path: b.path,
-      startDist: b.path.startDist,
-      endDist: b.path.endDist,
-    }));
+    // FORKS ARE OFF. The machinery all works — `placeBranches` builds the
+    // road, `freeDrive` projects onto whichever one you are nearest and walls
+    // you onto it, `surfaceY` rides the right surface, `nearBranch` keeps the
+    // scenery off it, and the nine `onMainRoad` guards below stop the main
+    // road's pickups and hazards firing while you are on the other one.
+    //
+    // What does not work is the DESIGN. Measured over a lap of ordinary
+    // driving the fork was taken zero times, and it is not hard to see why: it
+    // came out 8-12 m longer than the road it forks off, on a tighter radius,
+    // with no pickups (entities are addressed in main-road coordinates, so
+    // nothing can be placed on a branch), for a style-chain link. A slower,
+    // tighter, emptier road is not an alternative route, it is a mistake you
+    // can make.
+    //
+    // Left wired rather than deleted because the ambition is right and the
+    // hard parts are done. What it needs is a reason to exist — a genuinely
+    // shorter line, or a jump, or something only reachable that way — and
+    // entity placement in branch space to hang any of that on.
+    this.freeDrive.branches = [];
     this.placeSkyProps();
     this.treeMats = makeTreeMaterials(pal); // shared bark/foliage tree materials
     const lane = () => LANE_CENTERS[Math.floor(rand() * 3)];
@@ -3404,9 +3242,6 @@ export class Game {
     // Drift zones first: they pick the circuit's best corners, and the boost
     // chains then hang off those same corner exits, so the two gimmicks land in
     // the same places and read as one feature rather than two sprinklings.
-    this.placeCorners();
-    this.placeBoostChains();
-    this.placeSetPiece(rand);
   }
 
   /** Place a handful (~3-6) of BIG signature landmarks per ground realm at
@@ -4224,411 +4059,7 @@ export class Game {
   }
 
   /**
-   * Build the ghost for this race, if the mode has laps worth comparing.
-   *
-   * Endless and combat modes are excluded: there is no repeatable lap to be
-   * better than. A ghost car is the player's own kart, unlit and translucent,
-   * with collisions off — it is a recording, not a rival, and must never
-   * deflect you.
-   */
-  private setupGhost(): void {
-    if (this.cfg.endless || this.cfg.combat) return;
-    const len = this.track.length;
-    this.ghostRec = new GhostRecorder(len);
-    this.ghostStanding = this.cfg.laps > 1;
-    const best = loadGhost(this.realm.id, len);
-    if (!best) return;
-
-    this.ghostPlay = new GhostPlayer(best);
-    const car = makeKart(this.carId, CAR_SPECS[this.carId].color);
-    car.traverse((o) => {
-      const m = o as THREE.Mesh;
-      if (!m.isMesh) return;
-      const mats = Array.isArray(m.material) ? m.material : [m.material];
-      m.material = mats.map((src) => {
-        // Unlit and see-through, so it reads as a replay rather than a car you
-        // could hit. depthWrite off keeps it from punching a hole in whatever
-        // is behind it when it overlaps your own car.
-        const mat = new THREE.MeshBasicMaterial({
-          color: (src as THREE.MeshStandardMaterial).color ?? new THREE.Color(0x67e8f9),
-          transparent: true,
-          // 0.45, not 0.34. At a third opacity against a bright sunset road the
-          // ghost was a smear you could lose entirely — and a pace reference
-          // you cannot see is not a pace reference. Still obviously a replay.
-          opacity: 0.45,
-          depthWrite: false,
-        });
-        mat.color.lerp(new THREE.Color(0x67e8f9), 0.55);
-        return mat;
-      }) as THREE.Material[];
-    });
-    car.visible = false;
-    this.ghostCar = car;
-    this.scene.add(car);
-  }
-
   /**
-   * DRIFT ZONES — the circuit asking you to do the most fun thing it has.
-   *
-   * Drifting is the deepest mechanic in the game and the one nothing ever
-   * asked for. You could finish a whole race without sliding once and the
-   * track would never notice. A drift zone is the track noticing: a painted
-   * corner that pays into the style chain in proportion to how much of it you
-   * spent sideways, which turns the corner from something to survive into
-   * something to attack.
-   *
-   * WHERE the zones go is measured, not authored. Twelve realms each generate
-   * their own circuit, so a hard-coded curvature threshold would find eight
-   * zones on Crystal Peaks and none on Apex Speedway. Instead the whole lap's
-   * curvature is sampled and the zones are placed on its own busiest corners —
-   * a percentile, so every circuit gets a comparable handful whatever its
-   * character.
-   */
-  /**
-   * Find the lap's best corners and mark their apexes.
-   *
-   * WHERE the corners are is measured, not authored. Twelve realms each
-   * generate their own circuit, so a hard-coded curvature threshold would find
-   * eight corners on Crystal Peaks and none on Apex Speedway; the lap's own
-   * percentiles give every circuit a comparable handful whatever its character.
-   *
-   * The corner list is shared: the boost-pad chains hang off these same corner
-   * exits and the crossing keeps well clear of them, so the circuit's features
-   * land in deliberate places instead of three independent sprinklings.
-   */
-  private placeCorners(): void {
-    // Not on the endless cruise — it is a drive, not a scored lap — and not in
-    // combat, where the line you want is wherever the missiles are not.
-    if (this.cfg.endless || this.cfg.combat) return;
-    const len = this.track.length;
-    const STEP = 5;
-
-    // Curvature profile of the lap, then its own percentiles as thresholds.
-    const ks: number[] = [];
-    for (let d = 0; d < len; d += STEP) ks.push(Math.abs(this.track.curvatureAt(d)));
-    const sorted = ks.slice().sort((a, b) => a - b);
-    const pct = (q: number) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))];
-    // Hysteresis: turn-in is stricter than turn-out, so one corner produces one
-    // entry instead of flickering into three as the curvature wobbles.
-    //
-    // The absolute floors guard against a circuit with no corners at all (a
-    // near-oval would otherwise nominate its four gentlest kinks), and they
-    // have to be LOW to do only that job. A first pass used 0.010, which on a
-    // measured circuit was 0.0116 at the single tightest hairpin and above the
-    // 90th percentile everywhere else — the floor silently replaced the
-    // percentile and the whole lap got exactly one corner.
-    const IN = Math.max(0.0025, pct(0.78));
-    const OUT = Math.max(0.0018, pct(0.58));
-
-    const MIN_SPAN = 40, MAX_SPAN = 130, GAP = 200, MAX_CORNERS = 4;
-    // From well after the seam to just before it. Not straddling distance 0 is
-    // a hard requirement (the bookkeeping assumes from < to); starting at 120 m
-    // is taste — an apex immediately off the line, with the whole field still
-    // three abreast, is not a corner you get to drive.
-    const found: { from: number; to: number }[] = [];
-    let open = -1;
-    for (let d = 120; d < len - 20; d += STEP) {
-      const k = Math.abs(this.track.curvatureAt(d));
-      if (open < 0) {
-        if (k > IN) open = d;
-      } else if (k < OUT) {
-        const span = Math.min(d - open, MAX_SPAN);
-        const prev = found.length ? found[found.length - 1].to : -Infinity;
-        if (span >= MIN_SPAN && open - prev > GAP) found.push({ from: open, to: open + span });
-        open = -1;
-      }
-    }
-    if (!found.length) return;
-
-    // Keep the longest few — a 120 m sweeper is a better corner than a 40 m
-    // kink, and four is already one every quarter-lap.
-    found.sort((a, b) => (b.to - b.from) - (a.to - a.from));
-    const keep = found.slice(0, MAX_CORNERS).sort((a, b) => a.from - b.from);
-
-    for (const c of keep) {
-      // The apex is the tightest point, which is not the middle: a corner that
-      // tightens on the way in has its apex late, and marking the midpoint of
-      // those would be pointing at the wrong piece of road.
-      let apex = (c.from + c.to) / 2, best = -1;
-      for (let d = c.from; d <= c.to; d += 2) {
-        const k = Math.abs(this.track.curvatureAt(this.track.wrap(d)));
-        if (k > best) { best = k; apex = d; }
-      }
-      const side = -this.outsideSign(c.from, c.to);   // inside of the bend
-      this.corners.push({ from: c.from, to: c.to, apex, side, armed: true });
-
-      // Two markers straddling the apex, on the inside kerb. Two rather than
-      // one because a single block is a piece of scenery; a pair reads as a
-      // marked point, and you can see the gap between them from the approach.
-      for (const off of [-5, 5]) {
-        const m = makeApexMarker();
-        const d = this.track.wrap(apex + off);
-        const p = this.track.pointAt(d, side * APEX_OFFSET);
-        const tan = this.track.tangentAt(d);
-        m.position.set(p.x, this.terrainYAt(d, side * APEX_OFFSET), p.z);
-        m.rotation.order = "YXZ";
-        m.rotation.y = Math.atan2(tan.x, tan.z);
-        this.scene.add(m);
-        // Nothing SOLID within reach of a marker. The scenery is already down
-        // by the time corners are chosen, and it is allowed as close as 5.5 m
-        // from the centreline — so a marker saying "drive here" could sit in a
-        // tree you would bounce off. The marker wins: it is the one thing on
-        // that verge the game is actively telling you to aim at.
-        this.obstacles = this.obstacles.filter(
-          (o) => Math.hypot(o.x - p.x, o.z - p.z) > o.r + 2.2,
-        );
-      }
-    }
-  }
-
-  /**
-   * Place the circuit's one crossing: a painted hazard band, a beacon each
-   * side, and two boulders that sweep across it with a gap between them.
-   *
-   * Two, not one. A single boulder on a 10 m road always leaves seven metres of
-   * clear tarmac, so there is nothing to do but notice it. A pair with a gap
-   * makes a moving slot: you either thread it or take whichever side is open,
-   * and which of those is available depends on when you arrive — so the hazard
-   * is a question about your speed on the approach rather than a thing you
-   * steer around at the last moment.
-   */
-  private placeSetPiece(rand: () => number) {
-    if (this.cfg.endless || this.cfg.combat) return;
-    const len = this.track.length;
-    // On a STRAIGHT, and well clear of both the start line and any drift zone.
-    // On a bend the boulders' sweep line is a chord across a curving road, so
-    // one end of it leaves the tarmac; stacking it on a drift zone would ask
-    // for a committed slide through a hazard that wants a precise line.
-    const clearOfCorners = (d: number) =>
-      this.corners.every((c) => d < c.from - 120 || d > c.to + 120);
-    const straightAt = (at: number) => {
-      for (let o = -40; o <= 40; o += 10) {
-        if (Math.abs(this.track.curvatureAt(this.track.wrap(at + o))) > 0.004) return false;
-      }
-      return true;
-    };
-    let dist = -1;
-    for (let d = Math.round(len * 0.35); d < len - 150; d += 15) {
-      if (straightAt(d) && clearOfCorners(d)) { dist = d; break; }
-    }
-    // Fall back to any straight at all rather than skipping the feature: a
-    // circuit with no 80 m straight past the halfway point is possible.
-    if (dist < 0) {
-      for (let d = 400; d < len - 150; d += 15) if (straightAt(d)) { dist = d; break; }
-    }
-    if (dist < 0) return;
-
-    const label = SP_LABEL[this.realm.id] ?? "ROCKFALL";
-    const mat = new THREE.MeshBasicMaterial({
-      map: makeHazardTexture(),
-      color: 0xf59e0b,
-      transparent: true,
-      opacity: 0.6,
-      depthWrite: false,
-      polygonOffset: true,
-      polygonOffsetFactor: -5,
-      polygonOffsetUnits: -5,
-    });
-    const band = this.track.buildRoadBand(dist - 7, dist + 7, mat, 5);
-    band.renderOrder = 2;
-    this.scene.add(band);
-
-    const lamps: THREE.Mesh[] = [];
-    for (const side of [-1, 1]) {
-      const { group, lamp } = makeHazardBeacon();
-      const p = this.track.pointAt(this.track.wrap(dist), side * (ROAD_HALF_WIDTH + 2.4));
-      group.position.set(p.x, p.y, p.z);
-      this.scene.add(group);
-      lamps.push(lamp);
-    }
-
-    const rocks: THREE.Object3D[] = [];
-    for (let i = 0; i < 2; i++) {
-      const r = makeRockProp(rand);
-      r.scale.setScalar(1.5 + rand() * 0.4);
-      this.scene.add(r);
-      rocks.push(r);
-    }
-    this.setPiece = {
-      dist: this.track.wrap(dist), label, rocks, lamps,
-      // Start mid-cycle so the first lap does not always meet it at the same
-      // point of its sweep — otherwise the "answer" is the same every race.
-      t: rand() * SP_PERIOD,
-      side: rand() < 0.5 ? 1 : -1,
-      lats: [SP_EDGE, SP_EDGE + SP_GAP],
-      swept: false,
-      warned: false,
-    };
-    // Put the boulders where they belong now, before anything renders — see
-    // updateSetPiece for why this cannot wait for the first frame of the race.
-    this.updateSetPiece(0);
-  }
-
-  /**
-   * Run the crossing: flash, sweep, hit whatever is in the way, repeat.
-   *
-   * The boulders' lateral positions are the authority for collision, not their
-   * meshes — the meshes are placed FROM those numbers. Reading world positions
-   * back out of the scene graph to do physics is how the two quietly disagree.
-   */
-  private updateSetPiece(dt: number) {
-    const sp = this.setPiece;
-    if (!sp) return;
-    // This function POSITIONS the boulder meshes, so it must have run at least
-    // once before the first frame is drawn. `update()` returns early while the
-    // phase is "loading" or "countdown", so it does not — which left both
-    // boulders sitting at the world ORIGIN for the whole countdown and then
-    // teleporting 422 m to the crossing on the first racing frame (measured).
-    // `placeSetPiece` therefore calls this once with dt 0; the warning and the
-    // contact below are separately gated on "racing".
-    sp.t += dt;
-    if (sp.t >= SP_PERIOD) {
-      sp.t -= SP_PERIOD;
-      sp.swept = false;
-      sp.warned = false;
-    }
-
-    const sweeping = sp.t >= SP_TELEGRAPH && sp.t < SP_TELEGRAPH + SP_SWEEP;
-    const telegraphing = sp.t < SP_TELEGRAPH;
-
-    // Turn the pair round THE MOMENT THE SWEEP ENDS, not at the end of the
-    // cycle. `side` is the side the next sweep departs from, and the idle
-    // position is derived from it — so while it still said "left" for the five
-    // idle seconds after a left-to-right sweep, the boulders teleported 22 m
-    // back across the scenery to the side they had just left. Measured as a
-    // 31 m single-frame jump.
-    if (!sp.swept && sp.t >= SP_TELEGRAPH + SP_SWEEP) {
-      sp.swept = true;
-      sp.side = sp.side === 1 ? -1 : 1;
-      // The boulder that led the sweep out is the one now furthest from the
-      // road on the far side, so it TRAILS on the way back. Reversing the array
-      // keeps index 0 as the leader without either mesh having to move.
-      sp.rocks.reverse();
-    }
-    // Beacons: a 5 Hz flash through the telegraph, held on through the sweep,
-    // dark the rest of the time.
-    const lit = sweeping ? 1.6 : telegraphing ? (Math.sin(sp.t * 32) > 0 ? 2.2 : 0) : 0;
-    for (const l of sp.lamps) (l.material as THREE.MeshStandardMaterial).emissiveIntensity = lit;
-
-    // Where the pair is across the road. `u` runs 0 → 1 over the sweep, and the
-    // sweep spans the whole ribbon plus the gap at both ends, so both boulders
-    // are off the road (and hidden) at each extreme.
-    const u = sweeping ? (sp.t - SP_TELEGRAPH) / SP_SWEEP : 0;
-    const from = sp.side * SP_EDGE;
-    const to = -sp.side * (SP_EDGE + SP_GAP);
-    const lead = sweeping ? from + (to - from) * u : from;
-    for (let i = 0; i < sp.rocks.length; i++) {
-      const lat = lead + sp.side * i * SP_GAP;
-      sp.lats[i] = lat;
-      const p = this.track.pointAt(sp.dist, lat, undefined, false);
-      const r = sp.rocks[i];
-      // Road plane, and only while on the road — see SP_EDGE.
-      r.position.set(p.x, p.y + 0.6, p.z);
-      r.visible = sweeping && Math.abs(lat) < SP_ON_ROAD;
-      // roll it, so a boulder crossing the road reads as rolling, not sliding
-      if (sweeping) r.rotation.x -= (sp.side > 0 ? 1 : -1) * dt * 3.4;
-    }
-
-    // --- warn the player while there is still time to do something ----------
-    let gap = sp.dist - this.position;
-    if (gap > this.track.length / 2) gap -= this.track.length;
-    else if (gap < -this.track.length / 2) gap += this.track.length;
-    if (this.phase === "racing" && !sp.warned && gap > 40 && gap < 240 && sp.t < SP_TELEGRAPH + SP_SWEEP) {
-      sp.warned = true;
-      this.announce(sp.label, "AHEAD — TIME IT", "#fbbf24", 1.1);
-      this.sound.play("oob");
-    }
-
-    if (!sweeping || this.phase !== "racing") return;
-
-    // --- contact -------------------------------------------------------------
-    // Only boulders that are ON the road (and therefore drawn) can hit
-    // anything. Without this bound the pair would still be swinging through
-    // ±16 m of collision band while invisible, so a car running wide onto the
-    // verge could be flattened by a boulder that was not on screen.
-    const onRoad = (lat: number) => Math.abs(lat) < SP_ON_ROAD;
-    if (Math.abs(gap) < 5.5 && this.alt < 2.2 && this.onMainRoad) {
-      for (const lat of sp.lats) {
-        if (!onRoad(lat)) continue;
-        if (Math.abs(this.freeDrive.lateral - lat) < SP_ROCK_HALF + 1.1) {
-          this.hitByCrossing(lat);
-          break;
-        }
-      }
-    }
-    const len = this.track.length;
-    for (const o of this.opponents) {
-      if (o.finished || o.stunnedT > 0 || o.alt > 2.2) continue;
-      let d = sp.dist - o.dist;
-      if (d > len / 2) d -= len; else if (d < -len / 2) d += len;
-      if (Math.abs(d) > 5.5) continue;
-      const ol = o.lane * ROAD_HALF_WIDTH * 0.9;
-      for (const lat of sp.lats) {
-        if (onRoad(lat) && Math.abs(ol - lat) < SP_ROCK_HALF + 1.1) { o.stun(1.3); break; }
-      }
-    }
-  }
-
-  /**
-   * The player drove into the crossing. Costs speed, the chain and your line —
-   * not the race.
-   *
-   * @param rockLat lateral of the boulder that got you, so the shove is away
-   *   from it. A boulder does not spin a car on its axis, it knocks it off
-   *   line, and being deflected is both more readable and more recoverable
-   *   than being spun.
-   */
-  private hitByCrossing(rockLat: number) {
-    if (this.crossingHitCd > 0) return;
-    this.crossingHitCd = 1.4;
-    this.breakChain();
-    this.freeDrive.vx *= 0.42;
-    this.freeDrive.vz *= 0.42;
-    // Road-space "right", in pointAt's convention, so the push is across the
-    // road rather than in some world direction. `spinRate` was the first
-    // attempt and did nothing: it is only integrated while airborne.
-    const tan = this.track.tangentAt(this.position);
-    const away = this.freeDrive.lateral >= rockLat ? 1 : -1;
-    this.freeDrive.vx += -tan.z * away * 9;
-    this.freeDrive.vz += tan.x * away * 9;
-    this.shake = Math.max(this.shake, 1);
-    this.crashFlash = 0.4;
-    this.sound.play("crash");
-    this.spawnSparks(this.playerRoot.position.x, this.playerRoot.position.y + 0.5, this.playerRoot.position.z, 24);
-    this.toast("HIT!", "#f87171");
-  }
-
-  /**
-   * Did you clip the apex?
-   *
-   * Cheap and stateless: near the marked point, on the inside of the bend, at
-   * real speed and with the tyres on the tarmac. Re-arms only once you are a
-   * long way past, so one corner pays once however much the projection wobbles
-   * at the edge of the window.
-   *
-   * The speed gate is what stops it paying for crawling round the inside kerb,
-   * which is the obvious way to farm it and the opposite of driving well.
-   */
-  private updateApexes(): void {
-    if (!this.corners.length || this.phase !== "racing") return;
-    const len = this.track.length;
-    for (const c of this.corners) {
-      let gap = this.position - c.apex;
-      if (gap > len / 2) gap -= len;
-      else if (gap < -len / 2) gap += len;
-      if (Math.abs(gap) > 60) { c.armed = true; continue; }   // well clear: re-arm
-      if (!c.armed || Math.abs(gap) > 7) continue;
-      if (!this.onMainRoad || this.alt > 0.6 || this.freeDrive.offRoad) continue;
-      if (this.speed < MAX_SPEED * 0.5) continue;
-      // Inside kerb, in metres. `freeDrive.lateral` is already metres, so no
-      // conversion — this is the comparison that has been got wrong here before.
-      const want = c.side * (ROAD_HALF_WIDTH - 1.2);
-      if (Math.abs(this.freeDrive.lateral - want) > APEX_BAND) continue;
-      c.armed = false;
-      this.addChain("APEX", 160);
-    }
-  }
-
   /**
    * Which side of the road is the OUTSIDE of the bend between two distances.
    *
@@ -4656,54 +4087,7 @@ export class Game {
     return walk(1) >= walk(-1) ? 1 : -1;
   }
 
-  /**
-   * BOOST PADS, back on the circuit — but only where taking them costs you.
-   *
-   * They were pulled from the track because they were everywhere and on the
-   * racing line, which made them a conveyor belt: you gained nothing by
-   * noticing them, because you could not miss them. The fix is not fewer pads,
-   * it is pads somewhere you would not otherwise be. A chain of three on the
-   * OUTSIDE of a corner exit is a real decision — the long way round, giving up
-   * entry speed and a couple of metres of track, for a surge onto the straight
-   * that follows. Take the tight line or take the pads; both are defensible,
-   * which is what makes it interesting.
-   */
-  private placeBoostChains(): void {
-    if (this.cfg.endless || !this.corners.length) return;
-    for (const c of this.corners) {
-      // Exit half of the corner and a little beyond: the pads should fire you
-      // ONTO the straight, not mid-bend where the extra speed just runs you wide.
-      const start = c.from + (c.to - c.from) * 0.55;
-      const side = -c.side;              // outside — the apex markers are inside
-      for (let i = 0; i < 3; i++) {
-        const d = start + i * 13;
-        // 0.78 of the road half-width: out in the last quarter of the lane, off
-        // any line you would drive by accident, but still inside the kerb.
-        // 0.68 of a half-width = 3.4 m out, so a 3.2 m deck runs from 1.8 m to
-        // the 5 m road edge: clear of the centre line, entirely on the tarmac.
-        this.addEntity("boostpad", d, side * 0.68, makeBoostPad(3.2));
-      }
-    }
-  }
-
   /** A lap ended: keep it if it beat the stored one, then start recording again. */
-  private finishGhostLap(): void {
-    if (this.ghostRec) {
-      if (this.ghostStanding) {
-        this.ghostStanding = false;       // the next lap is a flying one
-      } else {
-        const lap = this.ghostRec.finish(this.realm.id, this.carId);
-        if (lap && saveGhostIfBest(this.realm.id, lap)) {
-          this.toast("NEW BEST LAP", "#a7f3d0");
-        }
-      }
-      this.ghostRec.reset();
-    }
-    this.lapT = 0;
-    this.ghostT = 0;
-    this.ghostPlay?.reset();
-  }
-
   /** Current multiplier: x1 at the start, +1 every two links, capped at x6. */
   private get chainMult(): number {
     return Math.min(6, 1 + Math.floor(this.chainLinks / 2));
@@ -5017,23 +4401,6 @@ export class Game {
     } else if (this.drifting) {
       this.endDrift();
     }
-    // must run AFTER `drifting` is up to date for this frame, or the zone
-    // credits you for a slide you have already ended
-    this.updateApexes();
-    // Joined or left an alternate route — see settleBranchRun.
-    {
-      const bi = this.freeDrive.onBranchIdx;
-      if (bi !== this.branchRunIdx) {
-        if (this.branchRunIdx >= 0) this.settleBranchRun();
-        this.branchRunIdx = bi;
-        if (bi >= 0) {
-          this.branchRunStart = this.branches[bi].path.project(this.freeDrive.x, this.freeDrive.z).u;
-          this.toast("ALT ROUTE", "#67e8f9");
-        }
-      }
-    }
-    this.crossingHitCd = Math.max(0, this.crossingHitCd - dt);
-    this.updateSetPiece(dt);
 
     // visual body yaw: lean into the slip + steer on the ground; barrel-roll in air
     if (this.stuntAir) {
@@ -5285,33 +4652,9 @@ export class Game {
     if (this.phase === "racing") {
       this.lapProgress += delta;
 
-      // --- ghost: record this lap, and play back the best one ---------------
-      this.lapT += dt;
-      if (this.ghostRec) {
-        this.ghostRec.sample(dt, Math.max(0, this.lapProgress), this.freeDrive.lateral, this.freeDrive.heading);
-      }
-      if (this.ghostPlay && this.ghostCar) {
-        this.ghostT += dt;
-        const at = this.ghostPlay.at(this.ghostT);
-        if (at) {
-          const gp = this.track.pointAt(this.track.wrap(at.dist), at.lateral, this.tmpGhost, false);
-          this.ghostCar.position.set(gp.x, gp.y + CAR_LIFT, gp.z);
-          this.ghostCar.rotation.y = at.yaw;
-          this.ghostCar.visible = true;
-          // The number a driver actually wants: how long the best lap took to
-          // reach exactly where you are, minus how long you have taken. A
-          // positive delta means you are up on it.
-          this.ghostDelta = this.ghostPlay.timeAt(Math.max(0, this.lapProgress)) - this.lapT;
-        } else {
-          this.ghostCar.visible = false;    // its lap is done; yours is not
-          this.ghostDelta = null;
-        }
-      }
-
       if (this.lapProgress >= len) {
         this.lapProgress -= len;
         this.lap++;
-        this.finishGhostLap();
         if (this.lap > this.cfg.laps) {
           this.phase = "finished";
           this.finishT = 2.5;
@@ -5746,21 +5089,19 @@ export class Game {
         }
         break;
       case "boostpad":
-        // Reusable, and it pays for COMMITMENT. Clipping the first deck of a
-        // chain and cutting back to the racing line should be worth less than
-        // holding the wide line over all three, so a pad taken while the last
-        // one is still burning extends the surge rather than merely refreshing
-        // it — and from the second deck on it feeds the style chain too.
+        // Wired but unspawned. Nothing places a pad on the circuit: the
+        // corner-exit chains that did were removed — measured over a lap of
+        // ordinary driving they were touched ZERO times, because the steering
+        // assist holds the car within 0.2 m of the centreline while the pads
+        // sat 3.4 m out. Kept because the collision and the boost still work,
+        // so a placement that respects where the car actually goes would need
+        // nothing else.
         if (this.alt < 1.0) {
-          const fresh = this.boostT < 0.35;
-          if (fresh) {
+          if (this.boostT < 0.35) {
             this.sound.play("nitro");
             this.toast("BOOST!", "#22d3ee");
-            this.boostT = PAD_BOOST_DURATION;
-          } else {
-            this.boostT = Math.min(PAD_BOOST_DURATION * 2.4, this.boostT + PAD_BOOST_DURATION * 0.7);
-            this.addChain("PAD CHAIN", 70);
           }
+          this.boostT = Math.max(this.boostT, PAD_BOOST_DURATION);
         }
         break;
       case "boostgate":
@@ -6314,7 +5655,7 @@ export class Game {
       // Scaled so a flat-out lap in the quickest car reads ~165, and ~195 on
       // nitro — a cap you can believe, not a 300 that makes every number
       // meaningless.
-      mph: Math.round((this.speed / MAX_SPEED) * 155),
+      mph: Math.min(SPEEDO_MAX, Math.round((this.speed / MAX_SPEED) * SPEEDO_SCALE)),
       score: Math.max(0, Math.round(this.score)),
       lap: Math.min(this.lap, this.cfg.laps),
       totalLaps: this.cfg.laps,
@@ -6326,7 +5667,6 @@ export class Game {
       chainLinks: this.chainLinks,
       chainPending: this.chainPending,
       chainT: this.chainT,
-      ghostDelta: this.ghostDelta,
       tow: this.tow,
       grip: this.gripMul,
       gripCause: WEATHER_LABEL[this.weatherKind],

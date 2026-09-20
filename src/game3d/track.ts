@@ -533,26 +533,6 @@ export class Track {
   }
 
   /**
-   * A painted band of road between two distances — the geometry behind drift
-   * zones and any other "this stretch is special" marking.
-   *
-   * Long bands need many rows: the strip is a chord-wise approximation of a
-   * curve, so a 60 m zone through a hairpin drawn with 6 rows cuts the corner
-   * and floats off the tarmac on the outside. One row every ~3 m keeps it
-   * glued down through anything the circuit generator can produce.
-   */
-  buildRoadBand(from: number, to: number, mat: THREE.Material, uRepeat = 1): THREE.Mesh {
-    const span = Math.abs(to - from);
-    const rows = Math.max(6, Math.min(160, Math.ceil(span / 3)));
-    // 6 cm: under the start line's 7 cm so an overlap layers predictably, still
-    // clear of the depth precision that swallowed a 1 cm lift.
-    // One texture tile every 22 m. At 12 m the chevrons came out one every six
-    // metres and the corner read as painted-over rather than marked.
-    const geo = this.stripGeometry(from, to, rows, 8, 0.06, uRepeat, span / 22);
-    return new THREE.Mesh(geo, mat);
-  }
-
-  /**
    * The shared vertex maths for anything painted ON the road.
    *
    * COPIED FROM `buildRoadMesh`, not re-derived via pointAt(): the ribbon sits
@@ -712,45 +692,5 @@ export function makeCheckerTexture(): THREE.Texture {
   }
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
-
-/**
- * Diagonal hazard stripes — the marking painted across a road where something
- * crosses it.
- *
- * Deliberately NOT the drift-zone chevron in another colour. A chevron says
- * "go this way"; a hazard says "something happens here", and the two must not
- * be confusable at 160 mph from 200 m out, because one of them is asking you
- * to commit and the other is asking you to time it. Stripes read as a barrier
- * at any distance and at any angle, which is exactly why every road authority
- * in the world uses them for this.
- *
- * Tiled ACROSS the road (u) rather than along it, so the stripes stay the same
- * width whatever length of road the band covers.
- */
-export function makeHazardTexture(): THREE.Texture {
-  const W = 128, H = 128;
-  const c = document.createElement("canvas");
-  c.width = W;
-  c.height = H;
-  const ctx = c.getContext("2d")!;
-  ctx.clearRect(0, 0, W, H);
-  ctx.fillStyle = "rgba(255,255,255,0.88)";
-  // 45° bars with gaps, so the tarmac underneath still shows the surface
-  for (let i = -2; i < 6; i++) {
-    const x = i * 44;
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x + 22, 0);
-    ctx.lineTo(x + 22 + H, H);
-    ctx.lineTo(x + H, H);
-    ctx.closePath();
-    ctx.fill();
-  }
-  const tex = new THREE.CanvasTexture(c);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = ANISO;
   return tex;
 }

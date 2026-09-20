@@ -538,8 +538,6 @@ export interface HudState {
   chainLinks?: number;
   chainPending?: number;
   chainT?: number;
-  /** Seconds the ghost is ahead (+) or behind (−) you right now. */
-  ghostDelta?: number | null;
   /** 0..1 slipstream behind the car in front. */
   tow?: number;
   /** Grip left, as a fraction of dry (1 = dry). Only shown when below dry. */
@@ -623,7 +621,7 @@ export function drawHud(
   // speed bar
   ctx.fillStyle = "#241f3a";
   ctx.fillRect(28, 62, 144, 8);
-  const spd = Math.min(hud.mph / 190, 1);
+  const spd = Math.min(hud.mph / 150, 1);   // 150 is the top of the dial
   const grad = ctx.createLinearGradient(28, 0, 172, 0);
   grad.addColorStop(0, "#22d3ee");
   grad.addColorStop(0.7, hud.nitroActive ? "#fb923c" : "#67e8f9");
@@ -778,29 +776,6 @@ export function drawHud(
     ctx.textAlign = "center";
     ctx.fillText(`${links} LINK${links === 1 ? "" : "S"} AT STAKE`, x + w / 2, y + 38);
     ctx.textAlign = "left";
-  }
-
-  // --- ghost delta ----------------------------------------------------------
-  // One number, because that is the only question: am I up or down on my best?
-  //
-  // In the LEFT column with the speed and the grip, not in the centre. It is an
-  // instrument you glance at, like the speedo — and the centre of the screen is
-  // now where the score notifications live, so a permanent readout sitting
-  // there would be underneath a new line of text every few seconds.
-  if (hud.ghostDelta !== null && hud.ghostDelta !== undefined) {
-    const d = hud.ghostDelta;
-    const ahead = d > 0;
-    const txt = `${ahead ? "-" : "+"}${Math.abs(d).toFixed(2)}`;
-    const y = (hud.grip ?? 1) < 0.995 ? 138 : 104;   // below the grip strip when it is up
-    ctx.textAlign = "left";
-    ctx.fillStyle = "rgba(20,17,34,0.7)";
-    ctx.fillRect(12, y - 15, 110, 28);
-    ctx.fillStyle = ahead ? "#a7f3d0" : "#f87171";
-    ctx.font = "bold 18px monospace";
-    ctx.fillText(txt, 18, y);
-    ctx.fillStyle = "#6f6a8a";
-    ctx.font = "8px monospace";
-    ctx.fillText("VS BEST", 78, y + 1);
   }
 
   // --- surface / grip ------------------------------------------------------

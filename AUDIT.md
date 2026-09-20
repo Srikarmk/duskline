@@ -6,7 +6,8 @@ Dependency and code checks are against the working tree.
 Severity: 🔴 fix before launch · 🟠 fix soon · 🟡 worth doing · ⚪ nice to have
 Status: ✅ fixed and verified · ◻ open
 
-**20 of 21 findings are fixed.** The one left open is a build-time dependency
+**23 of 25 findings are fixed.** The two open ones are the framework upgrade
+below and, far more importantly, the single-speed finding above. The one left open is a build-time dependency
 advisory that needs a major framework upgrade, and is not reachable in this app
 — reasoning below. Six of the findings were opened by the 2026-09-18 feature
 pass: adding a mechanic is the fastest way to discover which of the existing
@@ -349,6 +350,92 @@ it had quietly stopped guarding years of commits ago. All nine now share one
 Verified across two realms: 4.4 s held on the fork covering 87% of it, **0**
 gems collected while on it, no respawn, and all four of this session's gimmicks
 on one circuit at once.
+
+### ✅ 🔴 NEW — The ghost car was 65% invisible
+Reported as "the ghost is just a wheel". It was.
+
+`setupGhost` recoloured the car with
+`m.material = mats.map(...)` — which **always assigns an array**, even where the
+mesh had a single material. Three.js renders an array-material mesh only
+through `geometry.groups`, and the merged body panels have no groups, so they
+were skipped entirely. Measured through the real code path: **13 of 74 meshes
+never drew — 4,956 of 7,668 vertices, 64.6% of the car.** What was left was
+small trim and wheels at 45% opacity.
+
+The verification that missed it asserted material TYPE ("all
+MeshBasicMaterial") and mesh COUNT (74). Neither can see "draws nothing". The
+lesson was already written down in this project — render bugs are invisible
+from numbers, park a camera and look — and was not applied.
+
+Removed along with the feature.
+
+### ✅ 🔴 NEW — None of the new gimmicks ever fired
+Counted over a lap of ordinary driving, with the steering assist doing the
+cornering as it does for any player who is not fighting it:
+
+| Event | Fired |
+| --- | --- |
+| APEX | **0** |
+| PAD CHAIN / BOOST | **0** |
+| ALT ROUTE (fork) | **0** |
+| DRIFT | **0** |
+| Crossing hit | **0** |
+| NEAR MISS | 45 |
+| OVERTAKE | 20 |
+| CLEAN LANE | 28 |
+
+One measurement explains most of it, and it was never taken. The car is
+BIMODAL: hands-off it holds **0.14 m** from the centreline; full lock pins it
+at **5.62 m**, against the wall. There is no natural middle — and the boost
+pads were at 3.4 m and the apexes at 3.8 m. Three features were placed in a
+band of road the control scheme does not produce, on a steering assist whose
+entire job is pulling the car back to the centreline. Each was verified to
+work *when the car was already there*, which is a much weaker claim.
+
+The crossing failed differently: a 9.5 s cycle against a ~40 s gap between
+visits makes the arrival phase uncorrelated with anything, so it cannot be
+learned or timed. Both measured arrivals landed in the idle window with the
+boulders off the road.
+
+The fork failed on its own terms: 8-12 m longer than the road it forks off, on
+a tighter radius, with no pickups possible (entities are addressed in main-road
+coordinates), for one chain link. A slower, tighter, emptier road is not an
+alternative, it is a mistake you can make.
+
+All five removed. The fork's machinery is kept and deactivated — see the
+comment at `freeDrive.branches = []`; the hard parts work and only the design
+was wrong.
+
+### ✅ 🟡 NEW — A stale doc comment shipped
+The apex change replaced `placeDriftZones`' body and signature but left its
+doc comment behind, so a commit shipped a 16-line block describing drift zones
+sitting directly above the function that replaced them. Removed with the rest.
+
+### ◻ 🔴 NEW — The game has exactly one speed
+The most important finding here, and it is not about any of the above.
+
+Measured over a full lap at racing pace: **mean 122.9 mph against a maximum of
+123, standard deviation 1.9, and 100% of the lap spent within 5 mph of top
+speed.** The histogram is a single bucket. Top speed arrives 3.3 s after the
+lights and never leaves.
+
+Nothing takes speed away. Corners do not — grip is 11.5 and the pure-pursuit
+assist drives the line for you. There is no braking rhythm, so there is no
+acceleration to feel, and no corner can be driven *well* because none can be
+driven badly. The speed cues themselves are fine and were wrongly suspected
+first: FOV swings 72° → 77.2° to top speed and 86.2° under nitro, and the
+radial blur reaches 1.08. They are simply pinned at their maximum from second
+four onwards, along with everything else.
+
+This is why it does not feel like an arcade racer. The loop those games run on
+— lift for the corner, commit to a line, get the speed back as a reward — has
+no first step here. Every gimmick above was an attempt to add interest on top
+of a constant-velocity drive, which is why none of them could have worked.
+
+Fixing it means touching the core: cornering that scrubs speed above a grip
+limit, brakes that matter, and an assist that helps rather than drives. That
+is a deliberate design change to how the game feels, not a bug fix, so it is
+written down here rather than done unasked.
 
 ---
 
