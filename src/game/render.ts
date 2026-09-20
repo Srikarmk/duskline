@@ -540,8 +540,6 @@ export interface HudState {
   chainT?: number;
   /** Seconds the ghost is ahead (+) or behind (−) you right now. */
   ghostDelta?: number | null;
-  /** 0..1 of the drift zone you are in, or null when you are not in one. */
-  driftZone?: number | null;
   /** 0..1 slipstream behind the car in front. */
   tow?: number;
   /** Grip left, as a fraction of dry (1 = dry). Only shown when below dry. */
@@ -784,18 +782,25 @@ export function drawHud(
 
   // --- ghost delta ----------------------------------------------------------
   // One number, because that is the only question: am I up or down on my best?
+  //
+  // In the LEFT column with the speed and the grip, not in the centre. It is an
+  // instrument you glance at, like the speedo — and the centre of the screen is
+  // now where the score notifications live, so a permanent readout sitting
+  // there would be underneath a new line of text every few seconds.
   if (hud.ghostDelta !== null && hud.ghostDelta !== undefined) {
     const d = hud.ghostDelta;
     const ahead = d > 0;
     const txt = `${ahead ? "-" : "+"}${Math.abs(d).toFixed(2)}`;
-    ctx.textAlign = "center";
+    const y = (hud.grip ?? 1) < 0.995 ? 138 : 104;   // below the grip strip when it is up
+    ctx.textAlign = "left";
+    ctx.fillStyle = "rgba(20,17,34,0.7)";
+    ctx.fillRect(12, y - 15, 110, 28);
     ctx.fillStyle = ahead ? "#a7f3d0" : "#f87171";
-    ctx.font = "bold 20px monospace";
-    ctx.fillText(txt, vw / 2, 104);
+    ctx.font = "bold 18px monospace";
+    ctx.fillText(txt, 18, y);
     ctx.fillStyle = "#6f6a8a";
     ctx.font = "8px monospace";
-    ctx.fillText("VS BEST", vw / 2, 116);
-    ctx.textAlign = "left";
+    ctx.fillText("VS BEST", 78, y + 1);
   }
 
   // --- surface / grip ------------------------------------------------------
@@ -821,34 +826,6 @@ export function drawHud(
     ctx.fillRect(x, y + 3, w, 4);
     ctx.fillStyle = col;
     ctx.fillRect(x, y + 3, w * g, 4);
-  }
-
-  // --- drift zone gauge ----------------------------------------------------
-  // Only while you are in one, and placed low-centre rather than up with the
-  // chain: you read this one WHILE cornering, with your eyes near the road, so
-  // it belongs in the bottom of your vision and not at the top of the screen.
-  if (hud.driftZone !== null && hud.driftZone !== undefined) {
-    const f = Math.max(0, Math.min(1, hud.driftZone));
-    const w = 200, h = 10, x = Math.round(vw / 2 - w / 2), y = vh - 116;
-    ctx.fillStyle = "rgba(20,17,34,0.72)";
-    ctx.fillRect(x - 2, y - 2, w + 4, h + 4);
-    ctx.fillStyle = "#2a2340";
-    ctx.fillRect(x, y, w, h);
-    // violet → amber, the same warming the painted band does under the car, so
-    // the two readouts are obviously the same gauge
-    ctx.fillStyle = f > 0.85 ? "#fbbf24" : f > 0.5 ? "#e879f9" : "#a855f7";
-    ctx.fillRect(x, y, w * f, h);
-    ctx.strokeStyle = "rgba(251,191,36,0.55)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();                       // the "perfect" mark
-    ctx.moveTo(x + w * 0.85, y - 3);
-    ctx.lineTo(x + w * 0.85, y + h + 3);
-    ctx.stroke();
-    ctx.textAlign = "center";
-    ctx.fillStyle = f > 0.85 ? "#fbbf24" : "#c9a8ff";
-    ctx.font = "bold 9px monospace";
-    ctx.fillText(f > 0.85 ? "PERFECT — HOLD IT" : "DRIFT ZONE · SLIDE", vw / 2, y - 7);
-    ctx.textAlign = "left";
   }
 
   // --- slipstream ----------------------------------------------------------
@@ -1020,31 +997,44 @@ export interface Toast {
 /**
  * Where the big drama callout is centred.
  *
- * Exported because the toast stack has to start BELOW it, and the two used to
- * be laid out by two independent magic numbers — 150 for the toasts, `vh * 0.3`
- * for the callout — which on a 600 px view put "NEAR MISS x1" directly through
- * the middle of "PASSED". Anything that stacks under the callout should ask
- * this rather than guess.
- *
  * The floor keeps it clear of the style-chain panel (which ends at y 168) on
  * short viewports, where a pure fraction of the height would ride up into it.
+ *
+ * Was exported so the toast stack could be pushed below it — the two were laid
+ * out by independent magic numbers (150 and `vh * 0.3`) which on a 600 px view
+ * printed "NEAR MISS x1" through the middle of "PASSED". The toasts have since
+ * moved to the top of the screen, so nothing has to dodge this any more.
  */
-export function calloutCenterY(vh: number): number {
+function calloutCenterY(vh: number): number {
   return Math.max(vh * 0.32, 196);
 }
 
+/**
+ * Score notifications, along the TOP of the screen.
+ *
+ * They used to start at y 190 — the middle of the frame, directly over the
+ * road a few car lengths ahead, which is exactly where you are looking while
+ * driving. Four of them stacked 30 px apart put a column of text through the
+ * apex of the corner you were trying to take. Up here they are still readable
+ * at a glance and no longer sit in the sightline, and because they now live
+ * ABOVE the drama callout instead of below it, the two can never collide and
+ * the stack no longer has to be moved out of the way when one fires.
+ *
+ * Tighter rows (25 px, was 30) so four of them still clear the style-chain
+ * panel at y 132.
+ */
 export function drawToasts(
-  ctx: CanvasRenderingContext2D, toasts: Toast[], vw = WIDTH, baseY = 190,
+  ctx: CanvasRenderingContext2D, toasts: Toast[], vw = WIDTH, baseY = 30,
 ) {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.font = "bold 22px monospace";
+  ctx.font = "bold 19px monospace";
   toasts.forEach((toast, i) => {
     ctx.globalAlpha = Math.min(1, toast.t * 2);
     ctx.fillStyle = "rgba(0,0,0,0.5)";
-    ctx.fillText(toast.text, vw / 2 + 1, baseY + 1 + i * 30);
+    ctx.fillText(toast.text, vw / 2 + 1, baseY + 1 + i * 25);
     ctx.fillStyle = toast.color;
-    ctx.fillText(toast.text, vw / 2, baseY + i * 30);
+    ctx.fillText(toast.text, vw / 2, baseY + i * 25);
   });
   ctx.globalAlpha = 1;
 }

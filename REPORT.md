@@ -451,6 +451,47 @@ of those coordinates means something else, so "a boost pad on the fork" is not
 expressible without re-addressing every entity in the game. That is written
 down rather than worked around.
 
+## 6e. Two days later: less paint, and get out of the sightline (2026-09-20)
+
+**The drift zones are gone.** They worked — the corner finder was sound, the
+gauge filled, the chain paid — and they were still wrong, because four 130 m
+bands of violet chevrons covered a tenth of the circuit. On a game whose whole
+pitch is how it looks, a scoring hook should not be the thing hiding the view.
+They were also the third mechanic paying for the same input: the drift boost
+pays for sliding, the style chain pays for sliding, and then a painted corner
+paid for sliding again.
+
+What replaced them asks for the opposite skill and needs no paint at all. An
+apex is a *point*, so marking it takes two red-and-white kerb blocks on the
+inside of the bend and nothing on the road. Clip it at speed and it pays. The
+corner-finding code is the same — it was always the good half — but it now
+locates the tightest point of each corner rather than its span, which matters
+more than I expected: two of the four corners on the test circuit are tightest
+on ENTRY, so their apex is early, and marking the midpoint would have pointed
+at the wrong piece of road.
+
+The property I care most about is one I could only get by measuring: a
+hands-off lap clips **zero** apexes, because the steering assist holds the
+centreline. The drift zone could be partly satisfied by the car driving itself.
+An apex cannot — it is something you have to decide to do.
+
+One thing the swap surfaced: `obstacleClear` lets a tree's collision circle
+reach 5.5 m from the centreline, so there is no lateral offset outside the
+ribbon that is guaranteed empty, and the first marker position landed inside a
+roadside tree. The markers now sit on the kerb at 6.6 m and anything solid
+within reach of one is pruned — the marker wins, because it is the one thing
+on that verge the game is actively telling you to aim at.
+
+**And the score notifications moved to the top of the screen.** They started at
+y 190, which on a 600 px view is the middle of the frame — directly over the
+road a few car lengths ahead, which is exactly where you are looking while
+driving. Four of them stacked put a column of text through the apex of the
+corner you were trying to take. They are now along the top, which also removes
+the dodge that used to be needed when a drama callout fired: the two lived in
+the same place and the stack had to be pushed out of the way. The ghost delta
+moved to the left column with the speed and the grip, where an instrument you
+glance at belongs.
+
 ## 7. The rename
 
 Fantasy Racer → **Duskline**. Code, UI, manifest, share tags, package name,

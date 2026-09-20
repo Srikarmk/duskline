@@ -285,9 +285,14 @@ line. Now `0.36` (1.8 m), matching the lane-width deck.
 
 ### ✅ 🟡 NEW — CLEAN LANE paid for the opposite of what the track was asking
 The lane-discipline bonus pays for holding one lane arrow-straight. Inside a
-drift zone the circuit is asking for a slide across the whole road. Whichever a
-player chased, the other one was telling them they had got it wrong. The bonus
-no longer fires inside a zone.
+drift zone the circuit was asking for a slide across the whole road. Whichever
+a player chased, the other one was telling them they had got it wrong, so the
+bonus was suppressed inside a zone.
+
+**Superseded 2026-09-20.** The zones were replaced by apexes, which do not have
+the conflict — clipping an apex IS a lane, briefly, so the two now want the
+same thing. The suppression has been removed rather than left in place pointing
+at something that no longer exists.
 
 ### ✅ 🟡 NEW — Toasts printed through the middle of the drama callout
 The toast stack started at y 150 and the callout was centred at `vh * 0.3`,
@@ -430,31 +435,42 @@ on one circuit at once.
    banked 820 from four links, and a break cost the 300-point pot without
    touching the score. Ten links accumulated from real events on a hands-off
    lap, so it is reachable in ordinary play rather than only on purpose.
-8. ✅ **Drift zones.** Painted corners that pay into the chain in proportion to
-   how much of them you spent sideways. Drifting was the deepest mechanic in
-   the game and the one nothing ever asked for: you could finish a race without
-   sliding once and the track would never notice.
+8. ✅ **Apexes.** (This replaced DRIFT ZONES, which shipped on 2026-09-18 and
+   were pulled two days later — see below.) The lap's four busiest corners are
+   found by its own curvature percentiles, the tightest point of each is
+   located, and a pair of red-and-white kerb markers goes on the inside of it.
+   Clip the apex at speed, on the tarmac, and it pays into the chain.
 
-   Where the zones go is **measured, not authored**. Twelve realms each
-   generate their own circuit, so the lap's own curvature percentiles pick its
-   busiest corners and every circuit gets a comparable handful. A first pass
-   used absolute thresholds and found exactly ONE zone on a 3.9 km lap — the
-   0.010 floor was above the 90th percentile of a circuit whose tightest
-   hairpin measured 0.0116, so the floor had silently replaced the percentile.
-   Now four zones, 40–130 m, spread around the lap on Sunset Bay and on the
-   Void Circuit alike.
+   Where the corners are is measured, not authored: twelve realms generate
+   twelve circuits, so a hard-coded curvature threshold would find eight
+   corners on one and none on another. A first pass used absolute thresholds
+   and found exactly ONE corner on a 3.9 km lap — 0.010 was above the 90th
+   percentile of a circuit whose tightest hairpin measured 0.0116, so the floor
+   silently replaced the percentile it was meant to protect.
 
-   The band is the gauge, warming violet to amber under the car as you fill it,
-   so the feedback is on the road you are looking at. It only fills on tarmac:
-   the grass is deliberately looser than asphalt, so before that guard a run
-   wide onto the verge filled the gauge FASTER than a proper drift did, which
-   would have made the reward for a drift zone "steer off the road".
+   The apex is the point of maximum curvature, not the midpoint: a corner that
+   is tightest on entry has its apex early, and two of the four on the measured
+   circuit do exactly that. Marking their midpoints would have pointed at the
+   wrong piece of road.
+
+   Verified: pays on the inside line at speed, refuses the middle of the road,
+   refuses the outside, and — the property that matters — a hands-off lap
+   clips **zero** of them, because the steering assist holds the centreline. An
+   apex is something you have to choose to do, which is exactly what the drift
+   zone was not.
+
+   *Note on the drift zones it replaced:* the mechanic was fine and the paint
+   was not. Four 130 m bands of violet chevrons covered a tenth of the circuit,
+   and on a game whose pitch is its art direction, a scoring hook should not be
+   hiding the thing you came to look at. It also paid for being sideways, which
+   the drift boost and the style chain already pay for twice over.
 9. ✅ **Boost pads, on the outside of corner exits.** They were pulled from the
    circuit for being a conveyor belt, and that was true of a pad you cannot
    miss — the deck was 8.5 m wide on a 10 m road, and its hit band was FIVE
    metres either side of centre, so a pad parked by the kerb still fired when
    you drove down the middle. Now a lane's width with a lane's hit band, in
-   chains of three on the outside of the corners the drift zones already found,
+   chains of three on the outside of the corners the apex finder already
+   located,
    where taking them costs you the tight line. The second and third decks
    EXTEND the surge rather than refresh it, so committing to the whole chain is
    worth more than clipping the first.

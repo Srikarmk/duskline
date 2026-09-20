@@ -3715,3 +3715,45 @@ export function makeHazardBeacon(): { group: THREE.Group; lamp: THREE.Mesh } {
   g.add(lamp);
   return { group: g, lamp };
 }
+
+/**
+ * An apex marker: the short striped block that sits on the inside kerb of a
+ * corner, marking the point a racing line is supposed to touch.
+ *
+ * Deliberately TINY and off the tarmac. It replaced a 130 m painted band down
+ * the middle of the road, which is the whole reason it exists — the circuit
+ * can point at its best corners without covering them in paint. Red and white
+ * because that is what a kerb marker looks like everywhere in the world, so it
+ * needs no explaining and no legend.
+ */
+export function makeApexMarker(): THREE.Group {
+  const g = new THREE.Group();
+  const white = new THREE.MeshStandardMaterial({ color: 0xf2f2f7, roughness: 0.75 });
+  const red = new THREE.MeshStandardMaterial({
+    color: 0xef4444, roughness: 0.6, emissive: 0x7f1d1d, emissiveIntensity: 0.45,
+  });
+  // a low wedge, so clipping one would not launch a car even if it were solid
+  const geo = new THREE.BoxGeometry(0.9, 0.16, 0.9);
+  for (let i = 0; i < 4; i++) {
+    const b = new THREE.Mesh(geo, i % 2 ? red : white);
+    b.position.set(0, 0.08, i * 0.92 - 1.38);
+    g.add(b);
+  }
+  // a single slim post so it reads from a distance, where a 16 cm kerb block
+  // is a couple of pixels
+  const post = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.07, 0.09, 1.5, 6),
+    new THREE.MeshStandardMaterial({ color: 0xf2f2f7, roughness: 0.6 }),
+  );
+  post.position.set(0, 0.75, 0);
+  g.add(post);
+  const flag = new THREE.Mesh(
+    new THREE.BoxGeometry(0.42, 0.3, 0.06),
+    new THREE.MeshStandardMaterial({
+      color: 0xef4444, emissive: 0xef4444, emissiveIntensity: 0.8, roughness: 0.5,
+    }),
+  );
+  flag.position.set(0.2, 1.36, 0);
+  g.add(flag);
+  return g;
+}

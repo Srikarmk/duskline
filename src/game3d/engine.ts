@@ -25,7 +25,7 @@ import {
   MISSILE_SPEED, MISSILE_MAX_DIST, STUN_DURATION, ITEM_LATERAL_TOL,
   SCORE_HIT, OPPONENT_MINE_CHANCE,
 } from "./constants";
-import { Track, makeRoadTexture, makeCheckerTexture, makeDriftZoneTexture, makeHazardTexture } from "./track";
+import { Track, makeRoadTexture, makeCheckerTexture, makeHazardTexture } from "./track";
 import { loadModels, instantiate, type ModelLibrary } from "./assets";
 import {
   makeSkyDome, makePosterSky, makeCloudLayer, makeEnvMap, windTime, makeGround, makeGrassTexture,
@@ -33,6 +33,7 @@ import {
   makeGem, makeNitroCan, makeOrb, makeRamp, RAMP_SPECS, type RampKind,
   makeBoostPad,
   makeHazardBeacon,
+  makeApexMarker,
   makeCrystalCluster, makeMonster,
   makeMech, makeSlash, makeFlame, makeUnderGlow,
   makeItemBox, makeMissile, makeMine, makeShieldBubble,
@@ -64,7 +65,6 @@ import { Sound } from "./sound";
 import { loadSetting, loadSettings, type Settings, QUALITY, type Quality } from "../ui/settings";
 import { Input } from "../game/input";
 import { drawHud, drawToasts, drawCallout, drawCenterText, drawSpeedFx, drawFrameGrade, drawStartLights, type Toast,
-  calloutCenterY,
 } from "../game/render";
 import type { GameMode, GameResult, GameOptions, RaceStanding, CarId } from "../game/engine";
 
@@ -108,6 +108,47 @@ const WEATHER_LABEL: Record<WeatherKind, string> = {
   sand: "SAND", snow: "SNOW", rain: "WET",
 };
 
+/**
+ * A corner the circuit thinks is worth naming, and the apex it wants you to
+ * clip.
+ *
+ * This replaced DRIFT ZONES — 130 m bands of violet chevrons painted down the
+ * road on the lap's four best corners. The mechanic was sound and the paint was
+ * not: four of them covered a tenth of the circuit, and on a game whose whole
+ * pitch is its art direction, the cost of a scoring hook should not be hiding
+ * the thing you came to look at. An apex is a POINT, so marking it takes two
+ * kerbside markers and no paint at all.
+ *
+ * It also asks for a different skill. A drift zone paid for being sideways,
+ * which the drift boost and the style chain already pay for twice over; an apex
+ * pays for the line, which nothing did.
+ */
+interface Corner {
+  from: number;
+  to: number;
+  /** Distance of the tightest point — where the markers go. */
+  apex: number;
+  /** Inside of the bend, +1 or -1, measured (see outsideSign). */
+  side: number;
+  /** Already clipped this pass? Re-arms once you are well clear of it. */
+  armed: boolean;
+}
+
+/** How close to the inside kerb counts as clipping the apex, in metres. */
+const APEX_BAND = 2.4;
+/**
+ * Where the markers sit, in metres from the centreline.
+ *
+ * Right on the kerb — the ribbon's own edge is 6.25 m, so this is a hand's
+ * width off the tarmac, which is where a kerb marker belongs and also as far
+ * from the roadside scenery as it is possible to get. It is not far enough on
+ * its own: `obstacleClear` lets a tree's collision circle reach 5.5 m from the
+ * centreline, so nowhere outside the ribbon is guaranteed empty, and at 7.35 m
+ * a marker landed inside a row-0 tree on a measured circuit. See placeCorners
+ * for the prune that finishes the job.
+ */
+const APEX_OFFSET = ROAD_HALF_WIDTH * 1.25 + 0.35;
+
 /** How far off a rival's line the tow still reaches, in metres. Half a car's
  *  width either side of dead astern — enough to be findable, tight enough that
  *  you have to aim for it. */
@@ -115,10 +156,6 @@ const TOW_WIDTH = 2.4;
 /** Top speed gained at full tow. 12% is roughly a second a lap: worth chasing,
  *  not enough to make following better than leading. */
 const TOW_GAIN = 0.12;
-
-/** Drift-zone band colours: violet when idle, amber when you have filled it. */
-const DZ_IDLE = 0xa855f7;
-const DZ_HOT = new THREE.Color(0xfbbf24);
 
 /**
  * THE CROSSING — one telegraphed hazard per circuit that sweeps across the road
@@ -197,16 +234,6 @@ const SP_LABEL: Record<string, string> = {
   void: "ASTEROIDS", nebula: "ASTEROIDS",
   circuit: "DEBRIS", metro: "DEBRIS", azur: "DEBRIS", neon: "DEBRIS", bay: "DEBRIS",
 };
-
-/** A painted stretch of corner that pays you for holding a slide through it. */
-interface DriftZone {
-  from: number;
-  to: number;
-  /** Metres of sliding needed to fill it — shorter than the zone, so a good
-   *  drift through a long sweeper can still bank a perfect. */
-  target: number;
-  mat: THREE.MeshBasicMaterial;
-}
 
 type ItemKind = "boost" | "shield" | "missile" | "mine";
 const ITEM_LABEL: Record<ItemKind, string> = {
@@ -702,12 +729,9 @@ export class Game {
    * two are directly comparable at every point on the road.
    */
   // --- circuit gimmicks -------------------------------------------------
-  private driftZones: DriftZone[] = [];
+  private corners: Corner[] = [];
   private setPiece: SetPiece | null = null;
   private crossingHitCd = 0;
-  private dzAt = -1;               // index of the zone we are in, -1 = none
-  private dzHeld = 0;              // metres of it covered sideways
-  private dzFill = 0;              // 0..1, for the HUD
   /** 0..1 slipstream from sitting in a rival's dirty air. */
   private tow = 0;
   private towCallout = 0;
@@ -961,12 +985,9 @@ export class Game {
     this.ghostCar = null;
     this.ghostPlay = null;
     this.ghostRec = null;
-    this.driftZones = [];
+    this.corners = [];
     this.setPiece = null;
     this.branchRunIdx = -1;
-    this.dzAt = -1;
-    this.dzHeld = 0;
-    this.dzFill = 0;
     this.tow = 0;
     this.disposeScene();
     this.renderer.dispose();
@@ -3383,7 +3404,7 @@ export class Game {
     // Drift zones first: they pick the circuit's best corners, and the boost
     // chains then hang off those same corner exits, so the two gimmicks land in
     // the same places and read as one feature rather than two sprinklings.
-    this.placeDriftZones();
+    this.placeCorners();
     this.placeBoostChains();
     this.placeSetPiece(rand);
   }
@@ -4263,9 +4284,21 @@ export class Game {
    * a percentile, so every circuit gets a comparable handful whatever its
    * character.
    */
-  private placeDriftZones(): void {
-    // Not on the endless cruise (it is a drive, not a stunt course) and not in
-    // combat, where being sideways is how you get shot.
+  /**
+   * Find the lap's best corners and mark their apexes.
+   *
+   * WHERE the corners are is measured, not authored. Twelve realms each
+   * generate their own circuit, so a hard-coded curvature threshold would find
+   * eight corners on Crystal Peaks and none on Apex Speedway; the lap's own
+   * percentiles give every circuit a comparable handful whatever its character.
+   *
+   * The corner list is shared: the boost-pad chains hang off these same corner
+   * exits and the crossing keeps well clear of them, so the circuit's features
+   * land in deliberate places instead of three independent sprinklings.
+   */
+  private placeCorners(): void {
+    // Not on the endless cruise — it is a drive, not a scored lap — and not in
+    // combat, where the line you want is wherever the missiles are not.
     if (this.cfg.endless || this.cfg.combat) return;
     const len = this.track.length;
     const STEP = 5;
@@ -4276,23 +4309,22 @@ export class Game {
     const sorted = ks.slice().sort((a, b) => a - b);
     const pct = (q: number) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))];
     // Hysteresis: turn-in is stricter than turn-out, so one corner produces one
-    // zone instead of flickering into three as the curvature wobbles.
+    // entry instead of flickering into three as the curvature wobbles.
     //
-    // The absolute floors are a guard against a circuit with no corners at all
-    // (a near-oval would otherwise get four zones on its own gentlest kinks),
-    // and they have to be LOW to do only that job. A first pass used 0.010,
-    // which on a measured circuit was 0.0116 at the single tightest hairpin and
-    // above the 90th percentile everywhere else — the floor silently replaced
-    // the percentile and the whole lap got exactly one zone.
+    // The absolute floors guard against a circuit with no corners at all (a
+    // near-oval would otherwise nominate its four gentlest kinks), and they
+    // have to be LOW to do only that job. A first pass used 0.010, which on a
+    // measured circuit was 0.0116 at the single tightest hairpin and above the
+    // 90th percentile everywhere else — the floor silently replaced the
+    // percentile and the whole lap got exactly one corner.
     const IN = Math.max(0.0025, pct(0.78));
     const OUT = Math.max(0.0018, pct(0.58));
 
-    const MIN_SPAN = 40, MAX_SPAN = 130, GAP = 200, MAX_ZONES = 4;
-    // Walk from well after the seam to just before it. Not straddling distance 0
-    // is a hard requirement (the progress bookkeeping below assumes from < to);
-    // starting at 120 m rather than 20 is taste — a drift zone immediately off
-    // the line, with the whole field still three abreast, is not a corner you
-    // get to attack.
+    const MIN_SPAN = 40, MAX_SPAN = 130, GAP = 200, MAX_CORNERS = 4;
+    // From well after the seam to just before it. Not straddling distance 0 is
+    // a hard requirement (the bookkeeping assumes from < to); starting at 120 m
+    // is taste — an apex immediately off the line, with the whole field still
+    // three abreast, is not a corner you get to drive.
     const found: { from: number; to: number }[] = [];
     let open = -1;
     for (let d = 120; d < len - 20; d += STEP) {
@@ -4308,37 +4340,44 @@ export class Game {
     }
     if (!found.length) return;
 
-    // Keep the longest few — a 120 m sweeper is a better zone than a 40 m kink,
-    // and four is already one every quarter-lap.
+    // Keep the longest few — a 120 m sweeper is a better corner than a 40 m
+    // kink, and four is already one every quarter-lap.
     found.sort((a, b) => (b.to - b.from) - (a.to - a.from));
-    const keep = found.slice(0, MAX_ZONES).sort((a, b) => a.from - b.from);
+    const keep = found.slice(0, MAX_CORNERS).sort((a, b) => a.from - b.from);
 
-    const tex = makeDriftZoneTexture();
-    for (const z of keep) {
-      const span = z.to - z.from;
-      const mat = new THREE.MeshBasicMaterial({
-        map: tex,
-        color: DZ_IDLE,
-        transparent: true,
-        opacity: 0.42,
-        depthWrite: false,
-        polygonOffset: true,
-        polygonOffsetFactor: -5,
-        polygonOffsetUnits: -5,
-      });
-      const mesh = this.track.buildRoadBand(z.from, z.to, mat, 1);
-      mesh.renderOrder = 2;          // over the road, under the start line
-      this.scene.add(mesh);
-      this.driftZones.push({
-        from: z.from, to: z.to,
-        // 70% of the zone, not all of it: you have to get the car turned in and
-        // straightened out at the ends, so demanding 100% would make a perfect
-        // physically impossible and the gauge would never fill. Capped at 75 m
-        // besides, because a 130 m sweeper does not need three seconds of
-        // unbroken slide to have been driven well.
-        target: Math.min(span * 0.7, 75),
-        mat,
-      });
+    for (const c of keep) {
+      // The apex is the tightest point, which is not the middle: a corner that
+      // tightens on the way in has its apex late, and marking the midpoint of
+      // those would be pointing at the wrong piece of road.
+      let apex = (c.from + c.to) / 2, best = -1;
+      for (let d = c.from; d <= c.to; d += 2) {
+        const k = Math.abs(this.track.curvatureAt(this.track.wrap(d)));
+        if (k > best) { best = k; apex = d; }
+      }
+      const side = -this.outsideSign(c.from, c.to);   // inside of the bend
+      this.corners.push({ from: c.from, to: c.to, apex, side, armed: true });
+
+      // Two markers straddling the apex, on the inside kerb. Two rather than
+      // one because a single block is a piece of scenery; a pair reads as a
+      // marked point, and you can see the gap between them from the approach.
+      for (const off of [-5, 5]) {
+        const m = makeApexMarker();
+        const d = this.track.wrap(apex + off);
+        const p = this.track.pointAt(d, side * APEX_OFFSET);
+        const tan = this.track.tangentAt(d);
+        m.position.set(p.x, this.terrainYAt(d, side * APEX_OFFSET), p.z);
+        m.rotation.order = "YXZ";
+        m.rotation.y = Math.atan2(tan.x, tan.z);
+        this.scene.add(m);
+        // Nothing SOLID within reach of a marker. The scenery is already down
+        // by the time corners are chosen, and it is allowed as close as 5.5 m
+        // from the centreline — so a marker saying "drive here" could sit in a
+        // tree you would bounce off. The marker wins: it is the one thing on
+        // that verge the game is actively telling you to aim at.
+        this.obstacles = this.obstacles.filter(
+          (o) => Math.hypot(o.x - p.x, o.z - p.z) > o.r + 2.2,
+        );
+      }
     }
   }
 
@@ -4360,8 +4399,8 @@ export class Game {
     // On a bend the boulders' sweep line is a chord across a curving road, so
     // one end of it leaves the tarmac; stacking it on a drift zone would ask
     // for a committed slide through a hazard that wants a precise line.
-    const clearOfZones = (d: number) =>
-      this.driftZones.every((z) => d < z.from - 120 || d > z.to + 120);
+    const clearOfCorners = (d: number) =>
+      this.corners.every((c) => d < c.from - 120 || d > c.to + 120);
     const straightAt = (at: number) => {
       for (let o = -40; o <= 40; o += 10) {
         if (Math.abs(this.track.curvatureAt(this.track.wrap(at + o))) > 0.004) return false;
@@ -4370,7 +4409,7 @@ export class Game {
     };
     let dist = -1;
     for (let d = Math.round(len * 0.35); d < len - 150; d += 15) {
-      if (straightAt(d) && clearOfZones(d)) { dist = d; break; }
+      if (straightAt(d) && clearOfCorners(d)) { dist = d; break; }
     }
     // Fall back to any straight at all rather than skipping the feature: a
     // circuit with no 80 m straight past the halfway point is possible.
@@ -4560,64 +4599,34 @@ export class Game {
   }
 
   /**
-   * Bookkeeping for the zone you are in: fill it by sliding, pay out on exit.
+   * Did you clip the apex?
    *
-   * The band itself is the gauge — it warms from violet to amber as you fill
-   * it, so the feedback is on the road you are looking at rather than only in
-   * the corner of the HUD.
+   * Cheap and stateless: near the marked point, on the inside of the bend, at
+   * real speed and with the tyres on the tarmac. Re-arms only once you are a
+   * long way past, so one corner pays once however much the projection wobbles
+   * at the edge of the window.
+   *
+   * The speed gate is what stops it paying for crawling round the inside kerb,
+   * which is the obvious way to farm it and the opposite of driving well.
    */
-  private updateDriftZone(dt: number): void {
-    if (!this.driftZones.length) return;
-    // The band is painted on the main road; a slide on the fork is not in it.
-    if (!this.onMainRoad) {
-      if (this.dzAt >= 0) this.settleDriftZone();
-      this.dzAt = -1;
-      this.dzFill = 0;
-      return;
+  private updateApexes(): void {
+    if (!this.corners.length || this.phase !== "racing") return;
+    const len = this.track.length;
+    for (const c of this.corners) {
+      let gap = this.position - c.apex;
+      if (gap > len / 2) gap -= len;
+      else if (gap < -len / 2) gap += len;
+      if (Math.abs(gap) > 60) { c.armed = true; continue; }   // well clear: re-arm
+      if (!c.armed || Math.abs(gap) > 7) continue;
+      if (!this.onMainRoad || this.alt > 0.6 || this.freeDrive.offRoad) continue;
+      if (this.speed < MAX_SPEED * 0.5) continue;
+      // Inside kerb, in metres. `freeDrive.lateral` is already metres, so no
+      // conversion — this is the comparison that has been got wrong here before.
+      const want = c.side * (ROAD_HALF_WIDTH - 1.2);
+      if (Math.abs(this.freeDrive.lateral - want) > APEX_BAND) continue;
+      c.armed = false;
+      this.addChain("APEX", 160);
     }
-    const d = this.position;
-    let inside = -1;
-    for (let i = 0; i < this.driftZones.length; i++) {
-      const z = this.driftZones[i];
-      if (d >= z.from && d <= z.to) { inside = i; break; }
-    }
-    if (inside !== this.dzAt) {
-      if (this.dzAt >= 0) this.settleDriftZone();
-      this.dzAt = inside;
-      this.dzHeld = 0;
-      // No entry toast. The gauge sliding in at the bottom of the screen already
-      // says "drift zone", and a toast on top of it meant the words DRIFT ZONE
-      // appeared twice in one second — once on entry, once from the chain when
-      // it paid out.
-      if (inside >= 0 && this.phase === "racing") this.sound.play("lane");
-    }
-    if (this.dzAt < 0) { this.dzFill = 0; return; }
-    const z = this.driftZones[this.dzAt];
-    // Airborne does not count: a ramp through a zone would otherwise fill it
-    // for free, and a drift is a thing you do with the tyres on the ground.
-    //
-    // Neither does the grass. A zone is a piece of TARMAC, and the grass is
-    // looser than asphalt precisely so the car slides on it — measured, a run
-    // wide onto the verge filled the gauge faster than a proper slide did,
-    // which would have made the reward for a drift zone "steer off the road".
-    const planted = this.drifting && this.alt < 0.6 && !this.freeDrive.offRoad;
-    if (planted) this.dzHeld += this.speed * dt;
-    this.dzFill = Math.min(1, this.dzHeld / z.target);
-    z.mat.color.setHex(DZ_IDLE).lerp(DZ_HOT, this.dzFill);
-    z.mat.opacity = 0.42 + this.dzFill * 0.45;
-  }
-
-  /** Left a zone: pay what was earned and reset the band. */
-  private settleDriftZone(): void {
-    const z = this.driftZones[this.dzAt];
-    const frac = Math.min(1, this.dzHeld / z.target);
-    z.mat.color.setHex(DZ_IDLE);
-    z.mat.opacity = 0.42;
-    this.dzHeld = 0;
-    if (this.phase !== "racing" || frac < 0.22) return;   // barely tried
-    const perfect = frac > 0.85;
-    this.addChain(perfect ? "PERFECT ZONE" : "DRIFT ZONE", Math.round(140 + frac * 420));
-    if (perfect) this.announce("PERFECT ZONE", "SIDEWAYS ALL THE WAY", "#f0abfc", 1.1);
   }
 
   /**
@@ -4660,12 +4669,12 @@ export class Game {
    * which is what makes it interesting.
    */
   private placeBoostChains(): void {
-    if (this.cfg.endless || !this.driftZones.length) return;
-    for (const z of this.driftZones) {
+    if (this.cfg.endless || !this.corners.length) return;
+    for (const c of this.corners) {
       // Exit half of the corner and a little beyond: the pads should fire you
       // ONTO the straight, not mid-bend where the extra speed just runs you wide.
-      const start = z.from + (z.to - z.from) * 0.55;
-      const side = this.outsideSign(z.from, z.to);
+      const start = c.from + (c.to - c.from) * 0.55;
+      const side = -c.side;              // outside — the apex markers are inside
       for (let i = 0; i < 3; i++) {
         const d = start + i * 13;
         // 0.78 of the road half-width: out in the last quarter of the lane, off
@@ -5010,7 +5019,7 @@ export class Game {
     }
     // must run AFTER `drifting` is up to date for this frame, or the zone
     // credits you for a slide you have already ended
-    this.updateDriftZone(dt);
+    this.updateApexes();
     // Joined or left an alternate route — see settleBranchRun.
     {
       const bi = this.freeDrive.onBranchIdx;
@@ -5224,14 +5233,13 @@ export class Game {
       this.offTrackT = 0; // back on the road (or race over) — clear the warning
     }
 
-    // Lane discipline bonus — but NOT inside a drift zone.
-    //
-    // These two were paying for opposite things at the same moment: the zone
-    // asks for a slide across the whole road, the lane bonus pays for holding
-    // one lane arrow-straight. Whichever a player chases, the other one is
-    // telling them they got it wrong. Inside a zone the zone wins, because the
-    // zone is the thing the circuit went to the trouble of painting.
-    if (!airborne && this.dzAt < 0 && this.onMainRoad && Math.abs(this.playerX) <= 1 && speedPercent > 0.3) {
+    // Lane discipline bonus. This used to be suppressed inside a drift zone,
+    // which asked for a slide across the whole road while the lane bonus paid
+    // for holding one lane arrow-straight — whichever a player chased, the
+    // other told them they had got it wrong. Apexes replaced the zones and do
+    // not have that problem: clipping one IS a lane, briefly, so the two now
+    // want the same thing and the suppression is gone.
+    if (!airborne && this.onMainRoad && Math.abs(this.playerX) <= 1 && speedPercent > 0.3) {
       const laneIdx = this.playerX < -1 / 3 ? 0 : this.playerX > 1 / 3 ? 2 : 1;
       if (laneIdx === this.lastLane) {
         this.laneT += dt;
@@ -6319,7 +6327,6 @@ export class Game {
       chainPending: this.chainPending,
       chainT: this.chainT,
       ghostDelta: this.ghostDelta,
-      driftZone: this.dzAt >= 0 ? this.dzFill : null,
       tow: this.tow,
       grip: this.gripMul,
       gripCause: WEATHER_LABEL[this.weatherKind],
@@ -6357,10 +6364,10 @@ export class Game {
       );
     }
 
-    // Below the callout while one is up, so score notifications never print
-    // through the middle of "FINAL LAP".
-    drawToasts(ctx, this.toasts, vw,
-      this.callout && this.phase !== "finished" ? Math.round(calloutCenterY(vh)) + 62 : 190);
+    // Fixed at the top now. The stack used to be pushed below the callout when
+    // one fired, because both lived in the middle of the screen; it sits above
+    // it entirely, so there is nothing left to dodge.
+    drawToasts(ctx, this.toasts, vw);
     // race-drama callout (overtake / final lap) sits above the toasts; hide it
     // once finished so it doesn't fight the FINISH! banner
     if (this.callout && this.phase !== "finished") drawCallout(ctx, this.callout, vw, vh);
