@@ -31,6 +31,7 @@ import {
   makeSkyDome, makePosterSky, makeCloudLayer, makeEnvMap, windTime, makeGround, makeGrassTexture,
   makeGrassField, makeRockField, makeMountainRing,
   makeGem, makeNitroCan, makeOrb, makeRamp, RAMP_SPECS, type RampKind,
+  makeBoostPad,
   makeCrystalCluster, makeMonster,
   makeMech, makeSlash, makeFlame, makeUnderGlow,
   makeItemBox, makeMissile, makeMine, makeShieldBubble,
@@ -140,6 +141,19 @@ interface Entity {
   phase: number;
   home: number; // spawn lateral, for monster patrol
   power: number; // launch-power multiplier for ramps (1 otherwise)
+  /**
+   * WHICH ROAD this sits on: -1 for the main circuit, otherwise an index into
+   * `branches`.
+   *
+   * Entities were addressed in main-track (distance, lateral) coordinates and
+   * nothing else, which is why an alternate route could never hold a pickup, a
+   * pad or a ramp — "3.4 m from the centreline" means a different place on
+   * every road. That made forks structurally unable to be worth taking, and it
+   * is the reason the first attempt at one was deleted. A branch entity stores
+   * its lateral relative to its OWN road, and only collides while the car is
+   * on that road.
+   */
+  road: number;
 }
 
 interface Projectile {
@@ -405,7 +419,9 @@ export class Game {
   private buckets = new Map<number, Entity[]>();
   private spinners: Entity[] = [];
   private monsters: Entity[] = [];
-  private ramps: { dist: number; power: number; lane: number; len: number; height: number; twist: boolean }[] = [];
+  /** `road`: -1 for the main circuit, or an index into `branches` — a ramp on
+   *  an alternate route must only launch you while you are on that route. */
+  private ramps: { dist: number; power: number; lane: number; len: number; height: number; twist: boolean; road: number }[] = [];
   /** fork zones as main-track ranges [d0,d1] — used to keep boost pads/gates from
    *  cluttering a fork mouth. */
   private splits: { d0: number; d1: number }[] = [];
@@ -2087,17 +2103,33 @@ export class Game {
     return obj;
   }
 
-  private addEntity(type: EntityType, dist: number, lateral: number, obj: THREE.Object3D, extraY = 0, power = 1) {
-    const d = this.track.wrap(dist);
-    const p = this.track.pointAt(d, lateral * ROAD_HALF_WIDTH);
+  /**
+   * @param road -1 for the main circuit, or an index into `branches`. A branch
+   *   entity is placed along that branch's own curve and stores its `dist` as
+   *   the MAIN-track distance the branch maps to, so the distance buckets and
+   *   every lap/progress check keep working unchanged.
+   */
+  private addEntity(
+    type: EntityType, dist: number, lateral: number, obj: THREE.Object3D,
+    extraY = 0, power = 1, road = -1,
+  ) {
+    const onBranch = road >= 0 && road < this.branches.length;
+    const br = onBranch ? this.branches[road].path : null;
+    // `dist` is a branch arc-length when on a branch, main distance otherwise.
+    const d = br
+      ? this.track.wrap(br.startDist + (dist / br.length) * (br.endDist - br.startDist))
+      : this.track.wrap(dist);
+    const at = (o: number) => br
+      ? br.pointAt(clamp(dist + o, 0, br.length), lateral * ROAD_HALF_WIDTH)
+      : this.track.pointAt(this.track.wrap(d + o), lateral * ROAD_HALF_WIDTH);
+    const p = at(0);
     obj.position.set(p.x, p.y + extraY, p.z);
-    const tan = this.track.tangentAt(d);
+    const tan = br ? br.tangentAt(clamp(dist, 0, br.length)) : this.track.tangentAt(d);
     obj.rotation.order = "YXZ";
     obj.rotation.y = Math.atan2(tan.x, tan.z);
     // ramps/rocks/pads sit on the road, so pitch them to match its slope on hills
     if (type === "ramp" || type === "rock" || type === "boostpad" || type === "boostgate") {
-      const a = this.track.pointAt(d - 2);
-      const b = this.track.pointAt(d + 2);
+      const a = at(-2), b = at(2);
       const horiz = Math.hypot(b.x - a.x, b.z - a.z) || 4;
       obj.rotation.x = -Math.atan2(b.y - a.y, horiz);
     }
@@ -2105,6 +2137,7 @@ export class Game {
     const entity: Entity = {
       type, dist: d, lateral, collectedLap: 0, obj,
       baseY: obj.position.y, phase: Math.random() * Math.PI * 2, home: lateral, power,
+      road: onBranch ? road : -1,
     };
     this.entities.push(entity);
     if (type === "monster") {
@@ -2501,9 +2534,13 @@ export class Game {
       }
       const endDist = startDist + s.len;
       this.splits.push({ d0: this.track.wrap(startDist), d1: this.track.wrap(endDist) });
-      // INSIDE of the bend: the shorter way round. outsideSign returns the
-      // longer side, measured rather than derived, so negate it.
-      const side: 1 | -1 = this.outsideSign(startDist, endDist) > 0 ? -1 : 1;
+      // OUTSIDE of the bend, which is now the FASTER way round. Corner speed
+      // is √(grip · radius) since the friction circle went in, so the wide line
+      // is worth more than the metres it costs — the opposite of what was true
+      // before, when corners were free and only distance mattered. `outsideSign`
+      // measures which side that is rather than deriving it from the sign of the
+      // curvature, because this codebase has been bitten by that convention.
+      const side: 1 | -1 = this.outsideSign(startDist, endDist) > 0 ? 1 : -1;
       // Just enough separation that the two ribbons never touch: each is
       // drivable to 6.6 m from its own centreline, so 13.2 m is the floor and
       // 16 leaves a 2.8 m median. Wider costs branch length quadratically.
@@ -2520,6 +2557,7 @@ export class Game {
       this.branches.push({ path: branch, side });
       // the divider sitting in the median between the main road and the branch
       this.placeSplitIsland((startDist + endDist) / 2, side, branch);
+      this.placeRouteFeatures(this.branches.length - 1);
       // Fork sign on the VERGE, 34 m before the mouth, on the side the branch
       // goes. It was placed on the centreline at the mouth — and it is built as
       // a gantry with two narrow central posts (|x| < 1.05), so those posts
@@ -2535,6 +2573,66 @@ export class Game {
       sign.rotation.order = "YXZ";
       sign.rotation.y = Math.atan2(stan.x, stan.z);
       this.scene.add(sign);
+    }
+  }
+
+  /**
+   * What makes an alternate route worth taking: a boost chain into a ramp.
+   *
+   * The route's whole problem was that it had nothing on it. It could not — an
+   * entity's lateral is metres from a centreline, and "which centreline" was
+   * not a question the data could answer, so every pickup, pad and ramp in the
+   * game belonged to the main road by construction. `Entity.road` fixes that,
+   * and this is the first thing to use it.
+   *
+   * The ramp is the point. Cornering load is yaw rate × speed, and in the air
+   * both are irrelevant — so a jump carries speed through a bend that would
+   * otherwise scrub half of it away. That is why an Asphalt route feels fast
+   * and a merely-wider one does not, and it is only true here because the
+   * friction circle made corners cost something in the first place.
+   *
+   * Everything is placed along the branch's OWN arc length, on its own
+   * centreline, and only collides while you are on it.
+   */
+  private placeRouteFeatures(road: number) {
+    if (this.cfg.endless || road < 0 || road >= this.branches.length) return;
+    const b = this.branches[road].path;
+    const L = b.length;
+    // The plateau: the stretch where the branch runs parallel to the main road,
+    // clear of the peel-off and the merge. Everything goes here, because the
+    // ends are where the branch is busy changing direction.
+    const from = L * 0.28, to = L * 0.86;
+    if (to - from < 45) return;             // too short to be worth furnishing
+
+    // Three pads, centre lane, leading INTO the ramp — this is the run-up, so
+    // they are on the line you want rather than off it. The last one sits ~18 m
+    // short of the take-off, close enough that the surge is still burning.
+    const rampAt = from + (to - from) * 0.62;
+    for (let i = 0; i < 3; i++) {
+      this.addEntity("boostpad", rampAt - 52 + i * 13, 0, makeBoostPad(3.2), 0, 1, road);
+    }
+
+    // The ramp. `mega` because this is the one place on the circuit where a big
+    // launch is the intended line rather than a hazard to avoid.
+    const kind: RampKind = "mega";
+    this.addEntity("ramp", rampAt, 0, makeRamp(kind, this.realm.style === "void"), 0, RAMP_SPECS[kind].power, road);
+    this.ramps.push({
+      road,
+      // `ramps` is matched against `this.position`, which on a branch is the
+      // MAIN-track distance the branch maps to — so this has to be mapped the
+      // same way addEntity maps it, not stored as an arc length.
+      dist: this.track.wrap(b.startDist + (rampAt / L) * (b.endDist - b.startDist)),
+      power: RAMP_SPECS[kind].power,
+      lane: 0,
+      len: RAMP_SPECS[kind].l * 2,
+      height: RAMP_SPECS[kind].h,
+      twist: false,
+    });
+
+    // A run of chips down the back half, so the route pays even if you miss the
+    // ramp — and so it reads as a road that goes somewhere.
+    for (let i = 0; i < 6; i++) {
+      this.addEntity("gem", rampAt + 26 + i * 4, 0, makeGem(this.realm.palette.gem, false), 0.8, 1, road);
     }
   }
 
@@ -2923,25 +3021,29 @@ export class Game {
     const pal = realm.palette;
     this.placeTunnels();
     this.placeRivers();
-    // FORKS ARE OFF. The machinery all works — `placeBranches` builds the
-    // road, `freeDrive` projects onto whichever one you are nearest and walls
-    // you onto it, `surfaceY` rides the right surface, `nearBranch` keeps the
-    // scenery off it, and the nine `onMainRoad` guards below stop the main
-    // road's pickups and hazards firing while you are on the other one.
+    // ALTERNATE ROUTES, on again — and this time with a reason to exist.
     //
-    // What does not work is the DESIGN. Measured over a lap of ordinary
-    // driving the fork was taken zero times, and it is not hard to see why: it
-    // came out 8-12 m longer than the road it forks off, on a tighter radius,
-    // with no pickups (entities are addressed in main-road coordinates, so
-    // nothing can be placed on a branch), for a style-chain link. A slower,
-    // tighter, emptier road is not an alternative route, it is a mistake you
-    // can make.
+    // The first version was deleted because it was never taken, and it deserved
+    // that: 8-12 m longer than the road it forks off, on a tighter radius, and
+    // structurally unable to hold a single pickup because entities were
+    // addressed in main-road coordinates only.
     //
-    // Left wired rather than deleted because the ambition is right and the
-    // hard parts are done. What it needs is a reason to exist — a genuinely
-    // shorter line, or a jump, or something only reachable that way — and
-    // entity placement in branch space to hang any of that on.
-    this.freeDrive.branches = [];
+    // Both halves are fixed. `Entity.road` and `ramps[].road` mean a branch can
+    // carry pads, chips and ramps of its own. And the friction circle changed
+    // what a route can BE: corner speed is now √(grip · radius), so geometry
+    // finally has a time value — and a RAMP is worth more than either, because
+    // in the air there is no cornering load at all, so a jump carries speed
+    // through a bend that would otherwise cost you half of it.
+    //
+    // So the fork goes where the main line is SLOWEST, bows to the outside for
+    // the wider radius, and carries a boost chain into a ramp. See
+    // placeRouteFeatures.
+    this.placeBranches();
+    this.freeDrive.branches = this.branches.map((b) => ({
+      path: b.path,
+      startDist: b.path.startDist,
+      endDist: b.path.endDist,
+    }));
     this.placeSkyProps();
     this.treeMats = makeTreeMaterials(pal); // shared bark/foliage tree materials
     const lane = () => LANE_CENTERS[Math.floor(rand() * 3)];
@@ -3193,6 +3295,7 @@ export class Game {
         //         playerX divides by ROAD_HALF_WIDTH * 0.9 (/4.5). Convert, or
         //         the collision band sits off-centre from the visible ramp.
         this.ramps.push({
+          road: -1,
           dist: this.track.wrap(d),
           power: RAMP_SPECS[kind].power,
           lane: lane / 0.9,
@@ -4462,11 +4565,10 @@ export class Game {
     // get a partial pop, not a clean launch (hit it sideways at your peril).
     let onRamp: (typeof this.ramps)[number] | null = null;
     let rampT = 0;
-    // `onBranch` was the rail-era branch field and is now always null, so this
-    // guard had quietly stopped guarding. The live one is onMainRoad.
-    if (!this.transformed && this.onMainRoad) {
+    if (!this.transformed) {
       const trackLen = this.track.length;
       for (const r of this.ramps) {
+        if (r.road !== this.freeDrive.onBranchIdx) continue;   // different road
         let gap = this.position - r.dist;
         if (gap > trackLen / 2) gap -= trackLen;
         else if (gap < -trackLen / 2) gap += trackLen;
@@ -5042,8 +5144,9 @@ export class Game {
   }
 
   private collide(speedPercent: number) {
-    // Chips, cans, ramps and pads are all on the MAIN road. See onMainRoad.
-    if (!this.onMainRoad) return;
+    // No blanket main-road gate any more: each entity knows which road it is
+    // on, so a branch can hold pickups and the main road's stay put while you
+    // are off it. See Entity.road.
     const key = Math.floor(this.position / BUCKET_METERS);
     const totalBuckets = Math.ceil(this.track.length / BUCKET_METERS);
     for (let k = key - 1; k <= key + 1; k++) {
@@ -5051,6 +5154,7 @@ export class Game {
       if (!bucket) continue;
       for (const e of bucket) {
         if (e.collectedLap !== 0) continue;
+        if (e.road !== this.freeDrive.onBranchIdx) continue;  // different road
         let dd = Math.abs(e.dist - this.position);
         dd = Math.min(dd, this.track.length - dd);
         if (dd > COLLIDE_DIST) continue;

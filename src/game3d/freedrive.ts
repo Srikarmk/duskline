@@ -43,6 +43,16 @@ const clampN = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, 
 const CORNER_SCRUB = 2.5;
 
 /**
+ * Fraction of drive still available with the tyres fully loaded sideways.
+ *
+ * Zero is a trap — see the friction circle. But it has to stay SMALL: at 0.34
+ * the floor alone was 4.25 m/s² of drive, which cancelled the scrub almost
+ * exactly, and even a grip limit of 2.5 left 92% of the lap above 110 mph.
+ * Enough to recover on, not enough to power through a corner.
+ */
+const MIN_DRIVE_GRIP = 0.2;
+
+/**
  * FREE-ROAM arcade driving: the car is a real body in world space (x,z + heading
  * + velocity). Steering rotates the heading; throttle drives along it; grip bleeds
  * side-slip (less with the handbrake, so you drift). The track is a SURFACE — we
@@ -65,6 +75,8 @@ export class FreeDrive {
   /** Lateral acceleration the tyres were carrying last step (m/s²). Drives the
    *  friction circle at the top of the next one. */
   latAccel = 0;
+  /** Direction of travel last step, for measuring the PATH's curvature. */
+  private prevVHeading = 0;
   speed = 0;          // signed forward speed (m/s)
   /** alternate routes: the car drives whichever road (main or a branch) it's
    *  nearest to. Set by the engine after building branches. */
@@ -78,13 +90,13 @@ export class FreeDrive {
     this.x = p.x; this.z = p.z;
     this.heading = Math.atan2(t.x, t.z);
     this.vx = 0; this.vz = 0; this.speed = 0; this.slip = 0; this.latAccel = 0;
+    this.prevVHeading = this.heading;
     this.dist = track.wrap(d0);
     this.lateral = 0; this.offRoad = false; this.onWall = false; this.drifting = false;
   }
 
   /** Advance one fixed step. Returns nothing; read the public fields after. */
   step(input: DriveInput, dt: number, track: Track, tuning: DriveTuning) {
-    const headingBefore = this.heading;
     const F = { x: Math.sin(this.heading), z: Math.cos(this.heading) };   // forward
     const R = { x: F.z, z: -F.x };                                        // right of forward
 
@@ -106,9 +118,23 @@ export class FreeDrive {
     // then get it all back on the exit.
     //
     // Uses LAST step's cornering load, which is a frame of lag nobody can feel.
-    const limit = tuning.cornerGrip ?? Infinity;
+    // `?? Infinity` was wrong: it only catches null/undefined, so a cornerGrip
+    // of 0 fell through and divided — load became NaN, driveGrip became NaN,
+    // and every velocity in the simulation followed. It surfaced as a
+    // non-finite value thrown by the audio engine, several layers away.
+    const limit = tuning.cornerGrip && tuning.cornerGrip > 0 ? tuning.cornerGrip : Infinity;
     const load = Math.min(1, this.latAccel / limit);
-    const driveGrip = Math.sqrt(Math.max(0, 1 - load * load));
+    // FLOORED. The textbook circle takes drive to exactly zero at the limit,
+    // and with nothing left to accelerate on, a car that is both cornering hard
+    // and being pushed by the containment wall never recovers: measured,
+    // holding one steering key went 108 mph → 23 → 1 → 0 and stayed there,
+    // parked against the wall for the rest of the race. A car on the limit can
+    // still hold its speed — that is what being on the limit means — so drive
+    // bottoms out at a third rather than at nothing.
+    const driveGrip = Math.max(
+      MIN_DRIVE_GRIP,
+      Math.sqrt(Math.max(0, 1 - load * load)),
+    );
     const grassMul = this.offRoad ? 0.55 : 1;
     if (input.throttle) vf += tuning.accel * grassMul * driveGrip * dt;
     else if (input.brake) vf -= tuning.accel * 1.5 * dt;          // brake / reverse
@@ -242,10 +268,34 @@ export class FreeDrive {
     // bug this is fixing.
     if (!tuning.cornerGrip || tuning.cornerGrip <= 0) this.latAccel = 0;
     if (tuning.cornerGrip && tuning.cornerGrip > 0) {
-      let dYaw = this.heading - headingBefore;
-      dYaw = Math.atan2(Math.sin(dYaw), Math.cos(dYaw));     // shortest way round
-      const yawRate = Math.abs(dYaw) / Math.max(1e-4, dt);
-      const latAccel = yawRate * Math.abs(vf);
+      // MEASURED FROM THE PATH, NOT THE HEADING.
+      //
+      // The first version used the car's yaw rate × speed, which in this model
+      // is not a lateral acceleration at all: steering sets the HEADING
+      // directly and the velocity follows only as fast as the grip term drags
+      // it round. A flick of full lock is ~2 rad/s, so at 46 m/s that read as
+      // 92 m/s² against a 5 m/s² limit — and the scrub then removed 100 m/s of
+      // speed per second. Measured: holding one steering key took the car from
+      // 104 mph to a DEAD STOP against the wall in five seconds, permanently.
+      //
+      // The real centripetal load is how fast the DIRECTION OF TRAVEL turns,
+      // which the grip term already bounds — so it cannot run away, and a flick
+      // costs what a flick should cost rather than the whole race.
+      //
+      // (I missed this because every measurement up to that point was taken
+      // hands-off, where the steering assist turns the car gently. The failure
+      // only appears when a player actually steers.)
+      const speedNow = Math.hypot(this.vx, this.vz);
+      let latAccel = 0;
+      if (speedNow > 2) {
+        const vHeading = Math.atan2(this.vx, this.vz);
+        let dv = vHeading - this.prevVHeading;
+        dv = Math.atan2(Math.sin(dv), Math.cos(dv));
+        latAccel = (Math.abs(dv) / Math.max(1e-4, dt)) * speedNow;
+        this.prevVHeading = vHeading;
+      } else {
+        this.prevVHeading = Math.atan2(this.vx, this.vz);
+      }
       this.latAccel = latAccel;              // feeds next step's friction circle
       const over = latAccel - tuning.cornerGrip;
       if (over > 0) {

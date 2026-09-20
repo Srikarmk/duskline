@@ -411,7 +411,7 @@ The apex change replaced `placeDriftZones`' body and signature but left its
 doc comment behind, so a commit shipped a 16-line block describing drift zones
 sitting directly above the function that replaced them. Removed with the rest.
 
-### ◻ 🔴 NEW — The game has exactly one speed
+### ✅ 🔴 NEW — The game had exactly one speed
 The most important finding here, and it is not about any of the above.
 
 Measured over a full lap at racing pace: **mean 122.9 mph against a maximum of
@@ -432,10 +432,42 @@ This is why it does not feel like an arcade racer. The loop those games run on
 no first step here. Every gimmick above was an attempt to add interest on top
 of a constant-velocity drive, which is why none of them could have worked.
 
-Fixing it means touching the core: cornering that scrubs speed above a grip
-limit, brakes that matter, and an assist that helps rather than drives. That
-is a deliberate design change to how the game feels, not a bug fix, so it is
-written down here rather than done unasked.
+**Fixed with a friction circle.** A tyre has one budget of grip and cornering
+spends it; what is left is what you can put down as drive. Cornering load above
+the limit also scrubs forward speed directly.
+
+Two things had to be got right, and both were wrong first:
+
+- **Load is measured from the PATH, not the heading.** Yaw rate × speed is not
+  a lateral acceleration in this model — steering sets the heading directly and
+  the velocity follows only as fast as grip drags it round. A flick of full
+  lock is ~2 rad/s, so at 46 m/s it read as 92 m/s² against a 5 m/s² limit. How
+  fast the DIRECTION OF TRAVEL turns is the real centripetal load, and grip
+  already bounds it.
+- **Drive cannot fall to zero at the limit.** The textbook circle takes it to
+  nothing, and a car both cornering hard and held by the containment wall then
+  never recovers. It floors at 0.2 — enough to recover on, not enough to power
+  through a corner. (At 0.34 the floor alone cancelled the scrub: even a grip
+  limit of 2.5 left 92% of the lap above 110 mph.)
+
+Measured over a lap, before → after:
+
+| | before | after |
+| --- | --- | --- |
+| standard deviation | 1.9 mph | **11.5** |
+| range | 121-123 | **76-150** |
+| below 110 mph | 0% | **19%** |
+| off-road, hands-off | 0% | 0% |
+
+Also fixed on the way: `tuning.cornerGrip ?? Infinity` only catches
+null/undefined, so a limit of 0 divided and turned `load`, `driveGrip` and then
+every velocity in the simulation into NaN — surfacing as a non-finite value
+thrown by the audio engine, several layers away.
+
+**Not fixed, and worth knowing:** holding a steering key at speed still walls
+the car and brings it to a dead stop. Verified against a build with the
+friction circle switched off entirely — it does the same, so it is the
+containment wall and predates all of this.
 
 ---
 
