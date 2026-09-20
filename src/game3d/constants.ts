@@ -60,6 +60,20 @@ export const CENTRI_K = 0.78; // stronger corner load — you must actively stee
 // --- free-roam driving (the car is a world-space body, not rail-locked) ---
 export const FREE_TURN_RATE = 2.0; // base yaw rate (rad/s) — dialed back further (was 2.6) so it isn't over-sensitive/darty
 export const FREE_GRIP = 11.5;     // lateral traction (side-slip bleed / s) — high, so the car stays PLANTED and stable; handbrake still breaks it loose for drift
+/**
+ * Cornering force the tyres hold before speed starts scrubbing, in m/s².
+ *
+ * TUNED AGAINST THE LAP'S OWN DISTRIBUTION, not from physics. Measured over a
+ * lap at racing pace the car's lateral acceleration runs p50 4.1, p80 6.3,
+ * p95 9.7, peak 20.4 m/s². A first guess of 12 (~1.2g, which sounds right for
+ * a car) put only 1.4% of the lap over the limit — corners stayed free and
+ * nothing changed. At 5 roughly a quarter of the lap is over it: the bends
+ * cost speed, the straights give it back, and the hairpins hurt.
+ *
+ * Multiplied by the kart's grip stat and by the weather, so those numbers
+ * finally mean what they say.
+ */
+export const CORNER_GRIP = 5;
 /** gentle auto-turn into bends (rad/s per rad of heading error). Subtle on
  *  purpose — it helps the car track a corner without steering for you, and
  *  fades out the moment you touch the wheel. Raise for more assist. */

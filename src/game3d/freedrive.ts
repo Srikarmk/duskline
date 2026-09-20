@@ -15,11 +15,32 @@ export interface DriveTuning {
   accel: number;      // forward acceleration (m/s²)
   turnRate: number;   // base yaw rate (rad/s) at moderate speed
   grip: number;       // lateral traction (per-second bleed of side-slip)
+  /**
+   * Cornering force the tyres hold before the car starts scrubbing speed,
+   * in m/s². Demand above this bleeds FORWARD speed — see the scrub below.
+   * Undefined = no limit, which is how this drove before: a constant-velocity
+   * ride where corners cost nothing.
+   */
+  cornerGrip?: number;
   contain?: boolean;  // soft walls keep the car on the ribbon (default true); false = free flight (mech)
   assist?: number;    // gentle auto-turn into bends (rad/s per rad of error); 0/undefined = off
 }
 
 const clampN = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+/**
+ * Metres per second of forward speed lost per second, per m/s² of cornering
+ * demand beyond what the tyres hold.
+ *
+ * This is a RATE, and what it really controls is how fast the car converges on
+ * the speed a corner can actually be taken at. That speed is fixed by the
+ * geometry: holding radius r needs v²/r ≤ limit, so the car settles at
+ * √(limit·r) — about 107 mph through a 322 m sweeper and 56 through an 86 m
+ * hairpin. At 0.5 the convergence was so slow that a two-second corner shed
+ * only 5-10 mph and 80% of the lap still sat in one 10 mph band; the car was
+ * never in the corner long enough to be slowed by it.
+ */
+const CORNER_SCRUB = 2.5;
 
 /**
  * FREE-ROAM arcade driving: the car is a real body in world space (x,z + heading
@@ -41,6 +62,9 @@ export class FreeDrive {
   onWall = false;
   drifting = false;
   slip = 0;           // side-slip speed (m/s), for a visual yaw kick
+  /** Lateral acceleration the tyres were carrying last step (m/s²). Drives the
+   *  friction circle at the top of the next one. */
+  latAccel = 0;
   speed = 0;          // signed forward speed (m/s)
   /** alternate routes: the car drives whichever road (main or a branch) it's
    *  nearest to. Set by the engine after building branches. */
@@ -53,13 +77,14 @@ export class FreeDrive {
     const t = track.tangentAt(track.wrap(d0));
     this.x = p.x; this.z = p.z;
     this.heading = Math.atan2(t.x, t.z);
-    this.vx = 0; this.vz = 0; this.speed = 0; this.slip = 0;
+    this.vx = 0; this.vz = 0; this.speed = 0; this.slip = 0; this.latAccel = 0;
     this.dist = track.wrap(d0);
     this.lateral = 0; this.offRoad = false; this.onWall = false; this.drifting = false;
   }
 
   /** Advance one fixed step. Returns nothing; read the public fields after. */
   step(input: DriveInput, dt: number, track: Track, tuning: DriveTuning) {
+    const headingBefore = this.heading;
     const F = { x: Math.sin(this.heading), z: Math.cos(this.heading) };   // forward
     const R = { x: F.z, z: -F.x };                                        // right of forward
 
@@ -68,8 +93,24 @@ export class FreeDrive {
     let vl = this.vx * R.x + this.vz * R.z;
 
     // --- throttle / brake -------------------------------------------------
+    //
+    // THE FRICTION CIRCLE. A tyre has one budget of grip and cornering spends
+    // it: what is left over is what you can put down as forward drive. Without
+    // this the scrub below could not win — measured, acceleration is ~12.5 m/s²
+    // and a typical corner's scrub is ~7, so the engine simply powered through
+    // every bend and the car held top speed all the way round. Raising the
+    // scrub until it beat the engine would have been a number fight; taking
+    // the grip away from the engine instead is the thing that is actually
+    // happening, and it produces the loop the game was missing: turn in, lose
+    // the ability to accelerate, bleed down to the speed the corner allows,
+    // then get it all back on the exit.
+    //
+    // Uses LAST step's cornering load, which is a frame of lag nobody can feel.
+    const limit = tuning.cornerGrip ?? Infinity;
+    const load = Math.min(1, this.latAccel / limit);
+    const driveGrip = Math.sqrt(Math.max(0, 1 - load * load));
     const grassMul = this.offRoad ? 0.55 : 1;
-    if (input.throttle) vf += tuning.accel * grassMul * dt;
+    if (input.throttle) vf += tuning.accel * grassMul * driveGrip * dt;
     else if (input.brake) vf -= tuning.accel * 1.5 * dt;          // brake / reverse
     else vf -= Math.sign(vf) * Math.min(Math.abs(vf), tuning.accel * 0.35 * dt); // engine drag
     const topFwd = tuning.maxSpeed * grassMul;
@@ -178,6 +219,43 @@ export class FreeDrive {
         const yieldToInput = 1 - Math.min(1, Math.abs(steer)) * 0.7; // your input wins
         this.heading += toAim * tuning.assist * yieldToInput * dt;
       }
+      }
+    }
+
+    // --- CORNERING SCRUB ---------------------------------------------------
+    //
+    // THE reason this did not feel like a racing game. Measured over a full lap
+    // before this existed: mean 122.9 mph against a maximum of 123, standard
+    // deviation 1.9, and 100% of the lap spent within 5 mph of top speed. The
+    // car reached terminal velocity 3.3 s after the lights and held it for the
+    // rest of the race, through every corner, because nothing anywhere took
+    // speed away. With no speed to lose there is no speed to regain, so the
+    // whole arcade loop — lift, commit to a line, get it back on the exit —
+    // had no first step.
+    //
+    // A corner is the car turning, and turning is lateral acceleration:
+    // yaw rate × speed. Above what the tyres hold, the excess has to come out
+    // of forward speed. Deliberately measured from the ACTUAL heading change
+    // rather than from the player's input, because the steering assist turns
+    // the car too — if only your own steering scrubbed, the assist would go on
+    // carrying you through every corner at full speed, which is exactly the
+    // bug this is fixing.
+    if (!tuning.cornerGrip || tuning.cornerGrip <= 0) this.latAccel = 0;
+    if (tuning.cornerGrip && tuning.cornerGrip > 0) {
+      let dYaw = this.heading - headingBefore;
+      dYaw = Math.atan2(Math.sin(dYaw), Math.cos(dYaw));     // shortest way round
+      const yawRate = Math.abs(dYaw) / Math.max(1e-4, dt);
+      const latAccel = yawRate * Math.abs(vf);
+      this.latAccel = latAccel;              // feeds next step's friction circle
+      const over = latAccel - tuning.cornerGrip;
+      if (over > 0) {
+        // Speed lost per second, proportional to how far past the limit you
+        // are. Applied to the whole velocity so the side-slip scrubs with it.
+        const loss = Math.min(Math.abs(vf), over * CORNER_SCRUB * dt);
+        const k = Math.abs(vf) > 1e-3 ? Math.max(0, 1 - loss / Math.abs(vf)) : 1;
+        this.vx *= k;
+        this.vz *= k;
+        this.speed = vf * k;
       }
     }
 

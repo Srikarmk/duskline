@@ -11,7 +11,7 @@ import {
   ROAD_HALF_WIDTH, LANE_CENTERS, CAR_LIFT,
   MAX_SPEED, ACCEL, DECEL, 
   STEER_RESPONSE, STEER_RETURN, 
-  FREE_TURN_RATE, FREE_GRIP, FREE_STEER_ASSIST, 
+  FREE_TURN_RATE, FREE_GRIP, CORNER_GRIP, FREE_STEER_ASSIST, 
   DRIFT_MIN_CHARGE, DRIFT_BOOST_FACTOR,
   OUT_OF_BOUNDS_X, OFFTRACK_GRACE,
   NITRO_MAX_CHARGES, NITRO_DURATION, NITRO_SPEED_FACTOR,
@@ -4367,6 +4367,12 @@ export class Game {
         // touching top speed, so the straights are unchanged and every corner
         // becomes a decision. See WEATHER_GRIP.
         grip: FREE_GRIP * clamp(1 + this.gLoad * 0.22, 0.72, 1.28) * this.gripMul,
+        // Corners now COST speed above the tyres' limit — see the scrub in
+        // freedrive. Scaled by the car's grip stat and by the weather, so a
+        // better-handling kart carries more through a bend and a wet road
+        // takes it away, which is what those numbers were always supposed to
+        // mean and never did.
+        cornerGrip: CORNER_GRIP * this.carStat.grip * this.gripMul,
         // Free flight only while the mech is ACTUALLY AIRBORNE. Gating these on
         // `transformed` alone meant that the instant you grabbed an orb you lost
         // the walls, the steering assist AND the off-track respawn all at once —
