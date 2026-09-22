@@ -228,6 +228,14 @@ export interface RealmPalette {
   /** optional multiply-tint for the PBR ground albedo (realms that reuse
    *  another realm's shipped ground texture recolour it to their own hue) */
   groundTint?: number;
+  /**
+   * Ground STRUCTURE, when the shared rock photo's grain is wrong for this
+   * world. `recolourAlbedo` can make the surface any colour; it cannot make
+   * the Gulf highway's sand ripple or the snowbound pass drift. Realms whose
+   * ground really is rock or grass leave this unset and keep the photograph's
+   * own normal map. See makeGroundNormal.
+   */
+  groundDetail?: "sand" | "snow" | "crack";
   // road texture (canvas)
   road: string;
   roadDark: string;
@@ -463,6 +471,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       hemiSky: 0xcfeeff, hemiGround: 0x1e405a, hemiInt: 0.85,
       sun: 0xeaf6ff, sunInt: 0.95,
       groundBase: "#e8f2fc", groundSpeck: "#c7ddf0", groundDark: "#9fc0dd",
+      groundDetail: "snow",
       road: "#3d4a5c", roadDark: "#303c4c", rumbleA: "#1a4a8a", rumbleB: "#8fd4f5",
       laneLine: "#eef8ff", edgeLine: "#dbeafe", roadFinish: "ice",
       crystalColors: [0x60d0f5, 0xa8e6ff, 0xf0fbff],
@@ -553,6 +562,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       sun: 0xffcf80, sunInt: 1.25,
       groundBase: "#d9a668", groundSpeck: "#c48a4a", groundDark: "#9c6b34",
       groundTint: 0xcaa46a,
+      groundDetail: "sand",
       road: "#8a6f4a", roadDark: "#705a3c", rumbleA: "#b3892f", rumbleB: "#f0b24a",
       laneLine: "#ffe6b0", edgeLine: "#fff2cc", roadFinish: "dusty",
       crystalColors: [0xf0b24a, 0xffcf80, 0xffe6b0],
@@ -765,6 +775,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       sun: 0xffd9a0, sunInt: 0.9,
       groundBase: "#6b4a52", groundSpeck: "#7d5560", groundDark: "#3d2833",
       groundTint: 0x8a5f63,
+      groundDetail: "sand",
       road: "#2a2230", roadDark: "#1d1825", rumbleA: "#ffffff", rumbleB: "#e8555f",
       laneLine: "#fff3d6", edgeLine: "#ffe6b0", roadFinish: "gloss",
       crystalColors: [0xffae5c, 0xe8555f, 0xffd9a0],
@@ -861,6 +872,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       sun: 0xfff0dc, sunInt: 0.8,
       groundBase: "#eef4fb", groundSpeck: "#dae4f0", groundDark: "#a8b6c8",
       groundTint: 0xf4f8ff,
+      groundDetail: "snow",
       road: "#3e444d", roadDark: "#31363e", rumbleA: "#ffffff", rumbleB: "#2f5fa8",
       laneLine: "#f4f8ff", edgeLine: "#ffd166", roadFinish: "wet",
       crystalColors: [0xbfe0ff, 0xe8f4ff, 0xffffff],
@@ -904,6 +916,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       sun: 0xffffff, sunInt: 1.15,
       groundBase: "#d9b47e", groundSpeck: "#eacb95", groundDark: "#a57f4d",
       groundTint: 0xe8d2a4,
+      groundDetail: "sand",
       road: "#33333c", roadDark: "#282830", rumbleA: "#f4f0e6", rumbleB: "#e8a33a",
       laneLine: "#fffaf0", edgeLine: "#fff0c8", roadFinish: "dusty",
       crystalColors: [0xffd98a, 0x93d9d0, 0xffffff],
@@ -947,6 +960,7 @@ export const REALMS: Record<RealmId, RealmSpec> = {
       sun: 0xfff6e0, sunInt: 1.1,
       groundBase: "#b5673f", groundSpeck: "#ca7c4d", groundDark: "#77402a",
       groundTint: 0xd9905e,
+      groundDetail: "crack",
       road: "#3a3540", roadDark: "#2d2932", rumbleA: "#f0eee8", rumbleB: "#c2432c",
       laneLine: "#fff4e0", edgeLine: "#ffe0b0", roadFinish: "dusty",
       crystalColors: [0xffcf9a, 0xc2432c, 0xfff4e0],

@@ -502,6 +502,27 @@ containment wall and predates all of this.
    | Mirage Mile | `#d9b47e` sand | `#e0be88` |
    | Basin Run | `#b5673f` red rock | `#9f5a38` |
 
+   **Structure, too.** Colour was only half of it: the rock grain underneath
+   was identical everywhere, so the Gulf highway and the snowbound pass had the
+   same cracks in the same places. `groundDetailField` synthesises the three
+   surfaces that are regular enough to beat a photograph — wind ripples are
+   periodic, drifts are low-frequency and smooth, dried mud is a cell structure
+   — and blends them into the luminance the ramp reads (55% photo / 45%
+   pattern), so the photo's grain still carries the realism.
+
+   It goes in the ALBEDO, not a normal map, because the engine deliberately
+   drops the ground's normal ("terrain fills the screen — drop the per-pixel
+   normal cost"). A generated normal map was built and thrown away by that line
+   before this was noticed. Baking into the albedo costs nothing per frame and
+   respects the existing optimisation.
+
+   Ripples run at 9 cycles per tile, not 34. The ground tiles at 220 over a
+   2,800 m disc, so a tile is ~12.7 m: 34 cycles is a 37 cm wavelength, which
+   is what a real wind ripple measures and is invisible from a car fifty metres
+   away. 9 gives ~1.4 m corrugations that read at driving distance.
+
+   Cost: 1.6 ms (sand), 28 ms (dried mud) per race, once. No new files.
+
    One bug worth recording: `new THREE.Color(0xd9b47e)` does not store that
    number. With colour management on, the constructor converts the sRGB hex
    into the LINEAR working space, so `.r/.g/.b` are ~0.71/0.46/0.22 rather than

@@ -274,6 +274,7 @@ export function stoneMaps(hex: number): { map: THREE.Texture; bump: THREE.Textur
  */
 export function recolourAlbedo(
   src: THREE.Texture, dark: THREE.Color, base: THREE.Color, speck: THREE.Color,
+  detail?: GroundDetail,
 ): THREE.Texture | null {
   const img = src.image as (HTMLImageElement | ImageBitmap | null);
   if (!img || !(img as HTMLImageElement).width) return null;
@@ -321,9 +322,22 @@ export function recolourAlbedo(
   const [br, bg, bb] = bytes(base);
   const [sr, sg, sb] = bytes(speck);
 
-  for (let i = 0; i < d.length; i += 4) {
+  // The realm's own surface structure, blended into the luminance the ramp
+  // reads. 0.55 photo / 0.45 pattern: enough that sand ripples and dried-mud
+  // cracks are unmistakably there, not so much that the photograph's grain
+  // (which is what stops any of this looking like a gradient) is lost.
+  const FIELD = 512;
+  const field = detail ? groundDetailField(detail, FIELD) : null;
+  const fx = FIELD / w, fy = FIELD / h;
+
+  for (let p = 0, i = 0; i < d.length; i += 4, p++) {
     const lum = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
-    const t = Math.max(0, Math.min(1, (lum - lo) / span));
+    let t = Math.max(0, Math.min(1, (lum - lo) / span));
+    if (field) {
+      const sxi = ((p % w) * fx) | 0, syi = (((p / w) | 0) * fy) | 0;
+      t = t * 0.55 + field[(syi % FIELD) * FIELD + (sxi % FIELD)] * 0.45;
+      t = Math.max(0, Math.min(1, t));
+    }
     // dark → base over the lower half, base → speck over the upper
     if (t < 0.5) {
       const k = t * 2;
@@ -345,4 +359,105 @@ export function recolourAlbedo(
   out.anisotropy = ANISO;
   out.needsUpdate = true;
   return out;
+}
+
+/** Ground surface structures that are regular enough to synthesise convincingly. */
+export type GroundDetail = "sand" | "snow" | "crack";
+
+/**
+ * A ground structure pattern, as a height field in 0..1.
+ *
+ * `recolourAlbedo` fixed the hue problem — ten realms sharing one photograph
+ * and multiplying it by a tint — but not the other half: the rock grain
+ * underneath is identical everywhere, so the Gulf highway and the snowbound
+ * pass have the same cracks in the same places.
+ *
+ * This lands in the ALBEDO rather than in a normal map, on purpose. The engine
+ * explicitly drops the ground's normal map ("terrain fills the screen — drop
+ * the per-pixel normal cost"), so a generated normal would have been built and
+ * then thrown away. Baking the pattern into the albedo's luminance costs
+ * nothing per frame, survives that optimisation, and still reads as structure
+ * because it is the light and shade a structure would produce.
+ *
+ * Buying photographs instead would not work here anyway: normal maps are the
+ * expensive half of a texture set (111-161 kB against 9-78 kB for the albedos),
+ * and one more set would spend the whole remaining budget on a single realm.
+ * These three patterns are regular enough that synthesis is the better answer:
+ * wind ripples are periodic, drifts are low-frequency and smooth, and dried mud
+ * is a cell structure.
+ */
+export function groundDetailField(kind: GroundDetail, size = 512): Float32Array {
+  const h = new Float32Array(size * size);
+
+  // value noise on a wrapping lattice, so the tile has no seam
+  const lattice = (cells: number, seed: number) => {
+    const g = new Float32Array(cells * cells);
+    let s = seed;
+    for (let i = 0; i < g.length; i++) {
+      s = (s * 1664525 + 1013904223) >>> 0;
+      g[i] = s / 4294967296;
+    }
+    return (u: number, v: number) => {
+      const x = u * cells, y = v * cells;
+      const x0 = Math.floor(x), y0 = Math.floor(y);
+      const fx = x - x0, fy = y - y0;
+      const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+      const a = g[(y0 & (cells - 1)) * cells + (x0 & (cells - 1))];
+      const b = g[(y0 & (cells - 1)) * cells + ((x0 + 1) & (cells - 1))];
+      const c = g[((y0 + 1) & (cells - 1)) * cells + (x0 & (cells - 1))];
+      const d = g[((y0 + 1) & (cells - 1)) * cells + ((x0 + 1) & (cells - 1))];
+      return (a + (b - a) * sx) + ((c + (d - c) * sx) - (a + (b - a) * sx)) * sy;
+    };
+  };
+
+  const n1 = lattice(4, 12345), n2 = lattice(8, 777), n3 = lattice(16, 99), n4 = lattice(64, 4242);
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const u = x / size, v = y / size;
+      let z = 0;
+      if (kind === "sand") {
+        // Wind ripples: a periodic wave whose phase is warped by low-frequency
+        // noise, so the crests wander like real dunes instead of ruling lines
+        // across the desert. Ripples are what make sand read as sand.
+        // 9 cycles per tile, not 34. The ground tiles at 220 over a 2,800 m
+        // disc, so a tile is ~12.7 m: 34 cycles is a 37 cm wavelength, which is
+        // what a real wind ripple measures and is invisible from a car fifty
+        // metres away. 9 gives ~1.4 m corrugations that actually read at
+        // driving distance. Visible beats physically accurate here.
+        const warp = n1(u, v) * 2.2 + n2(u, v) * 0.8;
+        z = Math.sin((v * 9 + warp) * Math.PI * 2) * 0.5 + 0.5;
+        z = Math.pow(z, 1.6) * 0.7;              // sharp crests, wide troughs
+        z += n3(u, v) * 0.22 + n4(u, v) * 0.08;  // drift + grain
+      } else if (kind === "snow") {
+        // Drifts: low frequency and smooth, with almost no fine detail —
+        // snow buries grain rather than showing it.
+        z = n1(u, v) * 0.62 + n2(u, v) * 0.3 + n3(u, v) * 0.08;
+        z = z * z * (3 - 2 * z);                 // smoothstep, softening the lumps
+      } else {
+        // Dried mud: cell edges. Distance to the second-nearest of a jittered
+        // point set is the standard way to get polygonal cracks.
+        const CELLS = 10;
+        const cx = u * CELLS, cy = v * CELLS;
+        let d1 = 9, d2 = 9;
+        for (let oy = -1; oy <= 1; oy++) {
+          for (let ox = -1; ox <= 1; ox++) {
+            const gx = Math.floor(cx) + ox, gy = Math.floor(cy) + oy;
+            let s = ((gx & 255) * 73856093) ^ ((gy & 255) * 19349663);
+            s = (s * 1664525 + 1013904223) >>> 0;
+            const jx = gx + (s / 4294967296);
+            s = (s * 1664525 + 1013904223) >>> 0;
+            const jy = gy + (s / 4294967296);
+            const dd = Math.hypot(cx - jx, cy - jy);
+            if (dd < d1) { d2 = d1; d1 = dd; } else if (dd < d2) { d2 = dd; }
+          }
+        }
+        const edge = Math.min(1, (d2 - d1) * 2.6);   // 0 on a crack, 1 mid-plate
+        z = edge * 0.85 + n4(u, v) * 0.15;
+      }
+      h[y * size + x] = z;
+    }
+  }
+
+  return h;
 }

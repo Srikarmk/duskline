@@ -1035,6 +1035,11 @@ export function makeGround(pal: RealmPalette): THREE.Mesh {
         new THREE.Color(pal.groundDark),
         new THREE.Color(pal.groundBase),
         new THREE.Color(pal.groundSpeck),
+        // …and the realm's own surface structure, baked into the same albedo.
+        // It cannot go in a normal map: the engine drops the ground's normal
+        // deliberately ("terrain fills the screen"), so one would be generated
+        // and thrown away. See groundDetailField.
+        pal.groundDetail,
       );
       if (ramped) {
         ramped.repeat.copy(t.diff.repeat);
