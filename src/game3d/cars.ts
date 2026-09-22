@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { mergeStaticParts } from "./merge";
+import { mergeStaticParts, mergeByMaterial } from "./merge";
 import type { CarId } from "../game/engine";
 import { metalDetail, pbr, ANISO } from "./textures";
 
@@ -300,16 +300,21 @@ function makeWheel(
   tireMat: THREE.Material, rimMat: THREE.Material, outSign = 1
 ): THREE.Group {
   const g = new THREE.Group();
-  const tire = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, treadW, 16), tireMat);
+  // TESSELLATION IS FREE HERE, draw calls are not. Every part below merges into
+  // one mesh per material (see the merge at the end), so raising segment counts
+  // costs triangles only — and the cars were 0.5% of the frame's triangles
+  // while being 65% of its draw calls. A 16-sided tyre is a visible decagon
+  // from a chase camera three metres behind it; 32 is round.
+  const tire = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, treadW, 32), tireMat);
   tire.rotation.z = Math.PI / 2;
   g.add(tire);
   // dished rim barrel just inside the tyre
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.64, radius * 0.64, treadW * 1.02, 8), rimMat);
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.64, radius * 0.64, treadW * 1.02, 24), rimMat);
   barrel.rotation.z = Math.PI / 2;
   g.add(barrel);
   // alloy face (hub + crossed spokes + lip ring) on the visible outboard side
   const face = new THREE.Group();
-  const hub = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.26, radius * 0.24, 0.05, 12), hubMat());
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.26, radius * 0.24, 0.05, 20), hubMat());
   hub.rotation.z = Math.PI / 2;
   face.add(hub);
   const spokeGeo = new THREE.BoxGeometry(0.035, radius * 1.26, radius * 0.13);
@@ -318,7 +323,7 @@ function makeWheel(
     s.rotation.x = (i / 5) * Math.PI; // five crossed bars → a ten-arm alloy
     face.add(s);
   }
-  const lip = new THREE.Mesh(new THREE.TorusGeometry(radius * 0.86, radius * 0.09, 4, 18), rimMat);
+  const lip = new THREE.Mesh(new THREE.TorusGeometry(radius * 0.86, radius * 0.09, 8, 28), rimMat);
   lip.rotation.y = Math.PI / 2;
   face.add(lip);
   // lug nuts around the hub — tiny, but they are the thing that reads as a
@@ -336,13 +341,21 @@ function makeWheel(
   // BRAKES, seen through the spokes. A wheel with nothing behind it reads as a
   // sticker; a disc and a caliper give the arch depth, and on a car this size
   // they are the most visible mechanical detail there is.
-  const disc = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.62, radius * 0.62, 0.035, 16), discMat());
+  const disc = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.62, radius * 0.62, 0.035, 28), discMat());
   disc.rotation.z = Math.PI / 2;
   disc.position.x = outSign * treadW * 0.18;
   g.add(disc);
   const cal = new THREE.Mesh(new THREE.BoxGeometry(0.07, radius * 0.46, radius * 0.2), caliperMat());
   cal.position.set(outSign * treadW * 0.18, radius * 0.42, -radius * 0.24);
   g.add(cal);
+  // COLLAPSE THE WHEEL. Every part of it spins together, so there is no reason
+  // for it to be sixteen draw calls. Measured before this: the four wheels were
+  // 64 of a car's 76 meshes, and ten cars came to 798 meshes — 65% of the
+  // frame's entire draw-call budget for 0.5% of its triangles, on a renderer
+  // that is draw-call bound. `mergeStaticParts` skips anything tagged as a
+  // wheel, correctly, because a wheel rotates relative to the body; merging
+  // WITHIN one is safe for exactly the same reason it is unsafe across one.
+  mergeByMaterial(g, false);
   g.position.set(x, radius, z);
   // tag so the engine can spin (X) and steer (Y) it; YXZ = steer then spin
   g.rotation.order = "YXZ";
@@ -372,6 +385,67 @@ function catmull(a: number, b: number, c: number, d: number, t: number): number 
 }
 
 /**
+ * Subdivide a rib's cross-section, rounding the gentle turns and KEEPING the
+ * sharp ones sharp.
+ *
+ * A rib gives six points per half, so the body is a ten-sided tube: however
+ * smoothly the spine is splined lengthwise, every section around the car is a
+ * decagon, and that is what reads as "low-poly" from the chase camera. The
+ * roof is the worst of it — one flat quad from the deck edge to the centre
+ * line, which is why roofs looked like folded card.
+ *
+ * Straight Catmull-Rom around the section would fix that and destroy the car:
+ * the rib table's whole point is its EDGES — the sill, and the shoulder where
+ * a flat flank ends — and the existing comments say so ("wMax is held from the
+ * sill all the way to the shoulder so the flank is a flat wall ending in an
+ * EDGE", "subdiv 2, not 6… resampling six times splines the edges out of
+ * existence"). So the spline is blended out wherever the section turns hard:
+ * corners tighter than ~35° stay exactly where the table put them, gentle ones
+ * round off. Same table, same silhouette, no facets across the roof.
+ */
+function refineSection(half: [number, number][], n: number): [number, number][] {
+  const K = half.length;
+  const at = (i: number) => half[Math.max(0, Math.min(K - 1, i))];
+  // How sharp is the corner AT each control point? 1 = straight through,
+  // 0 = folded back on itself.
+  const straightness = half.map((_, i) => {
+    const a = at(i - 1), b = half[i], c = at(i + 1);
+    const ax = b[0] - a[0], ay = b[1] - a[1], cx = c[0] - b[0], cy = c[1] - b[1];
+    const la = Math.hypot(ax, ay), lc = Math.hypot(cx, cy);
+    if (la < 1e-6 || lc < 1e-6) return 1;
+    return Math.max(0, (ax * cx + ay * cy) / (la * lc));   // cos of the turn
+  });
+  const out: [number, number][] = [];
+  for (let i = 0; i < K - 1; i++) {
+    out.push(half[i]);
+    // A segment is only rounded as much as its SHARPER end allows, so an edge
+    // stays an edge from both sides.
+    const soft = Math.min(straightness[i], straightness[i + 1]);
+    const round = Math.max(0, (soft - 0.82) / 0.18);   // ~35 degrees and gentler
+    // ALWAYS insert the same number of points, even where round is 0 — every
+    // rib has to come out the same length, because the loft skins rib i to rib
+    // i+1 point by point and its own doc says so. Skipping insertion on sharp
+    // corners made each rib a different length depending on its shape, and the
+    // engine died indexing past the end of a shorter one. Where round is 0 the
+    // inserted points land exactly on the straight edge, so an edge stays an
+    // edge and only the vertex count changes.
+    const p0 = at(i - 1), p1 = half[i], p2 = half[i + 1], p3 = at(i + 2);
+    for (let k = 1; k < n; k++) {
+      const t = k / n;
+      const cx = catmull(p0[0], p1[0], p2[0], p3[0], t);
+      const cy = catmull(p0[1], p1[1], p2[1], p3[1], t);
+      const lx = p1[0] + (p2[0] - p1[0]) * t;            // the straight edge
+      const ly = p1[1] + (p2[1] - p1[1]) * t;
+      out.push([lx + (cx - lx) * round, ly + (cy - ly) * round]);
+    }
+  }
+  out.push(half[K - 1]);
+  // x >= 0 is required: the loft mirrors this half to close the loop, and a
+  // spline overshooting past the centre line would fold the body inside out.
+  return out.map(([x, y]) => [Math.max(0, x), y] as [number, number]);
+}
+
+/**
  * Loft a car body from a spine of cross-section ribs. `subdiv` Catmull-Rom
  * resamples the spine for a SMOOTH lengthwise surface; the result is an indexed,
  * UV-mapped, smooth-normal shell (so panel/metal normal maps show and shading
@@ -379,7 +453,8 @@ function catmull(a: number, b: number, c: number, d: number, t: number): number 
  * on = faceted. Ribs are supplied front (nose, +z) → back (tail, -z); winding
  * gives outward normals under normal backface culling.
  */
-function loftBody(ribs: Rib[], mat: THREE.Material, subdiv = 1): THREE.Mesh {
+function loftBody(ribs: Rib[], mat: THREE.Material, subdiv = 1, crossSubdiv = 3): THREE.Mesh {
+  ribs = crossSubdiv > 1 ? ribs.map((r) => ({ z: r.z, half: refineSection(r.half, crossSubdiv) })) : ribs;
   const M = ribs[0].half.length;
 
   // resample the rib spine (each half-point x,y and z splined over rib index)

@@ -469,6 +469,59 @@ the car and brings it to a dead stop. Verified against a build with the
 friction circle switched off entirely — it does the same, so it is the
 containment wall and predates all of this.
 
+### ✅ 🟠 NEW — The cars were 65% of the draw calls and 0.5% of the triangles
+Asked to improve how the cars look, I measured them first, and the numbers were
+the opposite way round from the assumption:
+
+| | before |
+| --- | --- |
+| frame draw calls | 1,232 |
+| ten cars | **798 meshes — 65% of the frame's draw calls** |
+| ten cars | 42,092 triangles — **0.5%** of the frame's triangles |
+| per car | 80 meshes, 4,209 triangles |
+
+On a renderer that is draw-call bound, the cars were spending the budget on the
+wrong axis entirely. 64 of each car's 76 meshes were WHEELS: `mergeStaticParts`
+skips anything tagged `userData.wheel`, correctly, because a wheel rotates
+relative to the body — but every part of ONE wheel rotates together, so a wheel
+can be merged internally for exactly the reason it cannot be merged externally.
+
+That paid for the detail. Tessellation is free here and draw calls are not, so
+the segment counts went up behind the merge: the tyre from 16 sides to 32 (a
+16-gon is a visible decagon from a chase camera three metres back), the rim
+barrel 8 → 24, the lip torus 4×18 → 8×28, the hub 12 → 20, the brake disc
+16 → 28.
+
+And the body: a rib gives six points per half, so however smoothly the spine is
+splined lengthwise, every section around the car is a **ten-sided tube** — the
+roof was one flat quad from the deck edge to the centre line. `refineSection`
+subdivides the cross-section, but blends the spline out wherever the section
+turns hard, so the sill and the shoulder crease stay exactly where the rib
+table put them. The existing comments are explicit that those edges are the
+design ("resampling six times splines the edges out of existence"), so rounding
+them off would have been a regression dressed as an improvement.
+
+| | after |
+| --- | --- |
+| frame draw calls | **975** (−257) |
+| per car | **40 meshes** (−50%), **7,745 triangles** (×1.8) |
+| wheel meshes per car | 64 → **24** |
+
+Verified across all nine grid cars: every model builds, no NaN vertices,
+7,420-7,788 triangles each.
+
+One bug on the way, worth recording: `refineSection` first inserted a VARIABLE
+number of points per segment (skipping insertion on sharp corners), so
+different ribs came out different lengths — and the loft skins rib *i* to rib
+*i+1* point by point, with its own doc saying every rib must have the same
+count. The engine died indexing past the end of a shorter rib. It now always
+inserts the same number and lets the blend decide where they sit; where the
+blend is zero they land on the straight edge, so an edge stays an edge.
+
+**Honest limit:** the visual gain is clear up close and modest at chase
+distance. The draw-call saving is the larger result — it is a third of the
+budget handed back, on the axis that actually binds.
+
 ---
 
 ## 2. What we could improve

@@ -26,10 +26,26 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
  *   `userData.noMerge` is skipped, along with its descendants.
  */
 export function mergeStaticParts(root: THREE.Group): void {
+  mergeByMaterial(root, true);
+}
+
+/**
+ * Merge every descendant mesh that shares a material into one mesh each.
+ *
+ * @param skipWheels leave anything tagged `userData.wheel` alone, because it
+ *   rotates independently of the body. A WHEEL'S OWN PARTS all rotate
+ *   together, though, so a wheel group can be merged internally by calling
+ *   this with `false` — which is worth doing: measured, the four wheels were
+ *   64 of a car's 76 meshes, and ten cars were 798 meshes, 65% of the frame's
+ *   entire draw-call budget, for 0.5% of its triangles.
+ */
+export function mergeByMaterial(root: THREE.Group, skipWheels = true): void {
   const byMat = new Map<THREE.Material, THREE.Mesh[]>();
   const skip = new Set<THREE.Object3D>();
   root.traverse((o) => {
-    if (o.userData.wheel || o.userData.noMerge) o.traverse((c) => skip.add(c));
+    if ((skipWheels && o.userData.wheel && o !== root) || o.userData.noMerge) {
+      o.traverse((c) => skip.add(c));
+    }
   });
   root.traverse((o) => {
     const m = o as THREE.Mesh;
