@@ -288,22 +288,38 @@ const FilmGradeShader = {
     time: { value: 0 },
     amount: { value: 1 },
     // --- illustration grade ------------------------------------------------
-    // The reference look this is chasing (JDM anime/vapourwave car art) has two
-    // properties a PBR frame does not: light falls in HARD BANDS rather than a
-    // smooth ramp, and the whole image sits in one hue family with only the
-    // neons breaking out of it. Both are a few lines here, in a pass that is
-    // already in the chain and already paid for — no new render target.
+    // The reference look this is chasing (JDM anime/vapourwave car art) has
+    // three properties a PBR frame does not: light falls in HARD BANDS rather
+    // than a smooth ramp, the whole image sits in one hue family with only the
+    // neons breaking out of it, and the shadows carry a print screen. All
+    // three are a few lines here, in a pass that is already in the chain and
+    // already paid for — no new render target.
     cel: { value: 0 },        // 0 = smooth falloff, 1 = fully banded
     duo: { value: 0 },        // 0 = full colour, 1 = the realm's own two-tone
+    halftone: { value: 0 },   // 0 = clean, 1 = a full dot screen in the shadows
+    dotPx: { value: 7 },      // dot pitch in DEVICE pixels; set from the dpr
     duoShadow: { value: new THREE.Color(0x2a2140) },
     duoLight: { value: new THREE.Color(0xffd9b0) },
   },
   vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
   fragmentShader: `
     uniform sampler2D tDiffuse; uniform float time; uniform float amount;
-    uniform float cel; uniform float duo;
+    uniform float cel; uniform float duo; uniform float halftone; uniform float dotPx;
     uniform vec3 duoShadow; uniform vec3 duoLight;
     varying vec2 vUv;
+    const vec3 W = vec3(0.2126, 0.7152, 0.0722);
+    // Four steps, not five. Nearest-band quantising can only move a pixel by
+    // half a band, so the band COUNT sets the size of the biggest visible step:
+    // at five bands the step tops out around 10% brightness, which is a change
+    // you have to be told about to notice. Four bands plus the spread below is
+    // what turns it from a filter into a light model.
+    const float BANDS = 4.0;
+    // Quantising alone keeps the average brightness and just rounds it, so the
+    // bands sit almost on top of each other. Pushing them apart around a pivot
+    // near this game's typical luminance (frames average ~0.25) is what gives
+    // the hard terminator the reference art is built on.
+    const float CEL_GAIN = 1.2;
+    const float CEL_PIVOT = 0.34;
     void main(){
       vec2 c = vUv - 0.5;
       float r2 = dot(c, c);
@@ -313,12 +329,13 @@ const FilmGradeShader = {
       col.r = texture2D(tDiffuse, vUv + off).r;
       col.g = texture2D(tDiffuse, vUv).g;
       col.b = texture2D(tDiffuse, vUv - off).b;
+      vec3 raw = col;
 
       // filmic S-curve: lifts contrast without crushing either end
       col = mix(col, col * col * (3.0 - 2.0 * col), 0.22 * amount);
 
       // split tone — cool the shadows, warm the highlights
-      float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
+      float luma = dot(col, W);
       vec3 shadowTint = vec3(0.90, 0.97, 1.10);
       vec3 highTint   = vec3(1.06, 1.01, 0.94);
       col *= mix(shadowTint, highTint, smoothstep(0.15, 0.85, luma)) * amount + (1.0 - amount);
@@ -331,14 +348,26 @@ const FilmGradeShader = {
       // shifts hues at every step and turns a sunset into confetti. Scaling the
       // colour by the ratio of banded to actual luminance keeps the hue exactly
       // and steps only the brightness, which is what cel shading is.
+      //
+      // Band the LOW-FREQUENCY luminance, not this pixel's. Quantising the raw
+      // value makes surface texture — gravel speckle, grass noise — wander
+      // across band edges, which comes out as blotches rather than flat light.
+      // Averaging a small cross first puts the steps where the LIGHT changes
+      // and lets the texture ride on top of them, multiplicatively.
       if (cel > 0.001) {
-        float lc = max(dot(col, vec3(0.2126, 0.7152, 0.0722)), 1e-4);
-        float bands = 5.0;
-        float q = floor(lc * bands + 0.5) / bands;
+        vec2 px = fwidth(vUv) * 2.2;
+        float lo = dot(raw, W) * 2.0
+          + dot(texture2D(tDiffuse, vUv + vec2(px.x, 0.0)).rgb, W)
+          + dot(texture2D(tDiffuse, vUv - vec2(px.x, 0.0)).rgb, W)
+          + dot(texture2D(tDiffuse, vUv + vec2(0.0, px.y)).rgb, W)
+          + dot(texture2D(tDiffuse, vUv - vec2(0.0, px.y)).rgb, W);
+        lo = max(lo / 6.0, 1e-4);
+        float q = floor(lo * BANDS + 0.5) / BANDS;
+        q = max((q - CEL_PIVOT) * CEL_GAIN + CEL_PIVOT, 0.0);
         // soften the step a touch so it is a painted edge, not an aliased one
-        float w = fwidth(lc) * 2.0;
-        q = mix(q, lc, clamp(w * bands, 0.0, 1.0));
-        col *= mix(1.0, q / lc, cel);
+        float w = fwidth(lo) * 2.0;
+        q = mix(q, lo, clamp(w * BANDS, 0.0, 1.0));
+        col *= mix(1.0, q / lo, cel);
       }
 
       // --- DUOTONE ----------------------------------------------------------
@@ -346,13 +375,35 @@ const FilmGradeShader = {
       // In the reference art the world sits in a single colour family and the
       // neon is the one thing that escapes it — tinting everything equally
       // would kill exactly the accents that make the look work.
+      //
+      // The ramp is renormalised to the pixel's own luminance, so this is a
+      // RECOLOUR and never a dimmer. An earlier version scaled by the ramp
+      // directly and quietly ate a fifth of the frame's brightness, which is
+      // the kind of thing that turns a night realm to mud as the tint goes up.
       if (duo > 0.001) {
-        float l2 = dot(col, vec3(0.2126, 0.7152, 0.0722));
+        float l2 = max(dot(col, W), 1e-4);
         float mx = max(col.r, max(col.g, col.b));
         float mn = min(col.r, min(col.g, col.b));
         float sat = (mx - mn) / max(mx, 1e-4);
-        vec3 ramp = mix(duoShadow, duoLight, smoothstep(0.0, 1.0, l2)) * (0.35 + l2 * 0.9);
-        col = mix(col, ramp, duo * (1.0 - smoothstep(0.35, 0.8, sat)));
+        vec3 ramp = mix(duoShadow, duoLight, smoothstep(0.0, 1.0, l2));
+        ramp *= l2 / max(dot(ramp, W), 1e-4);
+        col = mix(col, ramp, duo * (1.0 - smoothstep(0.42, 0.85, sat)));
+      }
+
+      // --- HALFTONE ---------------------------------------------------------
+      // A print dot screen, 45 degrees, in the shadows only — the dot grows as
+      // the pixel darkens, exactly as ink coverage does. Keeping it out of the
+      // highlights is what stops it reading as dirt on the lens. The pitch is
+      // in device pixels and set from the dpr, so the dots are the same
+      // physical size on a retina panel as on a 1x one.
+      if (halftone > 0.001) {
+        float s = sin(0.7854), cs = cos(0.7854);
+        vec2 rp = vec2(gl_FragCoord.x * cs - gl_FragCoord.y * s,
+                       gl_FragCoord.x * s + gl_FragCoord.y * cs) / dotPx;
+        float d = length(fract(rp) - 0.5) * 2.0;
+        float shade = 1.0 - smoothstep(0.04, 0.50, dot(col, W));
+        float inside = 1.0 - smoothstep(shade * 0.95 - 0.22, shade * 0.95 + 0.22, d);
+        col *= 1.0 - halftone * shade * 0.42 * inside;
       }
 
       // fine grain, animated so it never reads as a static pattern
@@ -856,8 +907,9 @@ export class Game {
     // their declared intent. The two-tone ends come from the realm's own
     // ground ramp, so each world is graded toward itself rather than toward
     // one global filter.
-    grade.uniforms.cel.value = pal.posterSun ? 0.55 : 0.22;
-    grade.uniforms.duo.value = pal.posterSun ? 0.34 : 0.14;
+    grade.uniforms.cel.value = pal.posterSun ? 0.9 : 0.55;
+    grade.uniforms.duo.value = pal.posterSun ? 0.5 : 0.28;
+    grade.uniforms.halftone.value = pal.posterSun ? 0.5 : 0.28;
     (grade.uniforms.duoShadow.value as THREE.Color).set(pal.groundDark);
     (grade.uniforms.duoLight.value as THREE.Color).set(pal.sky[2]);
     this.composer.addPass(grade);
@@ -890,6 +942,9 @@ export class Game {
     this.composer.setSize(w, h);
     this.bloomPass.setSize((w * dpr) / 2, (h * dpr) / 2);
     if (this.gtao) this.gtao.setSize(w * dpr, h * dpr);
+    // Halftone pitch is in device pixels: scale it with the dpr so the dots
+    // are the same size to the eye on a retina panel as on a 1x one.
+    if (this.filmGrade) this.filmGrade.uniforms.dotPx.value = 3.5 * dpr;
     this.camera.aspect = w / h;
     this.camera.fov = CAMERA_PRESETS[this.cameraIndex].fov;
     this.camera.updateProjectionMatrix();
