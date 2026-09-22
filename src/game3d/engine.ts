@@ -287,10 +287,22 @@ const FilmGradeShader = {
     tDiffuse: { value: null as THREE.Texture | null },
     time: { value: 0 },
     amount: { value: 1 },
+    // --- illustration grade ------------------------------------------------
+    // The reference look this is chasing (JDM anime/vapourwave car art) has two
+    // properties a PBR frame does not: light falls in HARD BANDS rather than a
+    // smooth ramp, and the whole image sits in one hue family with only the
+    // neons breaking out of it. Both are a few lines here, in a pass that is
+    // already in the chain and already paid for — no new render target.
+    cel: { value: 0 },        // 0 = smooth falloff, 1 = fully banded
+    duo: { value: 0 },        // 0 = full colour, 1 = the realm's own two-tone
+    duoShadow: { value: new THREE.Color(0x2a2140) },
+    duoLight: { value: new THREE.Color(0xffd9b0) },
   },
   vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
   fragmentShader: `
     uniform sampler2D tDiffuse; uniform float time; uniform float amount;
+    uniform float cel; uniform float duo;
+    uniform vec3 duoShadow; uniform vec3 duoLight;
     varying vec2 vUv;
     void main(){
       vec2 c = vUv - 0.5;
@@ -313,6 +325,35 @@ const FilmGradeShader = {
 
       // a little saturation so the realm palettes stay punchy after the S-curve
       col = mix(vec3(luma), col, 1.0 + 0.10 * amount);
+
+      // --- CEL BANDING ------------------------------------------------------
+      // Quantise the LUMINANCE, not the colour: posterising rgb independently
+      // shifts hues at every step and turns a sunset into confetti. Scaling the
+      // colour by the ratio of banded to actual luminance keeps the hue exactly
+      // and steps only the brightness, which is what cel shading is.
+      if (cel > 0.001) {
+        float lc = max(dot(col, vec3(0.2126, 0.7152, 0.0722)), 1e-4);
+        float bands = 5.0;
+        float q = floor(lc * bands + 0.5) / bands;
+        // soften the step a touch so it is a painted edge, not an aliased one
+        float w = fwidth(lc) * 2.0;
+        q = mix(q, lc, clamp(w * bands, 0.0, 1.0));
+        col *= mix(1.0, q / lc, cel);
+      }
+
+      // --- DUOTONE ----------------------------------------------------------
+      // Pull the frame toward one hue ramp, but ONLY where it is unsaturated.
+      // In the reference art the world sits in a single colour family and the
+      // neon is the one thing that escapes it — tinting everything equally
+      // would kill exactly the accents that make the look work.
+      if (duo > 0.001) {
+        float l2 = dot(col, vec3(0.2126, 0.7152, 0.0722));
+        float mx = max(col.r, max(col.g, col.b));
+        float mn = min(col.r, min(col.g, col.b));
+        float sat = (mx - mn) / max(mx, 1e-4);
+        vec3 ramp = mix(duoShadow, duoLight, smoothstep(0.0, 1.0, l2)) * (0.35 + l2 * 0.9);
+        col = mix(col, ramp, duo * (1.0 - smoothstep(0.35, 0.8, sat)));
+      }
 
       // fine grain, animated so it never reads as a static pattern
       float g = fract(sin(dot(vUv * vec2(1.0, 1.0) + time * 0.35, vec2(12.9898, 78.233))) * 43758.5453);
@@ -804,6 +845,21 @@ export class Game {
 
     // …then the film grade on top, in display space (see FilmGradeShader).
     const grade = new ShaderPass(FilmGradeShader);
+    // ILLUSTRATION GRADE, per realm. The game already aims at this look in
+    // geometry — eight realms run `posterSun`, which flat-shades the terrain
+    // and the car paint so bodies read as blocks of colour rather than
+    // gradients. What was missing is the lighting and the palette: reference
+    // art in this genre bands its light hard and sits the whole frame in one
+    // hue family, letting only the neon escape.
+    //
+    // Poster realms take it further than the rest, because that is already
+    // their declared intent. The two-tone ends come from the realm's own
+    // ground ramp, so each world is graded toward itself rather than toward
+    // one global filter.
+    grade.uniforms.cel.value = pal.posterSun ? 0.55 : 0.22;
+    grade.uniforms.duo.value = pal.posterSun ? 0.34 : 0.14;
+    (grade.uniforms.duoShadow.value as THREE.Color).set(pal.groundDark);
+    (grade.uniforms.duoLight.value as THREE.Color).set(pal.sky[2]);
     this.composer.addPass(grade);
     this.filmGrade = grade;
     this.bloomPass.enabled = loadSetting("bloom", true);
