@@ -1,4 +1,4 @@
-# Audit — opened 2026-09-15, worked 2026-09-16 and 2026-09-18
+# Audit — opened 2026-09-15, worked 2026-09-16, 09-18 and 09-22
 
 Run against the **deployed build**, not a local dev server, except where noted.
 Dependency and code checks are against the working tree.
@@ -6,12 +6,17 @@ Dependency and code checks are against the working tree.
 Severity: 🔴 fix before launch · 🟠 fix soon · 🟡 worth doing · ⚪ nice to have
 Status: ✅ fixed and verified · ◻ open
 
-**23 of 25 findings are fixed.** The two open ones are the framework upgrade
-below and, far more importantly, the single-speed finding above. The one left open is a build-time dependency
-advisory that needs a major framework upgrade, and is not reachable in this app
-— reasoning below. Six of the findings were opened by the 2026-09-18 feature
-pass: adding a mechanic is the fastest way to discover which of the existing
-ones were quietly wrong.
+**31 of 34 findings are fixed.** Three are open: the Next 16 framework upgrade
+(a build-time advisory, not reachable in this app — reasoning below), the
+progression/championship items in section 2, and N9 below, which I could not
+attribute.
+
+Six findings were opened by the 2026-09-18 feature pass and eight more by the
+2026-09-22 pass. That is the pattern worth naming: **adding a mechanic, or a
+grade, is the fastest way to find out which of the existing things were
+quietly wrong** — and two of the eight (N1, N2) were regressions I introduced
+myself two commits earlier and did not catch, because I checked the change
+where I expected it to show and not where it would break.
 
 ---
 
@@ -546,6 +551,165 @@ a diffuser, exhausts and brake discs with calipers. Four separate things I
 assumed were missing were already there. The remaining distance to a
 photo-real racer is proportions and surfacing in the ten rib tables, which is
 art direction needing reference and taste, not more part types.
+
+
+---
+
+# Pass of 2026-09-22 — five reported faults
+
+Reported as: the sky is wrong in places; alternate routes are unreachable and
+pointless and not on the map; speed is low and acceleration is weird; the
+waterfall and the odd road are still there, especially in Enchanted Forest.
+All eight findings below came out of those five sentences.
+
+### ✅ 🔴 N1 — The grade punched a black hole in the sky
+
+My own regression, from the bolder illustration grade two commits earlier. The
+cel term quantises luminance into four bands and then spreads them apart
+around a pivot. Band zero sits at **zero**, so the spread takes it negative, it
+clamps, and the pixel is multiplied by nothing. The darkest part of a smooth
+sky — the zenith — became a black disc with a razor edge where the band
+boundary crossed the dome's gradient.
+
+Two fixes: no band may land on zero, and the multiplier is bounded to
+0.6–1.6. Typical mid-frame ratios measured 0.77–1.18, so the bound only binds
+at the tails and leaves the banding everywhere it matters.
+
+### ✅ 🔴 N2 — Two independent quantisations beating against each other
+
+Also the grade. The dome already carries a 26-band posterisation authored in
+equirect space, where the bands are even in elevation angle. Running a second,
+screen-space luminance quantisation over the top produced a hard seam straight
+across the sky and a dark wedge where an edge crossed the dome's curvature.
+
+The cel term is now masked off the sky. The mask rides in the **alpha
+channel**: the dome and its cloud deck write zero, everything else writes one,
+and the pass chain carries it through untouched.
+
+**Measured: sky luminance now changes 0.00% between cel on and off, while the
+ground still changes 4.71%.**
+
+Depth is the textbook way to do this and is a dead end here — worth recording,
+because it cost most of the time on this finding. EffectComposer ping-pongs
+between two render targets with an **odd** number of swaps per frame, so which
+one the scene lands in alternates, and a `DepthTexture` shared by both sampled
+as zero everywhere. Two further traps on the way to the alpha version: an
+alpha set **before** the tone-map and colour-space includes does not survive
+them, and `onBeforeCompile` edits are **silently dropped** unless the material
+also carries its own `customProgramCacheKey` — programs are cached on
+parameters, and the hook is not one of them.
+
+### ✅ 🔴 N3 — The bend search slid forks into caves
+
+`REALM_SPLITS` places every fork clear of that realm's tunnels and river
+crossings. The search that slides a fork along the lap looking for a bend
+worth cutting then moved it up to 600 m downstream **without checking what it
+was moving into**. Enchanted Forest authors its fork at 244 m to miss the cave
+at 756–838; the search put the mouth at 819 — **19 m inside the rock**. That is
+the "I have to glitch through a cave to reach it".
+
+Candidates touching a tunnel or a river now get rejected, with a 45 m margin
+so the junction is not on a portal either. Forest 344–474 and Crystal Peaks
+1620–1740, both **0 m inside anything**.
+
+### ✅ 🔴 N4 — The alternate route could not be driven onto
+
+Independent of the cave, and the more interesting fault. Which road you are on
+is decided by the nearer centreline; the containment wall holds you 6.6 m from
+it. Those two rules fight: the branch bows 16 m out, so switching needs the car
+more than 8 m off the main centreline and the wall will not let it get there.
+The window where the branch is close enough to cross to is 24 m of road — half
+a second — and inside it the car has to be **already** pinned against the wall.
+
+**Measured before: holding full steer into the fork put the car on the branch
+for 8 frames out of 360 — and those 8 are only the shared point at the mouth.
+The route did not exist.**
+
+Now, while the two ribbons still overlap, the wall on that side opens far
+enough to reach the crossover; past the taper it closes again, so the median
+and its island are still a wall. Commit at the mouth or at the merge, not in
+the middle.
+
+| steering input | time on the branch |
+| --- | --- |
+| none | 0.03 s |
+| 0.25 s flick | **3.33 s** |
+| 0.50 s | 3.52 s |
+| 0.75 s | 3.67 s |
+| 1.0 s (full lock) | 1.32 s — over-steers and crashes |
+
+It takes a deliberate flick and never fires by accident.
+
+### ✅ 🟠 N5 — Alternate routes were not on the minimap
+
+A second road you cannot see on the map is a second road you do not know is
+there. Branch centrelines are now drawn dashed, in the fork sign's amber, so
+they read as a choice rather than as the track.
+
+### ✅ 🔴 N6 — Half the lap was run with four fifths of the engine gone
+
+`CORNER_GRIP` was set to 5 on the reasoning that "roughly a quarter of the lap
+over the limit" would make corners cost something. That was never measured
+afterwards. It was not a quarter:
+
+| | at CORNER_GRIP 5 |
+| --- | --- |
+| lap at the drive floor (20% throttle) | **48%** |
+| lap under 60% drive | 55% |
+| median lateral load vs a limit of 5 | 4.7 |
+
+That is the "acceleration is weirder now". 15 was the other end of the same
+mistake — the car sat at 96% of top speed and corners went free again. **11**
+is where both numbers behave: median at 68% of top speed, tyres saturated for
+39% of the lap.
+
+### ✅ 🟠 N7 — The dial stopped at 150 and the lap never reached it
+
+A measured lap sat between 57 and 123 with a median of 89 — most of a race in
+the bottom half of a dial that never touched its own ceiling. `MAX_SPEED`
+46 → 56 (corner speed is √(grip × radius) and does not depend on it, so this
+widens the gap between the slowest corner and the fastest straight rather than
+scaling everything up), scale and ceiling re-cut for 240.
+
+| | before | after |
+| --- | --- | --- |
+| dial, 5th percentile | 57 | **117** |
+| dial, median | 89 | **176** |
+| dial, 95th | 123 | **222** |
+| lap time | 64.5 s | **47.1 s** |
+| off-road | 0% | 0% |
+
+### ✅ 🔴 N8 — Waterfalls standing in open fields, in two separate places
+
+The landmark placer searches for **level** ground — right for a castle, exactly
+wrong for water. Enchanted Forest had a rock slab with a sheet of water down
+its face standing upright in an open, gently sloping meadow: no cliff, no
+watercourse above, no pool below. It was the flattest spot available, which is
+precisely why it looked absurd.
+
+Cliff-seeking props now invert the test, and search **along** the lap as well
+as out from it. Sampling Forest on a 20 m × 12 m grid, 6.6% of spots clear a
+14 m drop across the footprint and the steepest is 26 m — cliffs exist there,
+they were just never where the nominal distances pointed. If nothing near is
+steep enough, nothing is placed: a missing landmark is invisible, a waterfall
+in a field is the first thing you see.
+
+The same bug had a **second copy** — Crystal Peaks' "frozen falls close in"
+used the same fixed 12–18 m offset from a verge that is graded flat by
+construction. Both now share one `findCliff`.
+
+| realm | before | after (ground drop under each) |
+| --- | --- | --- |
+| Enchanted Forest | 1, in a meadow | 2 — 14.8 m and 15.0 m |
+| Crystal Peaks | 3, two on the flat verge | 3 — 25 m, 17.8 m, 17.3 m |
+
+### ◻ 🟡 N9 — A debug reset can leave the car stuck
+
+`freeDrive.reset(track, 0)` from the dev handle sometimes leaves the car at
+~0.2 m/s, unable to move, for the rest of the run. It reproduced four times
+during grip tuning. That entry point is not how a race starts — the grid
+places cars behind the line — so **I have not established whether this can
+happen in play**, and it should not be assumed fixed or assumed harmless.
 
 ---
 

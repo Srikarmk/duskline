@@ -2026,6 +2026,33 @@ export class Game {
    */
   private static readonly CLIFF_SPREAD = 14;
 
+  /**
+   * The nearest spot to (`d`, `side`) whose ground is steep enough to stand a
+   * waterfall on, or null if there is none nearby.
+   *
+   * Searches ALONG the lap as well as out from it. Walking straight out from
+   * one fixed distance finds a cliff only if the map happens to put one on
+   * that bearing, and it usually does not: sampling Enchanted Forest on a
+   * 20 m x 12 m grid, 6.6% of spots clear the threshold and the steepest is
+   * 26 m, so cliffs exist there — they were just never where the three
+   * nominal distances pointed, and the realm shipped with none. Sliding
+   * +/-120 m turns "is there a cliff exactly here" into "is there a cliff
+   * near here", which is the question worth asking.
+   */
+  private findCliff(d: number, side: number, reach: number): { d: number; off: number } | null {
+    let bestOff = 0, bestD = d, bestSpread = -Infinity;
+    for (let dd = -120; dd <= 120; dd += 20) {
+      for (let off = ROAD_HALF_WIDTH + 12; off <= 90; off += 9) {
+        const jd = this.track.wrap(d + dd);
+        const q = this.track.pointAt(jd, side * off);
+        const spread = this.groundSpreadUnder(q.x, q.z, reach);
+        if (spread > bestSpread) { bestSpread = spread; bestOff = off; bestD = jd; }
+        if (spread >= Game.CLIFF_SPREAD) return { d: jd, off };
+      }
+    }
+    return bestSpread >= Game.CLIFF_SPREAD ? { d: bestD, off: bestOff } : null;
+  }
+
   private groundSpreadUnder(x: number, z: number, reach: number): number {
     const r = Math.min(Math.max(1, reach), 12);
     let lo = Infinity, hi = -Infinity;
@@ -4068,14 +4095,20 @@ export class Game {
         s.scale.multiplyScalar(1.8 + rand() * 1.6);
         place(s, d + rand() * 22, side * (ROAD_HALF_WIDTH + 4 + rand() * 14));
       }
-      // frozen falls close in, so the ice realm also has a feature you pass
+      // Frozen falls close in, so the ice realm also has a feature you pass —
+      // on a cliff, same rule as the forest ones. This pair was the second
+      // copy of the same bug: a fixed 12-18 m offset from a verge that is
+      // graded flat by construction, which is how you end up with a waterfall
+      // standing in a field.
       for (let i = 0; i < 2; i++) {
         const d = len * (0.24 + i * 0.42) + rand() * 30;
         const side = i % 2 === 0 ? -1 : 1;
         const w = makeWaterfall(rand);
         w.userData.kind = "waterfall";
         w.scale.multiplyScalar(1.4 + rand() * 0.6);
-        place(w, d, side * (ROAD_HALF_WIDTH + 12 + rand() * 6), faceRoad(d, side));
+        const spot = this.findCliff(d, side, this.propMetrics(w).reach);
+        if (!spot) continue;
+        place(w, spot.d, side * spot.off, faceRoad(spot.d, side));
       }
     } else if (this.coast) {
       // THE SEA. Offset to one side of the circuit and dropped below the road so
@@ -4139,27 +4172,9 @@ export class Game {
         const w = makeWaterfall(rand);
         w.userData.kind = "waterfall";
         w.scale.multiplyScalar(1.5 + rand() * 0.7);
-        // Search ALONG the lap as well as out from it. Walking straight out
-        // from one fixed distance finds a cliff only if the map happens to put
-        // one on that bearing, and it usually does not: sampling this realm on
-        // a 20 m x 12 m grid, 6.6% of spots clear the threshold (max spread
-        // 26 m), so they exist — they are just not where the three nominal
-        // distances point. Sliding +/-120 m turns "is there a cliff exactly
-        // here" into "is there a cliff near here", which is the question.
-        const reach = this.propMetrics(w).reach;
-        let bestOff = 0, bestD = d, bestSpread = -Infinity;
-        outer:
-        for (let dd = -120; dd <= 120; dd += 20) {
-          for (let off = ROAD_HALF_WIDTH + 12; off <= 90; off += 9) {
-            const jd = this.track.wrap(d + dd);
-            const q = track.pointAt(jd, side * off);
-            const spread = this.groundSpreadUnder(q.x, q.z, reach);
-            if (spread > bestSpread) { bestSpread = spread; bestOff = off; bestD = jd; }
-            if (spread >= Game.CLIFF_SPREAD) break outer;
-          }
-        }
-        if (bestSpread < Game.CLIFF_SPREAD) continue;   // nowhere near here is a cliff
-        place(w, bestD, side * bestOff, faceRoad(bestD, side));
+        const spot = this.findCliff(d, side, this.propMetrics(w).reach);
+        if (!spot) continue;                            // nowhere near here is a cliff
+        place(w, spot.d, side * spot.off, faceRoad(spot.d, side));
       }
     }
   }
