@@ -182,10 +182,17 @@ export class FreeDrive {
     const mc = track.pointAt(track.wrap(pr.dist), 0);
     const mt = track.tangentAt(track.wrap(pr.dist));
     let cx = mc.x, cz = mc.z, rx = mt.z, rz = -mt.x;
+    // Offset of each nearby branch's centreline from the MAIN centreline, in
+    // main-road lateral metres. The car's lateral against the branch differs
+    // from its lateral against the main road by exactly that offset, so it
+    // comes free from the two projections — no extra sampling.
+    const branchOffset: number[] = [];
     for (let bi = 0; bi < this.branches.length; bi++) {
       const b = this.branches[bi];
+      branchOffset[bi] = NaN;
       if (pr.dist < b.startDist - 25 || pr.dist > b.endDist + 25) continue; // not near this fork
       const bp = b.path.project(this.x, this.z);
+      branchOffset[bi] = pr.lateral - bp.lateral;
       if (Math.abs(bp.lateral) < Math.abs(bestLat)) {
         bestLat = bp.lateral;
         bestDist = b.startDist + (bp.u / b.path.length) * (b.endDist - b.startDist);
@@ -200,6 +207,38 @@ export class FreeDrive {
     this.onBranchIdx = kind;
     this.offRoad = Math.abs(bestLat) > ROAD_HALF_WIDTH;
     void cx; void cz;
+
+    // --- WHERE THE TWO ROADS STILL TOUCH, LET THE CAR CROSS -----------------
+    //
+    // Which road you are on is decided by whichever centreline is nearer, and
+    // the wall holds you 6.6 m from that centreline. Those two rules fight:
+    // the branch bows 16 m out, so switching to it needs the car more than 8 m
+    // off the main centreline, and the wall will not let it get there. The
+    // window where the branch is close enough to cross to is 24 m of road —
+    // half a second — and inside it the car must already be pinned against the
+    // wall. Measured on Enchanted Forest, holding steer into the fork put the
+    // car on the branch for 8 frames out of 360, which is just the shared point
+    // at the mouth: the alternate route was not reachable at all.
+    //
+    // So: while the other road's tarmac still overlaps this one, the wall on
+    // that side opens up far enough to reach the crossover. Past the taper the
+    // ribbons separate, the reach drops back to the normal limit, and the
+    // median (with its island) is a wall again — you commit at the mouth or at
+    // the merge, not in the middle.
+    let crossReach = 0;
+    for (let bi = 0; bi < this.branches.length; bi++) {
+      const off = branchOffset[bi];
+      if (!isFinite(off)) continue;
+      // signed offset of the OTHER road, in the frame of the road we are on
+      const other = kind === -1 ? off : (bi === kind ? -off : NaN);
+      if (!isFinite(other) || Math.abs(other) < 1) continue;
+      // both ribbons are ROAD_HALF_WIDTH * 1.25 wide, so their edges still meet
+      // while the centrelines are within 2.5 * ROAD_HALF_WIDTH of each other
+      if (Math.abs(other) > ROAD_HALF_WIDTH * 2.7) continue;
+      if (Math.sign(other) !== Math.sign(bestLat || other)) continue;
+      const reach = Math.abs(other) * 0.55 + 2.5;   // comfortably past the halfway line
+      if (reach > Math.abs(crossReach)) crossReach = Math.sign(other) * reach;
+    }
 
     // GENTLE AUTO-TURN: a light steering assist that eases the nose toward the
     // road ahead through bends, so the car tracks the corner instead of running
@@ -316,8 +355,14 @@ export class FreeDrive {
     this.onWall = false;
     if (tuning.contain !== false) {
       const absLat = Math.abs(bestLat);
-      const soft = ROAD_HALF_WIDTH + 0.6;  // grass overrun begins (~5.6 m)
-      const hard = ROAD_HALF_WIDTH + 1.6;  // absolute limit (~6.6 m) — never past this
+      let soft = ROAD_HALF_WIDTH + 0.6;  // grass overrun begins (~5.6 m)
+      let hard = ROAD_HALF_WIDTH + 1.6;  // absolute limit (~6.6 m) — never past this
+      // …except toward a fork's other carriageway while the two still touch
+      if (crossReach !== 0 && Math.sign(bestLat) === Math.sign(crossReach)
+          && Math.abs(crossReach) > hard) {
+        hard = Math.abs(crossReach);
+        soft = hard - 1;
+      }
       if (absLat > soft) {
         // Inward direction (toward the centreline). `rx,rz` here is (tan.z,-tan.x),
         // which is the OPPOSITE of pointAt's right-vector — and project()'s lateral

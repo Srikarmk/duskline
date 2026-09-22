@@ -102,15 +102,20 @@ const WET_LOOK = { rough: 0.24, metal: 0.2, env: 2.6 };
 /**
  * The speedometer is a DIAL, not a measurement.
  *
- * `speed` is metres per second and MAX_SPEED is 46, which is not a number
+ * `speed` is metres per second and MAX_SPEED is 56, which is not a number
  * anybody wants on a racing HUD. The readout scales it into something that
  * reads like a car, and the scale is chosen so the numbers land where they
- * mean something: flat out on the quickest kart is ~127, and nitro takes it to
- * the 150 ceiling. Stacking a drift boost, a pad and a tow on top of nitro can
- * exceed that, which is what the clamp is for — 150 is the top of the dial.
+ * mean something.
+ *
+ * The dial used to stop at 150 and a measured lap sat between 57 and 123 with
+ * a median of 89 — most of a race spent in the bottom half of a dial that
+ * never reached its own ceiling. On the same lap this scale reads p05 125,
+ * median 185 and 209 flat out, leaving the last 30 for nitro, a drift boost,
+ * a pad or a tow. Stacking several of those can still exceed it, which is what
+ * the clamp is for: 240 is the top of the dial.
  */
-const SPEEDO_SCALE = 118;
-const SPEEDO_MAX = 150;
+const SPEEDO_SCALE = 200;
+const SPEEDO_MAX = 240;
 
 /** What the HUD calls the thing taking your grip away. */
 const WEATHER_LABEL: Record<WeatherKind, string> = {
@@ -298,6 +303,7 @@ const FilmGradeShader = {
     duo: { value: 0 },        // 0 = full colour, 1 = the realm's own two-tone
     halftone: { value: 0 },   // 0 = clean, 1 = a full dot screen in the shadows
     dotPx: { value: 7 },      // dot pitch in DEVICE pixels; set from the dpr
+
     duoShadow: { value: new THREE.Color(0x2a2140) },
     duoLight: { value: new THREE.Color(0xffd9b0) },
   },
@@ -354,7 +360,27 @@ const FilmGradeShader = {
       // across band edges, which comes out as blotches rather than flat light.
       // Averaging a small cross first puts the steps where the LIGHT changes
       // and lets the texture ride on top of them, multiplicatively.
-      if (cel > 0.001) {
+      //
+      // NOT ON THE SKY. The dome carries its own 26-band posterisation, authored
+      // in equirect space where the bands are even in elevation angle. Running a
+      // second, screen-space luminance quantisation over the top of it made the
+      // two beat against each other: a hard seam straight across the sky, a dark
+      // wedge where a band edge crossed the dome's curvature, and — because band
+      // zero sits at zero and the spread below pushes it negative — a black disc
+      // punched out of the darkest part of the sky at the zenith. The sky is
+      // already art-directed; the grade should only band the world.
+      //
+      // The mask rides in the ALPHA CHANNEL: the dome and its cloud deck write
+      // zero alpha, every other material writes one, and the pass chain carries
+      // it through untouched. (Bloom adds a little alpha where it glows, hence
+      // the smoothstep rather than a straight read.) Depth would have been the
+      // textbook route and it is a dead end here: the composer ping-pongs
+      // between two targets with an odd number of swaps per frame, so which one
+      // the scene lands in alternates, and a DepthTexture shared between both
+      // sampled as zero everywhere.
+      float world = smoothstep(0.35, 0.75, texture2D(tDiffuse, vUv).a);
+      float celM = cel * world;
+      if (celM > 0.001) {
         vec2 px = fwidth(vUv) * 2.2;
         float lo = dot(raw, W) * 2.0
           + dot(texture2D(tDiffuse, vUv + vec2(px.x, 0.0)).rgb, W)
@@ -362,12 +388,19 @@ const FilmGradeShader = {
           + dot(texture2D(tDiffuse, vUv + vec2(0.0, px.y)).rgb, W)
           + dot(texture2D(tDiffuse, vUv - vec2(0.0, px.y)).rgb, W);
         lo = max(lo / 6.0, 1e-4);
-        float q = floor(lo * BANDS + 0.5) / BANDS;
+        // No band may land on ZERO. floor(lo*B + 0.5) rounds the darkest pixels
+        // to band 0, the spread then takes that below zero, it clamps, and the
+        // pixel is multiplied by nothing — which is how a smooth dark gradient
+        // acquires a hard black hole with a razor edge around it.
+        float q = max(floor(lo * BANDS + 0.5), 0.5) / BANDS;
         q = max((q - CEL_PIVOT) * CEL_GAIN + CEL_PIVOT, 0.0);
         // soften the step a touch so it is a painted edge, not an aliased one
         float w = fwidth(lo) * 2.0;
         q = mix(q, lo, clamp(w * BANDS, 0.0, 1.0));
-        col *= mix(1.0, q / lo, cel);
+        // ...and bound the multiplier. q/lo is a RATIO, so it runs away at both
+        // ends: near black it crushes, near the band edge it blooms. Typical
+        // mid-frame ratios measured 0.77-1.18, so this only binds at the tails.
+        col *= mix(1.0, clamp(q / lo, 0.6, 1.6), celM);
       }
 
       // --- DUOTONE ----------------------------------------------------------
@@ -520,6 +553,8 @@ export class Game {
   /** true alternate routes: a separate drivable road you can peel onto at a fork
    *  and rejoin later. `side` is which way it bows (used to decide entry). */
   private branches: { path: BranchPath; side: number }[] = [];
+  /** branch centrelines in world XZ, for the minimap */
+  private branchRoutes: { x: number; z: number }[][] = [];
   /** the branch you're currently driving (null = on the main track), and how far
    *  along it (arc-length metres). */
   private onBranch: BranchPath | null = null;
@@ -1980,6 +2015,17 @@ export class Game {
   }
 
   /** How much the ground varies under a footprint — 0 is level, 10 is a cliff. */
+  /**
+   * How much height a waterfall's footprint has to span before the ground
+   * under it counts as a cliff rather than a slope.
+   *
+   * `groundSpreadUnder` samples a ring of radius min(reach, 12) m, so this is
+   * a drop of 14 m across at most 24 m of ground — steep enough that the rock
+   * face reads as a cliff the water is coming off. The level-ground search the
+   * other landmarks use accepts a spread of 6 and under.
+   */
+  private static readonly CLIFF_SPREAD = 14;
+
   private groundSpreadUnder(x: number, z: number, reach: number): number {
     const r = Math.min(Math.max(1, reach), 12);
     let lo = Infinity, hi = -Infinity;
@@ -2636,10 +2682,32 @@ export class Game {
         for (let o = 0; o <= s.len; o += 10) sum += Math.abs(this.track.curvatureAt(this.track.wrap(at + o)));
         return sum / (s.len / 10 + 1);
       };
+      // …but NOT into a cave. The fork positions in REALM_SPLITS are hand-placed
+      // clear of each realm's tunnels and river crossings, and then this search
+      // used to move them up to 600 m downstream without checking what it was
+      // moving them into. On Enchanted Forest the fork is authored at 244 m to
+      // miss the cave at 756-838; the bend search slid it to 819 and put the
+      // mouth 19 m INSIDE the cave, which is why the alternate route could only
+      // be reached by scraping through rock. Reject any candidate whose span
+      // touches a tunnel or a river, with a margin so the junction is not right
+      // on a portal either.
+      const MARGIN = 45;
+      const blocked: { d0: number; d1: number }[] = [
+        ...(REALM_TUNNELS[this.realm.id] ?? []).map((t) => ({ d0: t.at * len, d1: t.at * len + t.len })),
+        ...(REALM_RIVERS[this.realm.id] ?? []).map((f) => ({ d0: f * len - 40, d1: f * len + 40 })),
+      ];
+      const clear = (at: number) => {
+        const a0 = at - MARGIN, a1 = at + s.len + MARGIN;
+        // compare on the unwrapped lap, testing the span shifted by ±one lap
+        // so a fork that straddles the start line is still caught
+        return blocked.every((b) =>
+          [-len, 0, len].every((sh) => a0 >= b.d1 + sh || a1 <= b.d0 + sh));
+      };
       let startDist = s.at * len;
-      let best = bendAt(startDist);
+      let best = clear(startDist) ? bendAt(startDist) : -1;
       for (let k = 1; k <= 24; k++) {
         const cand = s.at * len + k * 25;
+        if (!clear(cand)) continue;
         const score = bendAt(cand);
         if (score > best) { best = score; startDist = cand; }
       }
@@ -2666,6 +2734,17 @@ export class Game {
       // the wall out over nothing.
       this.scene.add(branch.buildRoad(roadMat, ROAD_HALF_WIDTH * 1.25));
       this.branches.push({ path: branch, side });
+      // …and put it on the minimap. A second road you cannot see on the map is
+      // a second road you do not know is there.
+      {
+        const pts = [];
+        const steps = Math.max(8, Math.round(branch.length / 6));
+        for (let i = 0; i <= steps; i++) {
+          const q = branch.pointAt((i / steps) * branch.length, 0);
+          pts.push({ x: q.x, z: q.z });
+        }
+        this.branchRoutes.push(pts);
+      }
       // the divider sitting in the median between the main road and the branch
       this.placeSplitIsland((startDist + endDist) / 2, side, branch);
       this.placeRouteFeatures(this.branches.length - 1);
@@ -3150,6 +3229,7 @@ export class Game {
     // the wider radius, and carries a boost chain into a ramp. See
     // placeRouteFeatures.
     this.placeBranches();
+    this.minimap.setRoutes(this.branchRoutes);
     this.freeDrive.branches = this.branches.map((b) => ({
       path: b.path,
       startDist: b.path.startDist,
@@ -3465,6 +3545,7 @@ export class Game {
    *  Grounded on the elevated terrain via terrainYAt, like the roadside bands. */
   private placeLandmarks(library: ModelLibrary, rand: () => number) {
     const { track, realm } = this;
+    const CLIFF_SPREAD = Game.CLIFF_SPREAD;
     const len = track.length;
     const cols = realm.palette.crystalColors;
 
@@ -3495,7 +3576,7 @@ export class Game {
     // `yawOffset` exists for props whose FRONT is -Z (the waterfalls). Aiming +Z
     // at the road, as faceRoad does, presents their back — which is why bare
     // cliffs kept turning up around the map.
-    const drop = (group: THREE.Object3D, frac: number, side: 1 | -1, off: number, faceRoad: boolean, yawOffset = 0) => {
+    const drop = (group: THREE.Object3D, frac: number, side: 1 | -1, off: number, faceRoad: boolean, yawOffset = 0, wantsCliff = false) => {
       const d = track.wrap(frac * len);
       // Hero monuments are huge, so a local offset isn't enough — walk them out
       // until their whole footprint clears the ENTIRE circuit (a twisty lap can
@@ -3522,25 +3603,52 @@ export class Game {
       // are CLIFFS, they read fine pitched on a hillside, and the sink below
       // handles the remainder. Ten tries (140 m) then settle for the flattest
       // seen, so no monument wanders off to the horizon hunting a plain.
-      let best = { lat, spread: Infinity };
-      for (let tries = 0; tries < 10; tries++) {
-        const q = track.pointAt(d, lat);
-        if (this.roadClear(q.x, q.z, hm.reach, Math.max(6, hm.margin))) {
-          const spread = this.groundSpreadUnder(q.x, q.z, hm.reach);
-          if (spread < best.spread) best = { lat, spread };
-          if (spread <= 6) break;
+      //
+      // A WATERFALL WANTS THE OPPOSITE OF THIS. Everything above is a search for
+      // level ground, which is right for a castle and exactly wrong for water:
+      // run it on a waterfall and you get what Enchanted Forest had — a rock
+      // slab with a sheet of water down its face, standing upright in the
+      // middle of an open, gently sloping meadow, no cliff, no watercourse
+      // above it, no pool below. It was the flattest spot available, which is
+      // precisely why it looked absurd. `wantsCliff` inverts the test: take the
+      // STEEPEST footprint found, and if the realm has nothing steep enough
+      // within reach, place nothing at all. A missing landmark is invisible; a
+      // waterfall in a field is the first thing you see.
+      // A cliff-seeker also slides along the lap; a level-ground seeker does
+      // not, because level ground is common and the fraction is chosen for the
+      // view. Steep ground is the scarce resource, so it is the one worth
+      // hunting for in two dimensions.
+      const slides = wantsCliff ? [0, 60, -60, 120, -120, 180, -180] : [0];
+      let best = { lat, d, spread: wantsCliff ? -Infinity : Infinity };
+      search:
+      for (const sd of slides) {
+        const dd = track.wrap(d + sd);
+        let l = lat;
+        for (let tries = 0; tries < 10; tries++) {
+          const q = track.pointAt(dd, l);
+          if (this.roadClear(q.x, q.z, hm.reach, Math.max(6, hm.margin))) {
+            const spread = this.groundSpreadUnder(q.x, q.z, hm.reach);
+            if (wantsCliff) {
+              if (spread > best.spread) best = { lat: l, d: dd, spread };
+              if (spread >= CLIFF_SPREAD) break search;
+            } else {
+              if (spread < best.spread) best = { lat: l, d: dd, spread };
+              if (spread <= 6) break search;
+            }
+          }
+          l += side * 14;
         }
-        lat += side * 14;
       }
+      if (wantsCliff && best.spread < CLIFF_SPREAD) return;   // no cliff here — skip it
       lat = best.lat;
-      const p = track.pointAt(d, lat);
+      const p = track.pointAt(best.d, lat);
       // Same single-sample bug as place() had, and worse here: these are the
       // hero monuments — the widest footprints in the game, walked 90-120 m off
       // the road into terrain nothing else constrains. A waterfall cliff on
       // Crystal Peaks was standing with its downhill edge 9.8 m in the air.
       group.position.set(p.x, this.groundFloorUnder(p.x, p.z, hm.reach), p.z);
       if (faceRoad) {
-        const rp = track.pointAt(d, 0);
+        const rp = track.pointAt(best.d, 0);
         group.rotation.y = Math.atan2(rp.x - p.x, rp.z - p.z) + yawOffset;
       } else {
         group.rotation.y = rand() * Math.PI * 2;
@@ -3638,7 +3746,7 @@ export class Game {
         grove.add(crystals(2.6));
         drop(grove, 0.4, 1, 95, false);
         // a big scenic waterfall cliff
-        drop(tag(at(makeWaterfall(rand), 0, 0, 2.0), "waterfall"), 0.15, -1, 100, true, Math.PI);
+        drop(tag(at(makeWaterfall(rand), 0, 0, 2.0), "waterfall"), 0.15, -1, 100, true, Math.PI, true);
         drop(cluster(crystals(3.0), at(makeCrystalCluster(rand, cols), 11, 6, 2.2)), 0.78, 1, 90, false);
         break;
       }
@@ -3664,7 +3772,7 @@ export class Game {
           at(makeCrystalCluster(rand, cols), -10, 6, 2.4),
           at(rock("rockA", 10), 6, -6, 1),
         ), 0.4, 1, 100, false);
-        drop(tag(at(makeWaterfall(rand), 0, 0, 2.2), "waterfall"), 0.62, -1, 95, true, Math.PI);
+        drop(tag(at(makeWaterfall(rand), 0, 0, 2.2), "waterfall"), 0.62, -1, 95, true, Math.PI, true);
         drop(cluster(
           crystals(4.0),
           at(makeCrystalCluster(rand, cols), 14, 10, 2.6),
@@ -4016,17 +4124,42 @@ export class Game {
         c.scale.multiplyScalar(1 + rand() * 0.6);
         place(c, d + rand() * 40, side * (ROAD_HALF_WIDTH + 26 + rand() * 44), faceRoad(d, side));
       }
-      // Signature waterfalls RIGHT BESIDE the ribbon. There were already
-      // waterfalls in this realm, but only as landmarks dropped 95-100 m out,
-      // where they're scenery you never really register. At ~12 m off the verge
-      // you drive past the spray.
+      // Signature waterfalls near the ribbon — ON A CLIFF, or not at all.
+      //
+      // These were pinned at 11-17 m off the verge so "you drive past the
+      // spray". The verge is the one part of the map that is graded flat,
+      // which is how the forest ended up with waterfalls standing bolt upright
+      // in open meadow: a rock slab, a sheet of water down its face, and
+      // nothing above or below it. So the offset is a SEARCH now, not a
+      // constant — walk out from the verge and take the first genuinely steep
+      // footprint; if the whole band out to 90 m is gentle, place nothing.
       for (let i = 0; i < 3; i++) {
         const d = len * (0.17 + i * 0.29) + rand() * 40;
         const side = i % 2 === 0 ? 1 : -1;
         const w = makeWaterfall(rand);
         w.userData.kind = "waterfall";
         w.scale.multiplyScalar(1.5 + rand() * 0.7);
-        place(w, d, side * (ROAD_HALF_WIDTH + 11 + rand() * 6), faceRoad(d, side));
+        // Search ALONG the lap as well as out from it. Walking straight out
+        // from one fixed distance finds a cliff only if the map happens to put
+        // one on that bearing, and it usually does not: sampling this realm on
+        // a 20 m x 12 m grid, 6.6% of spots clear the threshold (max spread
+        // 26 m), so they exist — they are just not where the three nominal
+        // distances point. Sliding +/-120 m turns "is there a cliff exactly
+        // here" into "is there a cliff near here", which is the question.
+        const reach = this.propMetrics(w).reach;
+        let bestOff = 0, bestD = d, bestSpread = -Infinity;
+        outer:
+        for (let dd = -120; dd <= 120; dd += 20) {
+          for (let off = ROAD_HALF_WIDTH + 12; off <= 90; off += 9) {
+            const jd = this.track.wrap(d + dd);
+            const q = track.pointAt(jd, side * off);
+            const spread = this.groundSpreadUnder(q.x, q.z, reach);
+            if (spread > bestSpread) { bestSpread = spread; bestOff = off; bestD = jd; }
+            if (spread >= Game.CLIFF_SPREAD) break outer;
+          }
+        }
+        if (bestSpread < Game.CLIFF_SPREAD) continue;   // nowhere near here is a cliff
+        place(w, bestD, side * bestOff, faceRoad(bestD, side));
       }
     }
   }

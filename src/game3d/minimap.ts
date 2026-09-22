@@ -15,6 +15,15 @@ export class Minimap {
   private w: number;
   private h: number;
 
+  /** Alternate routes, as polylines in world XZ — drawn dashed beside the lap
+   *  so a fork is something you can see coming rather than something you find
+   *  by accident. */
+  private routes: XZ[][] = [];
+
+  setRoutes(routes: XZ[][]) {
+    this.routes = routes;
+  }
+
   constructor(track: Track, samples = 160) {
     this.pts = track.sampleXZ(samples);
     const b = track.bounds;
@@ -62,6 +71,26 @@ export class Minimap {
     ctx.strokeStyle = "#a99fd0";
     ctx.lineWidth = 1.5;
     ctx.stroke();
+
+    // alternate routes: same weight as the lap, dashed and in the fork sign's
+    // amber so the eye reads "this is a choice", not "this is the track"
+    if (this.routes.length) {
+      ctx.save();
+      ctx.setLineDash([5, 4]);
+      ctx.strokeStyle = "#fbbf24";
+      ctx.lineWidth = 3;
+      for (const r of this.routes) {
+        if (r.length < 2) continue;
+        ctx.beginPath();
+        r.forEach((p, i) => {
+          const X = px(p.x), Y = py(p.z);
+          if (i === 0) ctx.moveTo(X, Y);
+          else ctx.lineTo(X, Y);
+        });
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
 
     // start line marker
     const s = this.pts[0];

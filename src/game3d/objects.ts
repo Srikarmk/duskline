@@ -292,6 +292,44 @@ function cloudDeck(pal: RealmPalette, W: number, H: number): HTMLCanvasElement {
  * and a horizon haze band. Everything is baked ONCE here at world-build time —
  * nothing about the sky is regenerated per frame.
  */
+/**
+ * Mark a material as SKY: it writes zero into the frame's alpha channel.
+ *
+ * The film grade's cel banding has to stay off the sky. The dome already
+ * carries its own 26-band posterisation, authored in equirect space where the
+ * bands are even in elevation angle; a second, screen-space luminance
+ * quantisation on top of it beat against the first and produced a hard seam
+ * straight across the sky, a dark wedge where a band edge crossed the dome's
+ * curvature, and a black disc punched out of the zenith.
+ *
+ * Alpha is the channel that survives: every other material writes one, the
+ * whole pass chain carries it through unchanged (measured: 255 everywhere
+ * before this), and the grade reads it back as a mask. Depth is the textbook
+ * way to do this and does not work here — EffectComposer ping-pongs between
+ * two render targets with an odd number of swaps per frame, so the buffer the
+ * scene lands in alternates, and a DepthTexture shared by both sampled as
+ * zero everywhere.
+ */
+export function markAsSky(mat: THREE.Material): void {
+  // onBeforeCompile only, so this is for three's BUILT-IN materials. The dome
+  // itself is a raw ShaderMaterial and writes its zero directly (see below).
+  //
+  // The alpha write goes at the very END of main, after tone mapping and the
+  // colour-space encode. Those stages rebuild gl_FragColor, so an alpha set
+  // before them does not survive the trip — it reads back as 1.
+  mat.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace(/\}\s*$/, "  gl_FragColor.a = 0.0;\n}");
+  };
+  // …and this line is what makes the hook above do anything at all. Programs
+  // are cached by a key built from the material's PARAMETERS, and
+  // onBeforeCompile is not part of it — so a plain MeshBasicMaterial gets
+  // handed the already-compiled program that some other plain
+  // MeshBasicMaterial produced, and the edit is silently dropped. Giving the
+  // sky its own key forces its own program.
+  mat.customProgramCacheKey = () => "duskline-sky-alpha";
+  mat.needsUpdate = true;
+}
+
 export function makeSkyDome(pal: RealmPalette): THREE.Mesh {
   // 2048x1024. The dome is the single largest thing on screen and 1024x512 was
   // showing gradient banding + mushy stars; the cloud deck is generated at a
@@ -518,6 +556,7 @@ export function makeSkyDome(pal: RealmPalette): THREE.Mesh {
   // equirect UVs from visibly kinking the new horizon band near the poles.
   const geo = new THREE.SphereGeometry(900, 48, 24);
   const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, fog: false });
+  markAsSky(mat);
   const mesh = new THREE.Mesh(geo, mat);
   mesh.userData.noShadow = true; // the sky must never cast or receive shadows
   return mesh;
@@ -695,6 +734,14 @@ export function makePosterSky(pal: RealmPalette): THREE.Mesh {
         // black — which is what the zenith turned into.
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
+        // ALPHA ZERO MARKS THIS AS SKY — see markAsSky. The film grade reads
+        // the alpha channel back as a mask so its cel banding stays off the
+        // dome, which already carries banding of its own.
+        //
+        // This has to come AFTER the two includes above, not before. Setting
+        // it on the gl_FragColor that feeds them reads back as 1: the output
+        // stages rebuild the vector, and the zero does not survive the trip.
+        gl_FragColor.a = 0.0;
       }
     `,
   });
@@ -741,6 +788,17 @@ export function makeCloudLayer(pal: RealmPalette): THREE.Mesh {
     map: tex, side: THREE.BackSide, fog: false,
     transparent: true, depthWrite: false,
   });
+  // Same sky mark — but this one is BLENDED, so writing zero is not enough:
+  // normal blending would mix the cloud's own alpha into the destination and
+  // the clouds would come back as "world". Custom blending keeps the usual
+  // colour blend and makes the alpha channel a no-op, leaving the zero the
+  // dome underneath already wrote.
+  markAsSky(mat);
+  mat.blending = THREE.CustomBlending;
+  mat.blendSrc = THREE.SrcAlphaFactor;
+  mat.blendDst = THREE.OneMinusSrcAlphaFactor;
+  mat.blendSrcAlpha = THREE.ZeroFactor;
+  mat.blendDstAlpha = THREE.OneFactor;
   const mesh = new THREE.Mesh(new THREE.SphereGeometry(880, 48, 24), mat);
   mesh.userData.noShadow = true;
   mesh.renderOrder = -9;      // straight after the sky dome, before the world

@@ -25,10 +25,15 @@ export const LANES = 3;
 export const CAR_LIFT = 0.05;
 export const LANE_CENTERS = [-2 / 3, 0, 2 / 3]; // in playerX units (1 = road edge)
 
-// 58 m/s base, with a fastest car at 1.22 and nitro at 1.35, stacked to a
-// displayed 297 mph — and at that rate the world does not pass you, it
-// disappears. 46 is a real 20% cut in how fast the scenery actually moves.
-export const MAX_SPEED = 46;
+// 46 was cut from 58 back when corners were free and the car sat at terminal
+// velocity for the whole lap — at that point the only thing top speed changed
+// was how fast the scenery blurred. The friction circle changed the premise:
+// corner speed is now sqrt(grip x radius) and does not depend on this number
+// at all, so raising it lengthens the gap between the slowest corner and the
+// fastest straight instead of just making everything faster. Measured over a
+// forest lap at 56: p05 35 m/s, p50 52, p95 58.5 — a 23 m/s working range,
+// where 46 gave 21 m/s but topped out at 48.
+export const MAX_SPEED = 56;
 export const ACCEL = MAX_SPEED / 3.6; // punchier off-the-line + out of corners
 export const BRAKING = -MAX_SPEED;
 export const DECEL = -MAX_SPEED / 5;
@@ -63,17 +68,28 @@ export const FREE_GRIP = 11.5;     // lateral traction (side-slip bleed / s) —
 /**
  * Cornering force the tyres hold before speed starts scrubbing, in m/s².
  *
- * TUNED AGAINST THE LAP'S OWN DISTRIBUTION, not from physics. Measured over a
- * lap at racing pace the car's lateral acceleration runs p50 4.1, p80 6.3,
- * p95 9.7, peak 20.4 m/s². A first guess of 12 (~1.2g, which sounds right for
- * a car) put only 1.4% of the lap over the limit — corners stayed free and
- * nothing changed. At 5 roughly a quarter of the lap is over it: the bends
- * cost speed, the straights give it back, and the hairpins hurt.
+ * TUNED AGAINST THE LAP'S OWN DISTRIBUTION, not from physics. The first pass
+ * set this to 5, reasoning that a quarter of the lap over the limit would make
+ * corners cost something. Measured after the fact, it was not a quarter: the
+ * car was at the drive floor for 48% of the lap and under 60% drive for 55%,
+ * with median lateral load 4.7 against a limit of 5. More than half the race
+ * was run with four fifths of the engine taken away, which is what "the
+ * acceleration is weird and the speed is low" actually was.
+ *
+ * 15 was the other end of the same mistake. It freed the corners almost
+ * completely: the car sat at 96% of its top speed for half the lap (median
+ * 56.3 m/s against a maximum of 58.4), which is the terminal-velocity ride
+ * the friction circle exists to stop.
+ *
+ * 11 is where the two numbers both behave. Measured over a forest lap, the
+ * median sits at 82% of top speed with the dial reading 130 through the
+ * slowest corners and 209 flat out — a range you can feel — and the tyres are
+ * saturated for a bit under 40% of the lap rather than half of it.
  *
  * Multiplied by the kart's grip stat and by the weather, so those numbers
  * finally mean what they say.
  */
-export const CORNER_GRIP = 5;
+export const CORNER_GRIP = 11;
 /** gentle auto-turn into bends (rad/s per rad of heading error). Subtle on
  *  purpose — it helps the car track a corner without steering for you, and
  *  fades out the moment you touch the wheel. Raise for more assist. */
