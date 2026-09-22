@@ -518,9 +518,34 @@ count. The engine died indexing past the end of a shorter rib. It now always
 inserts the same number and lets the blend decide where they sit; where the
 blend is zero they land on the straight edge, so an edge stays an edge.
 
+**Then the spine, on the same principle.** The loft's lengthwise resample was
+held at `subdiv 2` with the note "resampling six times per section splines the
+edges out of existence" — true of a plain Catmull-Rom, which rounds the
+bonnet/screen junction and the tail break along with everything else. With the
+same crease blend applied lengthwise the objection goes away, so it runs at 4.
+Cars are now **9,258 triangles** — 2.2x where the session started — with draw
+calls unchanged at 975.
+
+Measured justification rather than taste: at chase distance the car covers
+**386x336 px, 16.5% of the screen, at 0.06 triangles per pixel** — about
+sixteen pixels per triangle, which is coarse enough for facets to show. And
+the creases survived: **259 of the body's 2,610 shared edges are still sharper
+than 25°**, which is the shoulder crease, sill, deck edge, nose and tail
+running the length of the car.
+
 **Honest limit:** the visual gain is clear up close and modest at chase
 distance. The draw-call saving is the larger result — it is a third of the
 budget handed back, on the axis that actually binds.
+
+**Also honest:** before this I recommended "genuinely new car models" as the
+next step. Reading the builder afterwards, that was not well founded — it
+already has wheel arches, wing mirrors with angled glass, door shut-lines and
+handles, window surrounds, side intakes, bumper ducts, a number plate recess,
+five rear-wing styles, four bonnet-scoop styles, per-style tail-light recesses,
+a diffuser, exhausts and brake discs with calipers. Four separate things I
+assumed were missing were already there. The remaining distance to a
+photo-real racer is proportions and surfacing in the ten rib tables, which is
+art direction needing reference and taste, not more part types.
 
 ---
 

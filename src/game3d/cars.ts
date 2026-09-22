@@ -463,19 +463,53 @@ function loftBody(ribs: Rib[], mat: THREE.Material, subdiv = 1, crossSubdiv = 3)
     const K = ribs.length;
     out = [];
     const steps = (K - 1) * subdiv;
+    // How much each SEGMENT of the spine may be rounded, per cross-section
+    // point — a segment is only rounded as far as its sharper end allows, so a
+    // crease holds from both sides. Same rule as refineSection.
+    const softness = (pts: [number, number][]): number[] => {
+      const straight = pts.map((_, i) => {
+        const a = pts[Math.max(0, i - 1)], b = pts[i], c = pts[Math.min(pts.length - 1, i + 1)];
+        const ax = b[0] - a[0], ay = b[1] - a[1], cx = c[0] - b[0], cy = c[1] - b[1];
+        const la = Math.hypot(ax, ay), lc = Math.hypot(cx, cy);
+        if (la < 1e-6 || lc < 1e-6) return 1;
+        return Math.max(0, (ax * cx + ay * cy) / (la * lc));
+      });
+      return straight.map((_, i) =>
+        Math.max(0, (Math.min(straight[i], straight[Math.min(straight.length - 1, i + 1)]) - 0.82) / 0.18));
+    };
+    const spineSoftness: number[][] = [];
+    for (let k = 0; k < M; k++) {
+      spineSoftness.push(softness(ribs.map((r) => [r.z, r.half[k][1]] as [number, number])));
+    }
+    const spineSoftnessZ = softness(ribs.map((r) => [r.z, 0] as [number, number]));
     for (let s = 0; s <= steps; s++) {
       const u = (s / steps) * (K - 1);
       const i = Math.min(K - 2, Math.floor(u));
       const t = u - i;
       const r0 = ribs[Math.max(0, i - 1)], r1 = ribs[i], r2 = ribs[i + 1], r3 = ribs[Math.min(K - 1, i + 2)];
+      const z = catmull(r0.z, r1.z, r2.z, r3.z, t);
+      const zl = r1.z + (r2.z - r1.z) * t;
       const half: [number, number][] = [];
       for (let k = 0; k < M; k++) {
-        half.push([
-          catmull(r0.half[k][0], r1.half[k][0], r2.half[k][0], r3.half[k][0], t),
-          catmull(r0.half[k][1], r1.half[k][1], r2.half[k][1], r3.half[k][1], t),
-        ]);
+        // Crease-aware LENGTHWISE too, the same way the cross-section is.
+        //
+        // The note here used to read "subdiv 2, not 6 — resampling six times
+        // per section splines the edges out of existence", and that was true
+        // of a plain Catmull-Rom: it rounds the bonnet/screen junction and the
+        // tail break along with everything else. Blending the spline back
+        // toward the straight segment wherever THIS point's trajectory turns
+        // hard keeps those transitions and smooths the rest, so the spine can
+        // carry the resolution the silhouette wants. Measured at chase
+        // distance the car is 386x336 px with ~16 pixels per triangle, which
+        // is coarse enough for the facets to show.
+        const soft = spineSoftness[k][i];
+        const cx = catmull(r0.half[k][0], r1.half[k][0], r2.half[k][0], r3.half[k][0], t);
+        const cy = catmull(r0.half[k][1], r1.half[k][1], r2.half[k][1], r3.half[k][1], t);
+        const lx = r1.half[k][0] + (r2.half[k][0] - r1.half[k][0]) * t;
+        const ly = r1.half[k][1] + (r2.half[k][1] - r1.half[k][1]) * t;
+        half.push([lx + (cx - lx) * soft, ly + (cy - ly) * soft]);
       }
-      out.push({ z: catmull(r0.z, r1.z, r2.z, r3.z, t), half });
+      out.push({ z: zl + (z - zl) * spineSoftnessZ[i], half });
     }
   }
 
@@ -1009,7 +1043,11 @@ function buildRoadCar(color: number, p: RoadCarParams, num?: number): THREE.Grou
   // subdiv 2, not 6. The rib table already describes the car; resampling it
   // six times per section splines the edges out of existence. Two keeps the
   // silhouette smooth enough to read as bodywork and leaves the creases in.
-  g.add(loftBody(ribs, bodyMat, 2));
+  // subdiv 4, not 2. The spine resample is crease-aware now (see loftBody), so
+  // the reason the old comment gave for keeping it at 2 — "resampling six
+  // times per section splines the edges out of existence" — no longer holds:
+  // the hard transitions are held and only the smooth stretches gain sections.
+  g.add(loftBody(ribs, bodyMat, 4));
 
   // shoulder crease down the whole flank + a deep rocker so it sits low
   for (const sx of [-1, 1]) {
