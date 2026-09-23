@@ -48,7 +48,10 @@ export type RealmId =
   | "neon";
 export type CarId =
   | "f40" | "tauro" | "meridian" | "veloce" | "testa"
-  | "fairlady" | "firehawk" | "iroc" | "imprez" | "zanza";
+  | "fairlady" | "firehawk" | "iroc" | "imprez" | "zanza"
+  // The JDM four, built from the reference art: an R34-era Skyline, a
+  // widebody A90 Supra, an FC RX-7 on pop-ups, and a whale-tail 930.
+  | "r34" | "a90" | "fc3s" | "p930";
 
 export interface RaceStanding {
   name: string;

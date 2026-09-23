@@ -2514,6 +2514,10 @@ const MECH_SPECS: Record<CarId, MechSpec> = {
   firehawk: { scale: 1.08, torsoW: 1.62, torsoH: 1.28, legStyle: "walker", legH: 1.00, build: 1.28, shoulder: 1.22, head: "stack",  weapon: "drill",   wings: "header", exhaust: true },
   iroc:     { scale: 1.10, torsoW: 1.90, torsoH: 1.36, legStyle: "tank",   legH: 0.92, build: 1.55, shoulder: 1.70, head: "dome",   weapon: "wrecker", wings: "industrial", exhaust: true },
   fairlady: { scale: 0.86, torsoW: 1.05, torsoH: 1.10, legStyle: "hover",  legH: 0.95, build: 0.62, shoulder: 0.70, head: "insect", weapon: "daggers", wings: "dragonfly" },
+  r34:      { scale: 1.04, torsoW: 1.58, torsoH: 1.42, legStyle: "walker", legH: 1.18, build: 1.20, shoulder: 1.18, head: "visor",  weapon: "machete", wings: "rollbar" },
+  a90:      { scale: 1.02, torsoW: 1.46, torsoH: 1.34, legStyle: "walker", legH: 1.16, build: 1.05, shoulder: 1.30, head: "canopy", weapon: "saber",   wings: "delta", lean: 0.14 },
+  fc3s:     { scale: 0.92, torsoW: 1.12, torsoH: 1.24, legStyle: "hover",  legH: 1.05, build: 0.72, shoulder: 0.82, head: "dome",   weapon: "rapier",  wings: "ghost" },
+  p930:     { scale: 0.98, torsoW: 1.34, torsoH: 1.22, legStyle: "walker", legH: 1.02, build: 1.00, shoulder: 1.06, head: "insect", weapon: "lance",   wings: "stub", exhaust: true },
 };
 
 interface MechMats {

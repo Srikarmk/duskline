@@ -750,6 +750,7 @@ function carMaterials(color: number, raceNum?: number): CarMaterials {
 const RACE_NUM: Record<CarId, number> = {
   f40: 40, meridian: 1, veloce: 16, tauro: 25, testa: 12,
   zanza: 30, imprez: 22, firehawk: 77, iroc: 8, fairlady: 240,
+  r34: 34, a90: 90, fc3s: 7, p930: 930,
 };
 
 /** Build the drivable mesh for a car type in a given livery color. */
@@ -783,7 +784,7 @@ const RACE_NUM: Record<CarId, number> = {
 // bits you actually recognise a car by (a straked wing, side strakes, pop-up
 // lamps, a shaker scoop, four round lamps, chrome bumpers).
 
-type WingKind = "none" | "straked" | "basket" | "whale" | "duck" | "blade";
+type WingKind = "none" | "straked" | "basket" | "whale" | "duck" | "blade" | "gt";
 type LampKind = "popup" | "round4" | "round2" | "slim" | "wide";
 type TailKind = "bar" | "quad" | "twin" | "slats";
 type ScoopKind = "none" | "shaker" | "rally" | "bulge" | "roof";
@@ -950,6 +951,66 @@ const RIBS_FAIRLADY: RibRow[] = [
   [-1.00, 0.06, 0.56, 0.80, 0.90, 0.76, 0.90],
 ];
 
+// --- the JDM four, drawn off the reference art ------------------------------
+// What all six references share, and what none of the ten existing bodies had:
+// a long bonnet with the cabin set WELL BACK, a waist pinched narrower than
+// the arches around it, and rear haunches that are the widest thing on the car
+// by a clear margin. On a mid-engined wedge the widest point is the engine bay
+// and the cabin sits forward; these are front-engined coupes and the whole
+// proportion runs the other way.
+
+/** Upright, slab-sided and square — the only thing here with no wedge in it at
+ *  all. Wide flat tail to carry four round lamps, arches flared over a body
+ *  that is otherwise a box. */
+const RIBS_R34: RibRow[] = [
+  [ 1.00, 0.05, 0.38, 0.64, 0.50, 0.56, 0.56],
+  [ 0.86, 0.00, 0.68, 0.92, 0.60, 0.88, 0.66],
+  [ 0.58, 0.00, 0.78, 0.98, 0.70, 0.95, 0.76],
+  [ 0.28, 0.00, 0.80, 0.99, 0.86, 0.94, 0.90],
+  [-0.06, 0.00, 0.80, 1.00, 1.00, 0.92, 1.00],
+  [-0.42, 0.00, 0.82, 1.00, 1.00, 0.96, 1.00],
+  [-0.76, 0.02, 0.80, 1.00, 1.00, 0.98, 1.00],
+  [-1.00, 0.06, 0.74, 0.96, 1.00, 0.97, 1.00],
+];
+/** The widebody: a genuinely PINCHED waist at the door — narrower than both
+ *  the front and rear arches — so the haunches read as bolted on. That
+ *  hourglass in plan view is the whole silhouette. */
+const RIBS_A90: RibRow[] = [
+  [ 1.00, 0.05, 0.30, 0.52, 0.46, 0.44, 0.54],
+  [ 0.86, 0.00, 0.56, 0.82, 0.56, 0.70, 0.66],
+  [ 0.58, 0.00, 0.64, 0.88, 0.66, 0.78, 0.74],
+  [ 0.26, 0.00, 0.62, 0.86, 0.80, 0.72, 0.86],
+  [-0.08, 0.00, 0.74, 0.98, 0.98, 0.78, 1.00],
+  [-0.44, 0.00, 0.84, 1.00, 1.00, 0.90, 1.00],
+  [-0.76, 0.02, 0.80, 1.00, 1.00, 0.96, 1.00],
+  [-1.00, 0.10, 0.66, 0.92, 0.96, 0.94, 0.98],
+];
+/** Almost no nose height at all and then a bonnet that stays dead flat for
+ *  half the car before the screen starts. The shoulder fractions climbing
+ *  0.34 -> 0.40 -> 0.46 -> 0.56 across four ribs IS that bonnet. */
+const RIBS_FC3S: RibRow[] = [
+  [ 1.00, 0.03, 0.34, 0.58, 0.34, 0.50, 0.36],
+  [ 0.88, 0.00, 0.62, 0.86, 0.40, 0.82, 0.42],
+  [ 0.66, 0.00, 0.70, 0.94, 0.46, 0.90, 0.48],
+  [ 0.40, 0.00, 0.72, 0.96, 0.56, 0.92, 0.58],
+  [ 0.06, 0.00, 0.74, 0.97, 0.86, 0.86, 0.92],
+  [-0.34, 0.00, 0.76, 1.00, 1.00, 0.86, 1.00],
+  [-0.72, 0.02, 0.72, 0.96, 0.98, 0.90, 0.98],
+  [-1.00, 0.08, 0.62, 0.86, 0.92, 0.86, 0.94],
+];
+/** Round narrow nose, hips over the back axle where the engine actually is,
+ *  and a tail that falls away instead of being cut off. */
+const RIBS_P930: RibRow[] = [
+  [ 1.00, 0.06, 0.28, 0.48, 0.52, 0.36, 0.58],
+  [ 0.86, 0.00, 0.52, 0.76, 0.62, 0.62, 0.70],
+  [ 0.58, 0.00, 0.60, 0.86, 0.70, 0.70, 0.78],
+  [ 0.24, 0.00, 0.64, 0.88, 0.80, 0.72, 0.86],
+  [-0.10, 0.00, 0.74, 0.96, 0.96, 0.82, 0.98],
+  [-0.46, 0.00, 0.84, 1.00, 1.00, 0.92, 1.00],
+  [-0.78, 0.02, 0.80, 0.98, 1.00, 0.96, 1.00],
+  [-1.00, 0.06, 0.70, 0.90, 0.94, 0.92, 0.96],
+];
+
 const ROAD_CARS: Record<CarId, RoadCarParams> = {
   f40: {
     L: 4.43, W: 1.98, R: 0.33, rearR: 1.08, clr: 0.12,
@@ -1011,6 +1072,37 @@ const ROAD_CARS: Record<CarId, RoadCarParams> = {
     sillY: 0.40, shoulderY: 0.78, deckY: 0.86, roofY: 1.32,
     ribs: RIBS_FAIRLADY, cabF: 0.10, cabR: -0.64, roof: "fastback", cabW: 0.82, whF: 0.64, whR: 0.62,
     wing: "none", lamps: "round2", tail: "twin", chrome: true, pipes: 1,
+  },
+  r34: {
+    L: 4.60, W: 1.79, R: 0.33, rearR: 1.04, clr: 0.14,
+    // roofY 1.48 against a 0.84 shoulder: a real glasshouse. The mid-engined
+    // cars on this grid all sit around 1.24-1.32 over a lower shoulder, which
+    // is why they read as one canopy shape from behind — a front-engined
+    // coupe has a cabin you can see into, and that is half of what makes it
+    // look like a road car rather than a prototype.
+    sillY: 0.44, shoulderY: 0.84, deckY: 0.94, roofY: 1.48,
+    // cabF 0.20 / cabR -0.50 puts the screen half a metre further back than
+    // any of the mid-engined cars: long bonnet, cabin over the rear axle.
+    ribs: RIBS_R34, cabF: 0.20, cabR: -0.50, roof: "notch", cabW: 0.86, whF: 0.64, whR: 0.62,
+    wing: "gt", lamps: "slim", tail: "quad", scoop: "bulge", pipes: 2, rim: 0x9aa0a8,
+  },
+  a90: {
+    L: 4.38, W: 1.94, R: 0.33, rearR: 1.14, clr: 0.11,
+    sillY: 0.40, shoulderY: 0.78, deckY: 0.88, roofY: 1.36,
+    ribs: RIBS_A90, cabF: 0.24, cabR: -0.44, roof: "fastback", cabW: 0.78, whF: 0.62, whR: 0.60,
+    wing: "gt", lamps: "round2", tail: "twin", naca: true, pipes: 2, rim: 0x2b2e33,
+  },
+  fc3s: {
+    L: 4.31, W: 1.69, R: 0.31, clr: 0.13,
+    sillY: 0.38, shoulderY: 0.74, deckY: 0.82, roofY: 1.30,
+    ribs: RIBS_FC3S, cabF: 0.06, cabR: -0.60, roof: "fastback", cabW: 0.84, whF: 0.64, whR: 0.62,
+    wing: "duck", lamps: "popup", tail: "twin", louvres: 5, pipes: 1, rim: 0xb0b6be,
+  },
+  p930: {
+    L: 4.29, W: 1.78, R: 0.32, rearR: 1.16, clr: 0.14,
+    sillY: 0.42, shoulderY: 0.80, deckY: 0.88, roofY: 1.30,
+    ribs: RIBS_P930, cabF: 0.14, cabR: -0.46, roof: "fastback", cabW: 0.82, whF: 0.62, whR: 0.64,
+    wing: "whale", lamps: "round2", tail: "bar", pipes: 2, rim: 0x8f6f3a,
   },
 };
 
@@ -1201,6 +1293,26 @@ function buildRoadCar(color: number, p: RoadCarParams, num?: number): THREE.Grou
     const wy = deckY + 0.28, wz = -hl * 0.82;
     g.add(box(W * 0.88, 0.05, L * 0.09, bodyPlain, 0, wy, wz));
     for (const sx of [-1, 1]) g.add(box(0.06, 0.28, 0.1, darkMat, sx * hw * 0.55, wy - 0.14, wz));
+  } else if (wing === "gt") {
+    // BIG REAR WING — the one thing every car in the reference art has, and
+    // the reason this kind exists rather than reusing `straked`: the plane
+    // sits clear above the deck and OVERHANGS the tail, with endplates at the
+    // tips deep enough to read as a wing rather than as a shelf.
+    //
+    // A first version modelled the swan-neck properly — a cap above the plane
+    // and a full-height pylon below it. At this scale that came out as
+    // scaffolding: two chunky goalposts standing on the deck with a lid. The
+    // detail is invisible from the one angle that matters (dead astern, wing
+    // silhouetted against the sky) and the clutter is not. So: thin dark
+    // pylons that disappear against the deck shadow, and let the plane and its
+    // endplates carry the shape.
+    const wy = deckY + 0.33, wz = -hl * 0.92;
+    const chord = L * 0.115;
+    g.add(box(W * 0.96, 0.045, chord, bodyPlain, 0, wy, wz));                    // plane
+    for (const sx of [-1, 1]) {
+      g.add(box(0.04, 0.17, chord * 1.06, bodyPlain, sx * hw * 0.98, wy - 0.06, wz));  // endplate
+      g.add(box(0.035, 0.30, 0.07, darkMat, sx * hw * 0.46, wy - 0.17, wz + chord * 0.1)); // pylon
+    }
   }
 
   // --- engine lid, flanks, bonnet -------------------------------------------

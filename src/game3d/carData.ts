@@ -118,6 +118,46 @@ export const CAR_SPECS: Record<CarId, CarSpec> = {
     stars: { speed: 2, accel: 3, handling: 4 },
     stat: { speed: 0.940, accel: 0.98, grip: 1.12 },
   },
+
+  // --- the JDM four -------------------------------------------------------
+  // Built from the reference art rather than from the existing grid, which was
+  // nine European/American shapes and one Z. Every one of those references is
+  // a front-engined Japanese coupe (or the 930 that the scene grew up
+  // worshipping), and none of the ten bodies came close to one: the giveaways
+  // are a long bonnet with the cabin set well back, enormous rear arches over
+  // a narrow waist, round tail lights, and a wing you can see daylight under.
+  r34: {
+    id: "r34",
+    name: "R34",
+    blurb: "Four-wheel-drive, twin-turbo straight six. Boxy, silver and completely unbothered by weather.",
+    color: 0xb9c0c8,
+    stars: { speed: 4, accel: 4, handling: 5 },
+    stat: { speed: 1.014, accel: 1.06, grip: 1.26 },
+  },
+  a90: {
+    id: "a90",
+    name: "A90",
+    blurb: "Widebody revival on a double-bubble roof. All of the rear tyre, most of the rear wing.",
+    color: 0xe8879f,
+    stars: { speed: 5, accel: 5, handling: 4 },
+    stat: { speed: 1.057, accel: 1.14, grip: 1.08 },
+  },
+  fc3s: {
+    id: "fc3s",
+    name: "FC3S",
+    blurb: "Rotary, pop-up lamps, a bonnet you could land a plane on. Revs to a place other engines cannot.",
+    color: 0x9aa8e0,
+    stars: { speed: 3, accel: 4, handling: 5 },
+    stat: { speed: 0.971, accel: 1.02, grip: 1.22 },
+  },
+  p930: {
+    id: "p930",
+    name: "930",
+    blurb: "Engine behind the back axle and a whale tail to argue with it. Quick, and honest about the risk.",
+    color: 0x2f6f8f,
+    stars: { speed: 4, accel: 5, handling: 3 },
+    stat: { speed: 1.029, accel: 1.16, grip: 0.94 },
+  },
 };
 
 export const CAR_IDS = Object.keys(CAR_SPECS) as CarId[];
