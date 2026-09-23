@@ -623,6 +623,8 @@ export class Game {
   private offTrackExitDist = 0; // arc distance where you left the ribbon — respawn point
   private terrSamp?: { sx: Float64Array; sz: Float64Array; sy: Float64Array; sag: Float64Array }; // cached track polyline for ground-height queries
   private camSnap = true;
+  /** eased version of the camera's ground clamp — see the floor block in render() */
+  private camFloor = 0;
   private cameraIndex = 0;
   /**
    * PHOTO MODE.
@@ -2051,6 +2053,43 @@ export class Game {
       }
     }
     return bestSpread >= Game.CLIFF_SPREAD ? { d: bestD, off: bestOff } : null;
+  }
+
+  /**
+   * The surface a trailing camera must stay above.
+   *
+   * NOT by projecting the camera onto the track. That was the whole problem:
+   * `project` returns the nearest point on the WHOLE circuit, so a lap that
+   * doubles back — or a road that runs beside its own tunnel — hands back a
+   * point on a different section at a different height. Narrowing the corridor
+   * made it rare and widening it made it common; gating on lap distance just
+   * turned a wrong answer into no answer, and the fallback was the terrain,
+   * which above a tunnel is the hill the road is bored through. Measured at
+   * Enchanted Forest's cave exit, the floor went 1.19 -> 11.77 m between two
+   * frames and took the viewpoint with it.
+   *
+   * The camera is a TRAILING camera, so the road it is over is simply the road
+   * `back` metres behind the car. Sampling it by distance instead of by
+   * position has no nearest-point ambiguity in it at all, and is continuous by
+   * construction because the car's own distance is.
+   */
+  private cameraFloorAt(carDist: number, back: number, camX: number, camZ: number): number {
+    const fd = this.freeDrive;
+    const bi = fd.onBranchIdx;
+    let road: number;
+    if (bi >= 0 && bi < this.branches.length) {
+      const b = this.branches[bi].path;
+      const u = clamp(b.project(fd.x, fd.z).u - back, 0, b.length);
+      road = b.pointAt(u, 0, this.tmpCamFloor).y;
+    } else {
+      road = this.track.pointAt(this.track.wrap(carDist - back), 0, this.tmpCamFloor, false).y;
+    }
+    // Off the ribbon the terrain is what you are over, so it counts too. On it,
+    // the road alone is the floor — see the tunnel note above.
+    if (Math.abs(fd.lateral) > ROAD_HALF_WIDTH) {
+      return Math.max(road, this.groundHeightAtXZ(camX, camZ));
+    }
+    return road;
   }
 
   private groundSpreadUnder(x: number, z: number, reach: number): number {
@@ -5896,8 +5935,25 @@ export class Game {
         groundY + preset.height + this.alt * 0.92,
         this.freeDrive.z - fz * preset.back,
       );
-      if (this.camSnap) { this.camPos.copy(camAnchor); this.camSnap = false; }
-      else this.camPos.lerp(camAnchor, 0.5);
+      // THE FLOOR UNDER THE CAMERA BELONGS IN THE ANCHOR, not only in the clamp
+      // below. `groundY` is the surface under the CAR; the clamp that follows
+      // samples the surface under the CAMERA, which on CINEMATIC is 16 m back.
+      // Over a crest those two disagree by metres, so the anchor pulled the
+      // camera down while the clamp shoved it back up, and when the camera
+      // cleared the crest and the clamp let go it fell the whole way at the
+      // follow rate. Measured: a 6.01 m step in ONE frame, which is the 14.5
+      // degrees of whip. Folding the camera's own ground into the anchor means
+      // the two terms agree and the clamp is a safety net again rather than
+      // half of a tug of war.
+      //
+      // I tried lifting the anchor by the ground under the CAMERA here as well,
+      // to stop it fighting the clamp. It made things worse in a new way: the
+      // anchor is a straight line back along the car's heading, so the moment
+      // the car is sideways that point swings off the road onto the hillside
+      // beside it, and the lift rocketed the viewpoint to 8.7 m. The eased,
+      // road-first floor below is the whole fix; this was one term too many.
+      if (this.camSnap) { this.camPos.copy(camAnchor); this.camSnap = false; this.camFloor = 0; }
+      else this.camPos.lerp(camAnchor, preset.follow);
 
       // DO NOT LET THE CAMERA GO UNDER THE GROUND. Its height is taken from the
       // road at the CAR's position, but it sits several metres behind — and on
@@ -5920,26 +5976,20 @@ export class Game {
         // project(), take whichever of road and terrain is higher, and hold
         // clear of that. Only when the camera is actually over the ribbon —
         // out in a field the road's height is irrelevant.
-        const cx = this.camPos.x, cz = this.camPos.z;
-        let floor = this.groundHeightAtXZ(cx, cz);
-        const pr = this.track.project(cx, cz);
-        if (Math.abs(pr.lateral) < ROAD_HALF_WIDTH * 2.2) {
-          const rp = this.track.pointAt(pr.dist, pr.lateral, this.tmpCamFloor, false);
-          if (rp.y > floor) floor = rp.y;
-        }
-        // …and the alternate routes are roads too. Out on a branch the main
-        // track's projection is 20-odd metres wide of the camera, so the test
-        // above declines to use it and the clamp falls back to terrain — which
-        // is the same "under the tarmac" case, on the fork.
-        for (const br of this.branches) {
-          const bp = br.path.project(cx, cz);
-          if (bp.u <= 0.5 || bp.u >= br.path.length - 0.5) continue;
-          if (Math.abs(bp.lateral) > ROAD_HALF_WIDTH * 2.2) continue;
-          const by = br.path.pointAt(bp.u, bp.lateral, this.tmpCamFloor).y;
-          if (by > floor) floor = by;
-        }
-        floor += 1.1;
-        if (this.camPos.y < floor) this.camPos.y = floor;
+        const floor = this.cameraFloorAt(this.freeDrive.dist, preset.back, this.camPos.x, this.camPos.z) + 1.1;
+        // …and ease onto it. A hard assignment turns any step in the sampled
+        // surface into a step in the picture.
+        //
+        // The easing is ASYMMETRIC and there is no hard backstop behind it. A
+        // backstop was the obvious safety net and it silently cancelled the
+        // easing: whenever the raw floor rose, the backstop snapped the camera
+        // the whole way and the eased value was never the binding one. Rising
+        // at 0.5 is quick enough to stay out of the tarmac (the surface under
+        // the camera moves slowly now the corridor is wide); falling at 0.12
+        // is what stops a crest from dropping the viewpoint out from under you.
+        const k = floor > this.camFloor ? 0.5 : 0.12;
+        this.camFloor = this.camFloor === 0 ? floor : this.camFloor + (floor - this.camFloor) * k;
+        if (this.camPos.y < this.camFloor) this.camPos.y = this.camFloor;
       }
       // PHOTO MODE takes the camera over completely: an orbit around the car
       // that the player steers, instead of the chase rig. Everything else in

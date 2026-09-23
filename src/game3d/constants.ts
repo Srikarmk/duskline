@@ -184,15 +184,27 @@ export interface CameraPreset {
   ahead: number;
   lookHeight: number;
   fov: number;
+  /**
+   * How much of the gap to the ideal position the camera closes each frame.
+   *
+   * Every preset used to run at a hard-coded 0.5, which is a very stiff rig —
+   * it copies half of any movement of the car IMMEDIATELY. On the chase cam
+   * that reads as responsive. On CINEMATIC, sitting 16 m back where the ground
+   * under the camera is a different height from the ground under the car, it
+   * reads as the camera being jerked around: measured over 15 s on Enchanted
+   * Forest, chase moved at most 0.32 degrees in a frame and cinematic 14.5.
+   * A cinematic camera is supposed to lag.
+   */
+  follow: number;
 }
 export const CAMERA_PRESETS: CameraPreset[] = [
-  { name: "CHASE", back: 9.5, height: 3.4, ahead: 7, lookHeight: 1.2, fov: 72 },
-  { name: "CINEMATIC", back: 16, height: 6.5, ahead: 4, lookHeight: 1.8, fov: 66 },
+  { name: "CHASE", back: 9.5, height: 3.4, ahead: 7, lookHeight: 1.2, fov: 72, follow: 0.5 },
+  { name: "CINEMATIC", back: 16, height: 6.5, ahead: 4, lookHeight: 1.8, fov: 66, follow: 0.13 },
   // A bonnet cam has to sit AHEAD of the car's centre, not 2 m behind it. With
   // the old value the camera sat inside the new low supercar body and you got a
   // full-screen close-up of the driver's helmet. Negative `back` puts it out
   // over the nose, so nothing of the car is between you and the road.
-  { name: "HOOD", back: -1.6, height: 1.15, ahead: 18, lookHeight: 1.1, fov: 84 },
+  { name: "HOOD", back: -1.6, height: 1.15, ahead: 18, lookHeight: 1.1, fov: 84, follow: 0.6 },
 ];
 
 // re-exported so 3D code and the shared HUD agree

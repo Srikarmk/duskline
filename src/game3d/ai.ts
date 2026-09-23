@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import type { Track } from "./track";
-import { ROAD_HALF_WIDTH, LANE_CENTERS, GRAVITY, MAX_SPEED, CAR_LIFT } from "./constants";
+import { ROAD_HALF_WIDTH, LANE_CENTERS, GRAVITY, MAX_SPEED, CAR_LIFT, CORNER_GRIP } from "./constants";
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
@@ -67,6 +67,10 @@ export class Opponent {
   private readonly aggression: number;    // 0..1: apex-hunting + decisive steering
   private readonly cornerCaution: number; // ~0.6 (send it) .. 1.3 (brake hard, clean)
   private readonly cornerCap: number;     // max fraction of speed shed for a corner
+  /** this racer's share of the tyre grip the PLAYER gets, for the friction
+   *  circle below. Spreads 0.82..1.20 across the grid, so corners are where
+   *  the field actually separates. */
+  private readonly cornerSkill: number;
   private readonly laneBias: number;      // preferred racing line (lateral, -1..1)
   private readonly laneRoam: number;      // 0 hold a line .. 1 constant weaver
   private readonly laneBase: number;      // seconds between lane decisions
@@ -105,6 +109,7 @@ export class Opponent {
     this.aggression = 0.15 + rng() * 0.8;
     this.cornerCaution = 0.6 + rng() * 0.7;
     this.cornerCap = 0.28 + ((this.cornerCaution - 0.6) / 0.7) * 0.24;
+    this.cornerSkill = 0.82 + this.aggression * 0.38;
     this.laneBias = (rng() * 2 - 1) * 0.75;
     this.laneRoam = rng();
     this.laneBase = 3.6 - this.laneRoam * 2.3;
@@ -246,6 +251,25 @@ export class Opponent {
     // lengths back stayed two lengths back for the rest of the race and the
     // field never fought over anything.
     target *= 1 + tow * AI_TOW_GAIN;
+    // --- THE SAME FRICTION CIRCLE THE PLAYER PAYS ---------------------------
+    //
+    // `cornerLift` above is a FRACTION of top speed shed, scaled by `curve * 9`.
+    // Circuits here peak at about 0.012 curvature, so that term tops out near
+    // 0.108: even in the tightest hairpin a rival lifted about 11%, nowhere
+    // near its own 28-52% cap. It never mattered while corners were free for
+    // the player too. Once the player got a friction circle and a real corner
+    // cost, it became the whole race — measured over 60 s on Enchanted Forest,
+    // the field averaged 56.4 m/s against the player's 45.6, which is 98% of
+    // top speed around an entire lap. No amount of driving beats that.
+    //
+    // A corner of radius r can be taken at sqrt(grip * r), and r is 1/curvature.
+    // That is exactly the rule the player's tyres follow, so applying it here
+    // puts both on the same physics instead of two different games. It also
+    // makes corners the place the field separates, because `cornerSkill`
+    // varies per racer — which is what a grid of drivers should look like.
+    if (curve > 1e-4) {
+      target = Math.min(target, Math.sqrt((CORNER_GRIP * grip * this.cornerSkill) / curve));
+    }
     // Cap relative to a fast kart's nitro ceiling rather than raw MAX_SPEED: the
     // old 1.34x was measured against the base figure, so on a quick kart the
     // player simply out-ran the ceiling and lapped the field. Still a cap, so
