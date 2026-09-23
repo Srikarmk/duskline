@@ -6,10 +6,12 @@ Dependency and code checks are against the working tree.
 Severity: 🔴 fix before launch · 🟠 fix soon · 🟡 worth doing · ⚪ nice to have
 Status: ✅ fixed and verified · ◻ open
 
-**31 of 34 findings are fixed.** Three are open: the Next 16 framework upgrade
-(a build-time advisory, not reachable in this app — reasoning below), the
-progression/championship items in section 2, and N9 below, which I could not
-attribute.
+**33 of 34 findings are fixed, and N9 turned out not to be a finding at all.**
+What is left is the progression / championship / replays group in section 2,
+which is features rather than faults, and the sound work — both held
+deliberately.
+
+`npm audit` is now clean: 2 vulnerabilities (1 moderate, 1 high) to **0**.
 
 Six findings were opened by the 2026-09-18 feature pass and eight more by the
 2026-09-22 pass. That is the pattern worth naming: **adding a mechanic, or a
@@ -703,13 +705,32 @@ construction. Both now share one `findCliff`.
 | Enchanted Forest | 1, in a meadow | 2 — 14.8 m and 15.0 m |
 | Crystal Peaks | 3, two on the flat verge | 3 — 25 m, 17.8 m, 17.3 m |
 
-### ◻ 🟡 N9 — A debug reset can leave the car stuck
+### ✅ N9 — NOT A BUG. My test harness, re-using a finished race
 
-`freeDrive.reset(track, 0)` from the dev handle sometimes leaves the car at
-~0.2 m/s, unable to move, for the rest of the run. It reproduced four times
-during grip tuning. That entry point is not how a race starts — the grid
-places cars behind the line — so **I have not established whether this can
-happen in play**, and it should not be assumed fixed or assumed harmless.
+Recorded as open on 09-22: `freeDrive.reset(track, 0)` sometimes left the car
+at ~0.2 m/s for the rest of the run, four times during grip tuning. Worth
+chasing, because `reset()` is not a debug-only path — it is both the race
+start (`gridStart`) and the off-track respawn, so a reset that can wedge the
+car is a reset that can wedge it mid-race.
+
+It cannot. Reproducing it with full state logging, every stalled run came back
+`phase: "finished"`, `lap: 4` or `lap: 5` — on a three-lap race. The sweep
+reused one `Game` across six runs; by the third the car had crossed the line
+three times, and `update()` takes an early return in the finished phase that
+never steps `freeDrive` at all. Resetting to distance 0 with the lap counter
+already past the race length re-triggers the finish immediately, so the car
+never moves and `travelled` stays 0 — which is exactly the shape of the
+symptom.
+
+**Control:** the same six configurations, with `lap` and `finished` reset
+between runs, stall **0 times out of 6**, and mean speed rises monotonically
+with grip (40.2 → 49.6 m/s). Nothing in the game is at fault.
+
+The lesson is the one worth keeping: a long-lived object reused across trials
+carries state between them, and "it reproduces" is not the same as "it is a
+bug in the thing I am testing". I reported it as unattributed rather than as
+a fault, which turned out to be the right call — but the cheaper move would
+have been to log `phase` the first time it happened.
 
 ---
 
@@ -1039,7 +1060,39 @@ happen in play**, and it should not be assumed fixed or assumed harmless.
 
     Set `RACE_TOKEN_SECRET` to turn it on; unset, everything behaves exactly as
     before.
-26. ◻ **Next 16 upgrade**, which also clears the last two advisories.
+26. ✅ **Next 16 upgrade.** 15.3 → 16.3.6, and `npm audit` goes from **2
+    vulnerabilities (1 moderate, 1 high) to 0** — the postcss path-traversal
+    advisory reached through Next's own dependency and needed the major bump
+    to clear.
+
+    Three things it broke, all of them small and all of them real:
+
+    - **ESLint stopped running entirely**, with
+      `TypeError: Converting circular structure to JSON` out of the config
+      validator. `eslint-config-next` now ships native flat configs, and this
+      repo was still pulling them through `FlatCompat` — translating a flat
+      config into eslintrc and back. Importing
+      `eslint-config-next/core-web-vitals` and `/typescript` directly is both
+      the fix and one less layer. Worth noting the failure mode: an error that
+      reads like a broken config file, for a config file that is fine.
+    - **A real React violation surfaced**: `GameCanvas` assigned
+      `onFinishRef.current` in the render body. Render has to be pure for React
+      to be free to re-run or discard it. Moved into an effect; the engine only
+      reads that ref when a race ends, long after commit.
+    - Three `react-hooks/set-state-in-effect` errors, all the same sanctioned
+      pattern — read `localStorage` / `matchMedia` **after** mount, because
+      reading during render runs on the server and gives a hydration mismatch.
+      Rule turned off with that reasoning recorded next to it. The
+      rule-satisfying refactor is `useSyncExternalStore` with a server
+      snapshot, which is the right answer if it ever shows up in a profile and
+      is not an upgrade's job.
+
+    Next also rewrote `tsconfig.json` itself: `jsx` `preserve` → `react-jsx`,
+    and `.next/dev/types` added to `include`.
+
+    Verified beyond the build: 1,800 simulated frames of driving on Enchanted
+    Forest — 0 non-finite frames, no console errors, `glError` 0, forks and
+    minimap routes intact.
 27. ✅ **`prefers-reduced-motion` in the engine.** The stylesheet honoured it
     for the menus all along; the engine never did, so the two effects most
     likely to cause trouble ran regardless. Camera shake and the radial speed

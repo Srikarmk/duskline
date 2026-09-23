@@ -27,8 +27,17 @@ interface Props {
 export default function GameCanvas({ mode, realm, car, laps, onFinish, onQuit }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const gameRef = useRef<Game | null>(null);
+  // Latest-callback ref, so the engine can be built once and still call the
+  // current onFinish. Assigned in an EFFECT, not in the render body: writing a
+  // ref during render is a real violation rather than a style point — render
+  // has to be pure for React to be free to re-run or discard it, and Next 16's
+  // lint config is the first thing here to say so. The engine only reads this
+  // when a race ends, which is always long after commit, so being one commit
+  // behind during render cannot matter.
   const onFinishRef = useRef(onFinish);
-  onFinishRef.current = onFinish;
+  useEffect(() => {
+    onFinishRef.current = onFinish;
+  }, [onFinish]);
   const [paused, setPaused] = useState(false);
   const [runId, setRunId] = useState(0);
   // Checked once, before anything is built. See capability.ts — without this a

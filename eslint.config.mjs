@@ -1,15 +1,20 @@
-import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { FlatCompat } from "@eslint/eslintrc";
+import nextCoreWebVitals from "eslint-config-next/core-web-vitals";
+import nextTypescript from "eslint-config-next/typescript";
 
 /**
  * Linting, for the first time.
  *
  * `next lint` has always offered to set this up and never had been, so nothing
  * had ever been linted here — 25k lines written with only `tsc` watching.
+ *
+ * These were pulled in through `FlatCompat` until the Next 16 upgrade.
+ * eslint-config-next now ships native flat configs, and running them back
+ * through the eslintrc compatibility layer throws
+ * "Converting circular structure to JSON" out of the config validator — which
+ * reads like a broken config file rather than what it is, a config being
+ * translated into a format it no longer needs. Importing them directly is both
+ * the fix and one less layer.
  */
-const compat = new FlatCompat({ baseDirectory: dirname(fileURLToPath(import.meta.url)) });
-
 const config = [
   {
     ignores: [
@@ -18,7 +23,8 @@ const config = [
       "next-env.d.ts",
     ],
   },
-  ...compat.extends("next/core-web-vitals", "next/typescript"),
+  ...nextCoreWebVitals,
+  ...nextTypescript,
   {
     rules: {
       // The engine is a 4k-line class that predates this config. These are the
@@ -32,8 +38,20 @@ const config = [
       // optimizer adds a per-request cost at the provider for art we already
       // compress ourselves (see scripts/optimize-textures.mjs).
       "@next/next/no-img-element": "off",
+      // New in the Next 16 config (the React Compiler rule set). Every instance
+      // here is the same sanctioned pattern: read browser-only state —
+      // localStorage, matchMedia — AFTER mount, because reading it during
+      // render would run on the server and produce a hydration mismatch. They
+      // each run once, on mount, and set state that render then uses; the
+      // cascading-render cost the rule is written to prevent is one extra
+      // render at startup.
+      //
+      // The rule-satisfying refactor is useSyncExternalStore with a server
+      // snapshot, which is the right answer if this ever shows up in a profile.
+      // It is not an upgrade's job.
+      "react-hooks/set-state-in-effect": "off",
     },
   },
-]
+];
 
 export default config;
