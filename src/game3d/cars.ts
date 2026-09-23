@@ -1139,7 +1139,13 @@ function buildRoadCar(color: number, p: RoadCarParams, num?: number): THREE.Grou
   // the reason the old comment gave for keeping it at 2 — "resampling six
   // times per section splines the edges out of existence" — no longer holds:
   // the hard transitions are held and only the smooth stretches gain sections.
-  g.add(loftBody(ribs, bodyMat, 4));
+  // 7 / 5 rather than 4 / 3. Measured, the shell was 1,740 triangles — for the
+  // object that fills the middle of the screen for a whole race, on a grid
+  // where triangles are close to free because every car merges down to one
+  // mesh per material and the renderer is draw-call bound, not fill bound.
+  // That is what "the cars are low poly" actually was: not a budget, just a
+  // number nobody had revisited since the loft was written.
+  g.add(loftBody(ribs, bodyMat, 7, 5));
 
   // shoulder crease down the whole flank + a deep rocker so it sits low
   for (const sx of [-1, 1]) {
@@ -1157,7 +1163,34 @@ function buildRoadCar(color: number, p: RoadCarParams, num?: number): THREE.Grou
   // --- front ----------------------------------------------------------------
   const noseY = deckY * p.ribs[2][6];       // bonnet height at the front arch
   g.add(box(W * 0.78, 0.05, L * 0.06, darkMat, 0, clr - 0.02, hl * 0.9));   // splitter
-  g.add(box(W * (p.twoTone ? 0.42 : 0.34), 0.16, 0.06, grilleMat, 0, sillY, hl * 0.95));
+  // --- THE FACE -------------------------------------------------------------
+  // Every one of the reference cars is recognisable head-on before you can see
+  // anything else about it, and all of that is in one area: a big grille with
+  // something framing it, and intakes in the corners under the lamps. This
+  // used to be a single 16 cm strip of mesh low on the nose — so from the front
+  // the whole grid was a blank wedge with headlights stuck on.
+  //
+  // Chrome-bumper classics keep a narrow grille: a 1970s coupe does not have a
+  // gaping intake, and giving it one would make the oldest car on the grid look
+  // like the newest.
+  {
+    const wide = p.chrome ? 0.34 : 0.56;
+    const tall = p.chrome ? 0.15 : 0.26;
+    const gy = sillY + (p.chrome ? 0.0 : 0.02);
+    // recessed mesh, then a surround standing a little proud of it so the
+    // opening reads as a hole in the bodywork rather than a decal
+    g.add(box(W * wide, tall, 0.05, grilleMat, 0, gy, hl * 0.93));
+    g.add(box(W * (wide + 0.07), tall + 0.055, 0.045,
+              p.chrome ? chromeMat : darkMat, 0, gy, hl * 0.945));
+    if (!p.chrome) {
+      // corner intakes, low and outboard — the A90's are nearly as big as its
+      // grille and they are most of why its nose reads as wide
+      for (const sx of [-1, 1]) {
+        g.add(box(W * 0.17, 0.15, 0.05, grilleMat, sx * hw * 0.68, clr + 0.13, hl * 0.935));
+        g.add(box(W * 0.2, 0.19, 0.04, darkMat, sx * hw * 0.68, clr + 0.13, hl * 0.945));
+      }
+    }
+  }
   if (p.chrome) {
     g.add(box(W * 0.9, 0.09, 0.07, chromeMat, 0, sillY + 0.06, hl * 0.97));
     g.add(box(W * 0.9, 0.09, 0.07, chromeMat, 0, sillY + 0.06, -hl * 0.97));
