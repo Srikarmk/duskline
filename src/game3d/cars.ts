@@ -1359,12 +1359,32 @@ function buildRoadCar(color: number, p: RoadCarParams, num?: number): THREE.Grou
     // silhouetted against the sky) and the clutter is not. So: thin dark
     // pylons that disappear against the deck shadow, and let the plane and its
     // endplates carry the shape.
-    const wy = deckY + 0.33, wz = -hl * 0.92;
+    //
+    // ANGLE OF ATTACK is what stops it reading as a shelf. A dead-flat plane
+    // held above the deck is a shelf no matter how well it is proportioned;
+    // the thing the eye reads as "wing" is the tilt, and every wing in the
+    // reference art is mounted trailing-edge-up. The plane, its endplates and
+    // the gurney go in a group so they tilt together — a tilted plane between
+    // upright endplates reads as a mistake.
+    //
+    // The pylons stay vertical and outside the group, because they are
+    // structure rather than aerofoil and a leaning pylon looks bent.
+    const wy = deckY + 0.30, wz = -hl * 0.92;
     const chord = L * 0.115;
-    g.add(box(W * 0.96, 0.045, chord, bodyPlain, 0, wy, wz));                    // plane
+    const foil = new THREE.Group();
+    foil.add(box(W * 0.96, 0.045, chord, bodyPlain, 0, 0, 0));                   // plane
+    // gurney flap: a small lip standing up off the trailing edge. Two
+    // centimetres of geometry, and it is the detail that says "aero part"
+    // rather than "plank" from directly behind.
+    foil.add(box(W * 0.96, 0.038, 0.022, bodyPlain, 0, 0.038, -chord * 0.5));
     for (const sx of [-1, 1]) {
-      g.add(box(0.04, 0.17, chord * 1.06, bodyPlain, sx * hw * 0.98, wy - 0.06, wz));  // endplate
-      g.add(box(0.035, 0.30, 0.07, darkMat, sx * hw * 0.46, wy - 0.17, wz + chord * 0.1)); // pylon
+      foil.add(box(0.04, 0.17, chord * 1.06, bodyPlain, sx * hw * 0.98, -0.06, 0)); // endplate
+    }
+    foil.rotation.x = -0.15;                 // ~9 degrees, trailing edge up
+    foil.position.set(0, wy, wz);
+    g.add(foil);
+    for (const sx of [-1, 1]) {
+      g.add(box(0.035, 0.30, 0.07, darkMat, sx * hw * 0.46, wy - 0.17, wz + chord * 0.1));
     }
   }
 
@@ -1406,6 +1426,43 @@ function buildRoadCar(color: number, p: RoadCarParams, num?: number): THREE.Grou
     }
     return deckY * rows[rows.length - 1][6];
   };
+
+  // --- BONNET ---------------------------------------------------------------
+  // On a front-engined car the bonnet is the largest single surface you see
+  // from the chase camera, and on every car here it was blank. The reference
+  // art all carries the same two things: a pair of creases running back from
+  // behind the lamps, and vents let into them near the screen.
+  //
+  // It has to live AFTER deckAtZ, which is the only thing that knows how high
+  // the bonnet actually is at a given point. A first version placed the
+  // creases at a constant `noseY` — the bonnet's height at the FRONT arch —
+  // which on a rising bonnet buries the back half of the crease inside the
+  // body, and ran them from 0.16 to 0.76 of the half-length, straight under
+  // the base of the windscreen. Both ends have to come from the rib table.
+  //
+  // Gated on `cabF`, the cabin's front z-fraction: under 0.28 means the screen
+  // starts well back, i.e. there is a bonnet worth decorating. That is exactly
+  // the front-engined cars, and it leaves the mid-engined wedges alone where
+  // the same detail would sit on a 40 cm lid and read as a mistake.
+  if (p.cabF < 0.28) {
+    const zF = 0.84, zB = p.cabF + 0.08;          // behind the lamps .. ahead of the screen
+    const yF = deckAtZ(zF), yB = deckAtZ(zB);
+    const len = hl * (zF - zB);
+    if (len > L * 0.1) {
+      const midZ = hl * (zF + zB) / 2;
+      const pitch = Math.atan2(yB - yF, len);      // follow the bonnet's own rise
+      for (const sx of [-1, 1]) {
+        const crease = box(W * 0.14, 0.03, len / Math.cos(pitch), bodyPlain,
+                           sx * hw * 0.37, (yF + yB) / 2 + 0.012, midZ);
+        crease.rotation.x = -pitch;
+        g.add(crease);
+        // vents sit at the BACK of the bonnet, which is where hot air actually
+        // leaves one and where every reference photo has them
+        g.add(box(W * 0.10, 0.024, L * 0.05, grilleMat,
+                  sx * hw * 0.37, yB + 0.03, hl * (zB + (zF - zB) * 0.18)));
+      }
+    }
+  }
   const span = p.cabF - p.cabR;
   const zf = (k: number) => p.cabF - span * k;
   const roof = p.roof ?? "canopy";
