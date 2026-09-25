@@ -1527,9 +1527,19 @@ export class Game {
     const slotLane = (slot: number) => (slot % 2 === 0 ? -colLane : colLane);
     this.gridStart = slotDist(playerSlot);   // the player's own slot, for init()
 
+    // WHICH CAR EACH RIVAL DRIVES. `CAR_IDS[i % CAR_IDS.length]` looks like it
+    // cycles the whole catalogue and does not: there are nine rivals and
+    // fourteen cars, so it only ever reached indices 0-8. The four built from
+    // the reference art and the Fairlady were unreachable on the grid — they
+    // existed only if you scrolled the picker to the bottom and chose one.
+    //
+    // A stride coprime to the pool size walks the whole list instead of the
+    // front of it, and dropping the player's own car means you are not racing
+    // nine strangers and your own twin.
+    const pool = CAR_IDS.filter((c) => c !== this.carId);
     for (let i = 0; i < gridN; i++) {
       const spec = OPPONENTS[i];
-      const car = makeKart(CAR_IDS[i % CAR_IDS.length], spec.color);
+      const car = makeKart(pool[(i * 5) % pool.length], spec.color);
       // rear nitro flames (shown when the opponent boosts)
       const flames: THREE.Mesh[] = [];
       for (const fx of [-0.55, 0.55]) {

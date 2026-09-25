@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { mergeStaticParts, mergeByMaterial } from "./merge";
 import type { CarId } from "../game/engine";
 import { metalDetail, pbr, ANISO } from "./textures";
@@ -209,11 +210,30 @@ function liveryTexture(baseHex: number, darkHex: number, accentHex: number, stri
   return tex;
 }
 
+/**
+ * Every appendage on a car — wings, splitters, sills, mirrors, lamp housings,
+ * the diffuser, the grille — comes through here, 66 of them per car. They were
+ * all sharp-edged `BoxGeometry`, and once the body shell was smoothed that is
+ * the entire remaining source of the blocky read: a real part has a chamfer
+ * where the tool left the material, and a chamfer is what catches a highlight
+ * along every edge. Without it a box is lit by three flat tones and nothing
+ * else, which is exactly what plastic bricks look like.
+ *
+ * One segment, so it is a flat bevel rather than a rounded corner — a moulded
+ * panel edge, not soft plastic. The radius is capped at 18 mm and at 28% of
+ * the part's THINNEST dimension, because most of these are only a few
+ * centimetres thick and RoundedBoxGeometry degenerates if the radius reaches
+ * half the side. Parts too thin to chamfer fall back to a plain box.
+ */
 function box(
   w: number, h: number, d: number, mat: THREE.Material,
   x = 0, y = 0, z = 0
 ): THREE.Mesh {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  const r = Math.min(0.018, Math.min(w, h, d) * 0.28);
+  const geo = r > 0.0015
+    ? new RoundedBoxGeometry(w, h, d, 1, r)
+    : new THREE.BoxGeometry(w, h, d);
+  const m = new THREE.Mesh(geo, mat);
   m.position.set(x, y, z);
   return m;
 }
@@ -1508,6 +1528,27 @@ function buildRoadCar(color: number, p: RoadCarParams, num?: number): THREE.Grou
     // outer face, it renders as a bright hoop stuck round the wheel rather
     // than as a lip in the bodywork.
     g.add(box(0.1, r * 1.5, r * 2.1, darkMat, x - Math.sign(x) * 0.16, clr + r * 0.7, z));
+    // ARCH FLARE. Every car in the reference art has bodywork that bulges out
+    // over the tyre — it is most of what "widebody" means and the flank was
+    // reading as a flat wall without it.
+    //
+    // The note above records the version that did not work: a full torus at
+    // the tyre's own radius, sitting on its outer face, which renders as a
+    // bright hoop around the wheel. Two differences here. It is a PARTIAL arc
+    // over the top ~125 degrees only, so it never closes into a ring; and it
+    // sits at the FLANK, projecting outward from the bodywork rather than
+    // orbiting the wheel. That is the difference between a lip in a wing and
+    // a bracelet.
+    const sx = Math.sign(x);
+    const flare = new THREE.Mesh(
+      new THREE.TorusGeometry(r * 1.1, 0.036, 6, 14, Math.PI * 0.7),
+      bodyPlain,
+    );
+    flare.rotation.order = "YXZ";
+    flare.rotation.y = sx * Math.PI / 2;
+    flare.rotation.z = Math.PI * 0.15;          // centre the arc on the top of the wheel
+    flare.position.set(sx * (hw * 0.995), clr + r, z);
+    g.add(flare);
   }
   return g;
 }
