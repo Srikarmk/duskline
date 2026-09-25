@@ -737,11 +737,33 @@ have been to log `phase` the first time it happened.
 ## 2. What we could improve
 
 ### Performance
-1. ✅ **Code-split the engine.** `GameApp` imported `GameCanvas` statically, so
-   three.js shipped in the first chunk — **405 kB of JavaScript to display a
-   menu that renders no triangles.** Now a `dynamic()` import with a loading
-   state. **Page 295 kB → 23 kB; first-load JS 398 kB → 126 kB, a 68% cut.**
-   The engine downloads while the player is choosing a world.
+1. ◻ **Code-split the engine — RECORDED AS FIXED, AND IT IS NOT.** `GameApp`
+   imported `GameCanvas` statically, so three.js shipped in the first chunk.
+   That was changed to a `dynamic()` import and measured at the time as
+   **first-load JS 398 kB → 126 kB**.
+
+   Re-measured 2026-09-25 against the built output and a real browser: the
+   three.js chunk (**263 kB raw, 70 kB gzip**) is an `async <script>` in the
+   prerendered HTML and the browser fetches it on first paint, before the
+   player has even chosen guest-or-Google on the sign-in gate. Both consumers
+   — `GameCanvas` and `CarShowroom` — are `dynamic()`, and it happens anyway.
+
+   Two things I got wrong on the way to that, both worth recording:
+
+   - I called it a regression from the Next 16 upgrade. It is not. A build
+     with `next build --webpack` puts three.js in the initial set too, and the
+     totals match within 3% (899 kB / 269 kB gzip webpack vs 925 kB / 277 kB
+     Turbopack). It predates the upgrade.
+   - `build-manifest.json`'s `rootMainFiles` does NOT list the chunk, which is
+     what made it look fine. The manifest and the emitted HTML disagree;
+     the HTML is what the browser obeys. Trust the network panel.
+
+   **Left open deliberately rather than chased.** The menu's CAR step renders a
+   live 3D showroom through the same `makeKart` the race uses, so three.js is
+   not dead weight — it is the car preview, two screens after it downloads,
+   and the engine is needed seconds later regardless. `warmRaceAssets` already
+   pulls race textures during the menu on exactly this reasoning. The honest
+   position is that the 68% number is stale, not that there is a bug to fix.
 2. ✅ **Recompress the textures** — see B1. 12.1 MB → 916 KB.
 3. ✅ **Per-realm ground, from one photograph.** Ten of the seventeen realms
    borrowed another realm's ground albedo and recoloured it with

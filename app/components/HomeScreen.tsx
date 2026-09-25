@@ -83,7 +83,10 @@ const MODE_LABEL: Record<GameMode, string> = {
 
 const STEPS: { n: number; label: string; hint: string }[] = [
   { n: 1, label: "WORLD", hint: "Twelve places to drive. Pick one." },
-  { n: 2, label: "CAR", hint: "Ten road cars. Speed, grip, launch — pick your weapon." },
+  // Counted from the catalogue, not written down. It said "Ten" for the four
+  // races after the JDM cars were added — the header two lines up has always
+  // read CAR_IDS.length and was saying fourteen at the same time.
+  { n: 2, label: "CAR", hint: `${CAR_IDS.length} road cars. Speed, grip, launch — pick your weapon.` },
   { n: 3, label: "MODE", hint: "A race, an endless cruise, a championship, or a firefight." },
   { n: 4, label: "GO", hint: "Loadout check. Lights out." },
 ];
