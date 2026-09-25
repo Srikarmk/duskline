@@ -41,6 +41,12 @@ jobs:
       # none of them break the build, the types or the lint.
       - name: Render budget
         run: npm run test:render
+      # Fourteen cars of hand-authored numbers — rib tables, height landmarks,
+      # cabin footprints. None of it is checked by the compiler beyond "these
+      # are numbers", and an out-of-order z-fraction silently folds a body
+      # through itself.
+      - name: Car catalogue
+        run: npm run test:cars
       - name: Build
         run: npm run build
       # Budgets AFTER the build, because they measure it. The first-load figure

@@ -764,6 +764,28 @@ have been to log `phase` the first time it happened.
    and the engine is needed seconds later regardless. `warmRaceAssets` already
    pulls race textures during the menu on exactly this reasoning. The honest
    position is that the 68% number is stale, not that there is a bug to fix.
+
+   **The real first-load number, measured from the document: 231 kB gzip, of
+   which ~87 kB is three.js** (polyfills excluded — they are `nomodule` and a
+   modern browser does not fetch them). `test/budgets.mjs` now measures that
+   instead of the manifest, and its ceiling is 260 kB.
+
+### ✅ NEW — CI had been red for seven commits and nothing said so
+
+`test:budget` reads the build output, so it runs in CI *after* the build and
+is deliberately not part of `npm test` — which is exactly how it hid. The Next
+16 upgrade removed `app-build-manifest.json`; the test crashed on the missing
+file from `8131af3` onward while `npm test` kept returning green locally, and
+I did not look at the workflow after pushing.
+
+Two changes, because the test being wrong and the habit being wrong are
+different problems:
+
+- The test now parses the prerendered document rather than a manifest, which
+  is both a fix and the more honest measure — see 2.1 above.
+- `npm run test:ci` runs the whole gate in one command (typecheck, lint, the
+  four suites, build, budgets), so there is no longer a step that only exists
+  inside the workflow file.
 2. ✅ **Recompress the textures** — see B1. 12.1 MB → 916 KB.
 3. ✅ **Per-realm ground, from one photograph.** Ten of the seventeen realms
    borrowed another realm's ground albedo and recoloured it with
