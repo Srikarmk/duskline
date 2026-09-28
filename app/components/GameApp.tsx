@@ -9,6 +9,8 @@ import { beginRace } from "@/src/ui/raceToken";
 import { recordResult } from "@/src/ui/progress";
 import { loadSeason, saveSeason, clearSeason, SEASON_ORDER, type SeasonState } from "@/src/ui/season";
 import { todaysChallenge, recordDaily, dayKey } from "@/src/ui/daily";
+import { loadIdentity } from "@/src/ui/identity";
+import { pushProfileSoon } from "@/src/ui/sync";
 import HomeScreen from "./HomeScreen";
 import ResultsScreen from "./ResultsScreen";
 import dynamic from "next/dynamic";
@@ -135,6 +137,10 @@ export default function GameApp() {
     if (gained.length) setUnlocked(gained);
     // Every finished race, including each GP round, leaves a lap behind.
     setLastLap(result.replay ?? null);
+    // Send the new career (and season, and settings) up if this player is
+    // signed in with a credential from this session. No-ops otherwise, which
+    // is every guest and every reloaded tab — see sync.ts.
+    pushProfileSoon(loadIdentity());
 
     // A daily run is logged against the day it was FOR, not the day it
     // finished — a race started at 23:59 UTC would otherwise be filed under

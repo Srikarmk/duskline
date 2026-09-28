@@ -13,6 +13,7 @@ import {
   loadIdentity, saveIdentity, createGuest, signInWithGoogle, googleConfigured,
   type Identity,
 } from "@/src/ui/identity";
+import { setCredential, syncOnSignIn, hasCredential, type SyncState } from "@/src/ui/sync";
 import { warmRaceAssets } from "@/src/ui/warm";
 import { loadCareer, seedFromHistory, isUnlocked, CAR_REQUIREMENT, nextUnlock, type Career } from "@/src/ui/progress";
 import { loadSeason, seasonStanding, SEASON_ORDER, type SeasonState } from "@/src/ui/season";
@@ -164,6 +165,14 @@ export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAban
   const [career, setCareer] = useState<Career>(() => loadCareer());
   /** a championship left part-finished, offered back rather than lost */
   const [season, setSeason] = useState<SeasonState | null>(() => loadSeason());
+  /**
+   * Whether this device's progress is going anywhere but this device.
+   *
+   * Held as a state, not a boolean, because "off" and "failed" are different
+   * answers and a player who signed in expecting their garage to follow them
+   * deserves to be told which one happened.
+   */
+  const [sync, setSync] = useState<SyncState>({ kind: "off", reason: "not signed in" });
   /** today's fixed challenge, and whether it has been taken */
   const [daily] = useState(() => todaysChallenge());
   const [dailyRun, setDailyRun] = useState(() => dailyResult(daily.day));
@@ -250,6 +259,22 @@ export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAban
     setIdent(who);
   };
 
+  /**
+   * Pull the account's profile, merge it into this device's, push the result.
+   *
+   * Then re-read career and season from storage: the merge has just written
+   * both, and the cards on this screen are showing what was loaded on mount.
+   */
+  const runSync = async (who: Identity) => {
+    setSync({ kind: "syncing" });
+    const state = await syncOnSignIn(who);
+    setSync(state);
+    if (state.kind === "synced") {
+      setCareer(loadCareer());
+      setSeason(loadSeason());
+    }
+  };
+
   const asGuest = async () => {
     setAuthBusy(true);
     setAuthError(null);
@@ -264,7 +289,12 @@ export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAban
     setAuthBusy(true);
     setAuthError(null);
     try {
-      adopt(await signInWithGoogle());
+      const res = await signInWithGoogle();
+      if (!res) return;                       // prompt dismissed
+      adopt(res.identity);
+      // The credential lives in memory for this session only — see sync.ts.
+      setCredential(res.credential);
+      await runSync(res.identity);
     } catch (err) {
       setAuthError(err instanceof Error ? err.message : "Sign-in failed.");
     } finally {
@@ -274,6 +304,11 @@ export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAban
 
   const switchRacer = () => {
     saveIdentity(null);
+    // Drop the credential with the identity. Leaving it behind would let the
+    // next racer on this machine push their progress into the last one's
+    // account.
+    setCredential(null);
+    setSync({ kind: "off", reason: "not signed in" });
     setIdent(null);
     setStep(1);
   };
@@ -354,6 +389,26 @@ export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAban
               <span className="who-name">{ident.name}</span>
               <span className="who-swap">SWITCH</span>
             </button>
+            {/* Where this player's progress actually lives. A guest is told
+                plainly that it is this device only — the alternative is a
+                player assuming a browser game syncs, wiping the profile, and
+                finding out it did not. */}
+            {ident.kind === "google" ? (
+              <p className={`sync-line ${sync.kind}`}>
+                {sync.kind === "syncing" && "SYNCING…"}
+                {sync.kind === "synced" && "✓ SYNCED TO YOUR GOOGLE ACCOUNT"}
+                {sync.kind === "failed" && `SYNC FAILED — ${sync.reason}`}
+                {sync.kind === "off" &&
+                  (hasCredential() ? `NOT SYNCING — ${sync.reason}` : "SAVED ON THIS DEVICE")}
+                {!hasCredential() && sync.kind !== "syncing" && (
+                  <button type="button" className="sync-now" disabled={authBusy} onClick={asGoogle}>
+                    SYNC NOW
+                  </button>
+                )}
+              </p>
+            ) : (
+              <p className="sync-line guest">SAVED ON THIS DEVICE ONLY</p>
+            )}
             <button type="button" className="board-open" onClick={() => setShowBoard(true)}>
               HALL OF LEGENDS
             </button>

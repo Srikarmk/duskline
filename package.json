@@ -11,11 +11,12 @@
     "textures": "node scripts/optimize-textures.mjs",
     "lint": "eslint .",
     "test:data": "node --experimental-strip-types --no-warnings test/data-invariants.mjs",
-    "test": "npm run test:sw && npm run test:data && npm run test:render && npm run test:cars",
+    "test": "npm run test:sw && npm run test:data && npm run test:render && npm run test:cars && npm run test:sync",
     "test:budget": "node test/budgets.mjs",
     "test:render": "node test/render-budget.mjs",
     "test:cars": "node --experimental-strip-types --no-warnings test/car-catalogue.mjs",
-    "test:ci": "npm run typecheck && npm run lint && npm test && npm run build && npm run test:budget"
+    "test:ci": "npm run typecheck && npm run lint && npm test && npm run build && npm run test:budget",
+    "test:sync": "node --experimental-strip-types --no-warnings test/profile-merge.mjs"
   },
   "dependencies": {
     "next": "^16.3.6",

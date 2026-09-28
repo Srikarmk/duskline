@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { loadSettings, saveSettings, type Settings } from "@/src/ui/settings";
+import { loadIdentity } from "@/src/ui/identity";
+import { pushProfileSoon } from "@/src/ui/sync";
 
 interface Props {
   onResume: () => void;
@@ -20,6 +22,9 @@ export default function PauseMenu({ onResume, onRestart, onQuit, onApply, onPhot
     const next = saveSettings(patch);
     setS(next);
     onApply(next);
+    // Settings are the half of a profile a player notices missing on a second
+    // machine. Debounced, so dragging a volume slider is one upload.
+    pushProfileSoon(loadIdentity());
   };
 
   return (

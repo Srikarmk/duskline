@@ -118,15 +118,29 @@ function loadGsi(): Promise<void> {
   return gsiLoading;
 }
 
+/**
+ * The result of a Google sign-in.
+ *
+ * The raw `credential` comes back alongside the identity rather than being
+ * folded into it, because the two have different lifetimes and different
+ * homes: the identity is saved to localStorage and lasts until the player
+ * switches racer, while the credential is a bearer token for `/api/profile`
+ * that expires in about an hour and is held in memory only. See sync.ts.
+ */
+export interface GoogleSignIn {
+  identity: Identity;
+  credential: string;
+}
+
 /** Opens Google's own prompt. Resolves null if the player dismisses it. */
-export async function signInWithGoogle(): Promise<Identity | null> {
+export async function signInWithGoogle(): Promise<GoogleSignIn | null> {
   if (!googleConfigured) {
     throw new Error("Google sign-in is not configured for this deployment.");
   }
   await loadGsi();
   const g = (window as GsiWindow).google;
   if (!g) throw new Error("Google sign-in failed to load.");
-  return new Promise<Identity | null>((resolve) => {
+  return new Promise<GoogleSignIn | null>((resolve) => {
     let settled = false;
     g.accounts.id.initialize({
       client_id: GOOGLE_CLIENT_ID,
@@ -134,10 +148,13 @@ export async function signInWithGoogle(): Promise<Identity | null> {
         settled = true;
         const p = decodeIdToken(r.credential);
         resolve({
-          kind: "google",
-          name: (p.name ?? "PLAYER").slice(0, 14).toUpperCase(),
-          id: p.sub ?? "google",
-          picture: p.picture,
+          identity: {
+            kind: "google",
+            name: (p.name ?? "PLAYER").slice(0, 14).toUpperCase(),
+            id: p.sub ?? "google",
+            picture: p.picture,
+          },
+          credential: r.credential,
         });
       },
     });

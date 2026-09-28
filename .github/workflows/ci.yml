@@ -47,6 +47,12 @@ jobs:
       # through itself.
       - name: Car catalogue
         run: npm run test:cars
+      # Cross-device profile merge. This one is in CI precisely BECAUSE it
+      # cannot be checked by hand: settings sync needs a Google client id and a
+      # KV store, and a merge that drops a counter fails silently — it just
+      # hands the player a smaller career on whichever machine they open next.
+      - name: Profile merge
+        run: npm run test:sync
       - name: Build
         run: npm run build
       # Budgets AFTER the build, because they measure it. The first-load figure

@@ -1045,11 +1045,59 @@ different problems:
     results screen is up the race canvas is gone, and keeping the whole engine
     alive for a postcard is the wrong trade. Verified on two realms; the first
     version had the subtitle colliding with the wordmark.
-19. ◻ **Daily challenge** — same realm, car and seed for everyone, one run a
-    day. The cheapest retention mechanic there is, and it needs the KV store
-    that is already on the release list.
-20. ◻ **Replays** of the last lap.
-21. ◻ **Settings synced across devices** once identity is real.
+19. ✅ **Daily challenge** — `src/ui/daily.ts`. Realm, car and lap count are
+    drawn from a hash of the UTC date, so "the same for everyone" needs no
+    server at all. One run a day, the result kept against the day it was FOR
+    rather than the day it finished, so a race started at 23:59 UTC cannot buy
+    a second attempt.
+20. ✅ **Replays** of the last lap — WATCH LAP on the results screen. Four
+    numbers a physics step (two ground coordinates, heading, jump height);
+    everything else the frame needs is derived from those, so playback lands
+    the car in the same places. Two buffers, so what is offered is a lap that
+    was COMPLETED rather than however much of one you were partway through,
+    and the button only appears when one exists.
+
+    The recording travels home on `GameResult`. Pulling it off the engine
+    through a ref cannot work: `stop()` runs the moment a race ends, so by the
+    time React has a results screen there is nothing left to ask. `saveScore`
+    and `submitGlobalScore` both pick their fields explicitly, so it never
+    reaches storage or the network.
+
+    Verified: 3,136 samples over a 52 s forest lap, played back to 220 mph with
+    the clock and minimap tracking it, no rivals drawn, the wrap looping to
+    sample 0 with the camera snapped rather than panning a lap backwards.
+21. ✅ **Settings synced across devices** — `POST /api/profile`, keyed by the
+    Google subject id, carrying settings, career and any season in progress.
+
+    **The merge is the feature.** Whole-document last-write-wins is the obvious
+    implementation and it silently destroys progress: three races on a laptop
+    and two on a phone that has not synced since morning, and one of those
+    sessions is gone. Career counters are monotonic, so they merge element-wise
+    by maximum and neither device can subtract. Preferences and a part-raced
+    season are not monotonic and have no sensible element-wise merge, so those
+    take the newer document whole — including a newer `null` season, which is
+    one the player finished. `src/ui/profileMerge.ts` imports only types so it
+    can be tested in plain Node: `npm run test:sync`, in CI, proven against
+    three injected regressions.
+
+    **It is authenticated.** This is the third write endpoint here and the
+    first two shipped wide open (B4/B5). Subject ids are not secret, so an
+    unauthenticated profile route would let anyone who learned one read and
+    overwrite that person's career. Every call verifies the Google credential
+    through Google's own `tokeninfo` and checks `aud` against our client id —
+    without that last check a token minted for ANY Google app would be
+    accepted, signature and issuer perfectly real.
+
+    **What is verified and what is not.** Against a stub KV with the route
+    configured: a forged token carrying the correct `aud` in its own payload is
+    rejected 401 and the store is never touched (the only traffic is the rate
+    limiter); push/pull round-trips; two subjects cannot see each other's
+    profile; an oversize body is refused 413. Unconfigured — which is how this
+    deployment stands, no client id and no KV — it answers
+    `{synced: false, reason}` and the game runs entirely from local storage.
+    **Not verified: a real Google credential**, which cannot be minted without
+    a client id. The happy path was exercised with verification temporarily
+    stubbed; what that does NOT prove is the tokeninfo call itself.
 
 ### Engineering
 22. ✅ **ESLint** — configured, clean, and in CI. See above for what it found.

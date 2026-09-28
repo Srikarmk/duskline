@@ -2977,3 +2977,31 @@ html, body { overscroll-behavior: none; }
   cursor: pointer;
 }
 .replay-exit:hover { background: rgba(23, 27, 56, 0.9); color: #67e8f9; }
+
+/* Where a player's progress lives. Sits under the racer chip, deliberately
+   quiet — it is an answer to a question, not an advertisement. */
+.sync-line {
+  margin: 0.3rem 0 0;
+  font: 500 0.6rem/1.5 var(--font-mono, monospace);
+  letter-spacing: 0.1em;
+  color: #6f6a8a;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.sync-line.synced { color: #5eead4; }
+.sync-line.failed { color: #fca5a5; }
+.sync-line.syncing { color: #67e8f9; }
+.sync-now {
+  padding: 0.15rem 0.45rem;
+  font: 600 0.58rem/1 var(--font-mono, monospace);
+  letter-spacing: 0.1em;
+  color: #cfe9f5;
+  background: transparent;
+  border: 1px solid rgba(103, 232, 249, 0.4);
+  border-radius: 3px;
+  cursor: pointer;
+}
+.sync-now:hover:not(:disabled) { color: #67e8f9; border-color: #67e8f9; }
+.sync-now:disabled { opacity: 0.45; cursor: default; }

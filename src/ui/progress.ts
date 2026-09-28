@@ -54,6 +54,18 @@ function save(c: Career): void {
   }
 }
 
+/**
+ * Overwrite the career wholesale.
+ *
+ * Only cross-device sync uses this: everything else goes through
+ * `recordResult`, which adds to what is there. Sync has already MERGED the two
+ * devices' counters and needs to write the result down — and that result can
+ * legitimately be larger than the sum of anything this device knows about.
+ */
+export function writeCareer(c: Career): void {
+  save(c);
+}
+
 /** One-time credit for races played before any of this existed. */
 export function seedFromHistory(savedScoreCount: number): Career {
   const c = loadCareer();
