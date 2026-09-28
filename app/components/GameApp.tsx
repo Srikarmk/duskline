@@ -7,6 +7,7 @@ import { CAR_SPECS } from "@/src/game3d/carData";
 import { saveScore, saveLastName, saveLastCar, submitGlobalScore, loadScores } from "@/src/ui/leaderboard";
 import { beginRace } from "@/src/ui/raceToken";
 import { recordResult } from "@/src/ui/progress";
+import { loadSeason, saveSeason, clearSeason, SEASON_ORDER, type SeasonState } from "@/src/ui/season";
 import HomeScreen from "./HomeScreen";
 import ResultsScreen from "./ResultsScreen";
 import dynamic from "next/dynamic";
@@ -38,7 +39,7 @@ type Screen = "home" | "race" | "intermission" | "gpresult" | "result";
 
 // Championship rounds only draw from realms that are live in the picker —
 // Ember Wastes is archived while its art is rebuilt.
-const GP_ORDER: RealmId[] = ["forest", "bay", "peaks"];
+const GP_ORDER: RealmId[] = SEASON_ORDER;
 const CHAMP_PTS = [10, 6, 3, 1];
 
 /** Fixed confetti recipe for the champion screen — deterministic (no hydration
@@ -62,14 +63,7 @@ const MODE_TITLE: Record<GameMode, string> = {
   endless: "Neon Run",
 };
 
-interface GpState {
-  round: number;
-  champ: Record<string, number>;
-  totalScore: number;
-  totalTimeMs: number;
-  gems: number;
-  stunts: number;
-}
+type GpState = SeasonState;
 
 interface ChampRow {
   name: string;
@@ -91,7 +85,10 @@ export default function GameApp() {
   const [laps, setLaps] = useState(3);
   const [name, setName] = useState("");
   const [lastResult, setLastResult] = useState<GameResult | null>(null);
-  const [gp, setGp] = useState<GpState | null>(null);
+  // A season survives the tab closing — see season.ts. Restored on mount, and
+  // written back on every change below, so "round 2 of 3" is a thing you can
+  // come back to rather than something you had to finish in one sitting.
+  const [gp, setGp] = useState<GpState | null>(() => loadSeason());
   const [gpFinal, setGpFinal] = useState<ChampRow[] | null>(null);
   const [resultBest, setResultBest] = useState({ prev: 0, isNew: false });
 
@@ -140,7 +137,9 @@ export default function GameApp() {
 
       if (gp.round < GP_ORDER.length - 1) {
         const nextRound = gp.round + 1;
-        setGp({ ...totals, round: nextRound });
+        const carried = { ...totals, round: nextRound, car, player: gp.player ?? name };
+        setGp(carried);
+        saveSeason(carried);
         setRealm(GP_ORDER[nextRound]);
         setScreen("intermission");
       } else {
@@ -162,6 +161,7 @@ export default function GameApp() {
         setLastResult(aggregate);
         setGpFinal(rows);
         setGp(null);
+        clearSeason();
         setScreen("gpresult");
       }
       return;
@@ -185,6 +185,11 @@ export default function GameApp() {
         laps={laps}
         onFinish={handleFinish}
         onQuit={() => {
+          // Leave the SAVED season alone. Quitting out of round two should put
+          // you back on the menu with a season to resume, not throw the
+          // championship away — that is the point of persisting it. Only the
+          // in-memory copy is dropped, so the home screen re-reads storage and
+          // offers it back.
           setGp(null);
           setScreen("home");
         }}
@@ -374,6 +379,22 @@ export default function GameApp() {
   return (
     <HomeScreen
       lastResult={lastResult}
+      onResumeSeason={(playerName) => {
+        const saved = loadSeason();
+        if (!saved) return;
+        // Race on under the name the standings are keyed by, so resuming does
+        // not silently open a second row in the player's own championship.
+        const who = saved.player ?? playerName;
+        setName(who);
+        saveLastName(who);
+        setGp(saved);
+        setMode("grandprix");
+        setRealm(GP_ORDER[Math.min(saved.round, GP_ORDER.length - 1)]);
+        if (saved.car && CAR_SPECS[saved.car as CarId]) setCar(saved.car as CarId);
+        setLastResult(null);
+        setScreen("intermission");
+      }}
+      onAbandonSeason={() => { clearSeason(); setGp(null); }}
       onStart={(playerName, playerMode, playerRealm, playerCar, playerLaps) => {
         setName(playerName);
         saveLastName(playerName);
@@ -383,7 +404,12 @@ export default function GameApp() {
         setMode(playerMode);
         setLastResult(null);
         if (playerMode === "grandprix") {
-          setGp({ round: 0, champ: {}, totalScore: 0, totalTimeMs: 0, gems: 0, stunts: 0 });
+          const fresh: GpState = {
+            round: 0, champ: {}, totalScore: 0, totalTimeMs: 0, gems: 0, stunts: 0,
+            car: playerCar, player: playerName,
+          };
+          setGp(fresh);
+          saveSeason(fresh);
           setRealm(GP_ORDER[0]);
         } else {
           setRealm(playerRealm);

@@ -2881,3 +2881,37 @@ html, body { overscroll-behavior: none; }
   text-transform: uppercase;
 }
 .showroom-next b { color: #e5e7fb; }
+
+/* --- a championship you can come back to --------------------------------- */
+.season-resume {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #c084fc;
+  border-radius: var(--r-md);
+  background: linear-gradient(180deg, rgba(192, 132, 252, 0.14), rgba(192, 132, 252, 0.05));
+}
+.season-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.season-copy strong {
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  color: #e9d5ff;
+}
+.season-copy span { font-size: 0.78rem; color: var(--text-dim, #a5b0dd); }
+.season-acts { display: flex; gap: 8px; flex: 0 0 auto; }
+.season-go, .season-drop {
+  border-radius: var(--r-sm, 8px);
+  padding: 7px 12px;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+.season-go { background: #c084fc; color: #16062b; border: none; font-weight: 700; }
+.season-drop { background: transparent; color: #a5b0dd; border: 1px solid var(--line-soft); }
+@media (max-width: 560px) {
+  .season-resume { flex-direction: column; align-items: stretch; }
+  .season-acts { justify-content: flex-end; }
+}

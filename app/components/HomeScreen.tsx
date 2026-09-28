@@ -15,6 +15,7 @@ import {
 } from "@/src/ui/identity";
 import { warmRaceAssets } from "@/src/ui/warm";
 import { loadCareer, seedFromHistory, isUnlocked, CAR_REQUIREMENT, nextUnlock, type Career } from "@/src/ui/progress";
+import { loadSeason, seasonStanding, SEASON_ORDER, type SeasonState } from "@/src/ui/season";
 
 // live 3D garage preview — client-only (WebGL), so it must never be SSR'd
 const CarShowroom = dynamic(() => import("./CarShowroom"), { ssr: false });
@@ -22,6 +23,9 @@ const CarShowroom = dynamic(() => import("./CarShowroom"), { ssr: false });
 interface Props {
   lastResult: GameResult | null;
   onStart: (name: string, mode: GameMode, realm: RealmId, car: CarId, laps: number) => void;
+  /** pick a saved championship back up where it was left */
+  onResumeSeason: (name: string) => void;
+  onAbandonSeason: () => void;
 }
 
 const LAP_OPTIONS = [1, 2, 3, 5, 7];
@@ -135,7 +139,7 @@ function realmAccent(id: RealmId): string {
  *   - the free-text name field is gone: you arrive as a numbered guest or
  *     connect Google.
  */
-export default function HomeScreen({ lastResult, onStart }: Props) {
+export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAbandonSeason }: Props) {
   const [ident, setIdent] = useState<Identity | null>(null);
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -155,6 +159,8 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
   // Career progress. Seeded once from the saved scores of anyone who played
   // before this existed — see progress.ts for why that credit is races only.
   const [career, setCareer] = useState<Career>(() => loadCareer());
+  /** a championship left part-finished, offered back rather than lost */
+  const [season, setSeason] = useState<SeasonState | null>(() => loadSeason());
   useEffect(() => {
     setCareer(seedFromHistory(loadScores().length));
   }, []);
@@ -353,6 +359,33 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
                 {ownWorld ?? REALMS[realm].name} · {CAR_SPECS[car].name} · {MODE_LABEL[mode]}
               </span>
             </button>
+            {season && season.round > 0 && (() => {
+              const st = seasonStanding(season, racerName);
+              const ord = ["1ST", "2ND", "3RD"][st.place - 1] ?? `${st.place}TH`;
+              return (
+                <div className="season-resume">
+                  <div className="season-copy">
+                    <strong>CHAMPIONSHIP IN PROGRESS</strong>
+                    <span>
+                      Round {season.round + 1} of {SEASON_ORDER.length} ·{" "}
+                      {REALMS[SEASON_ORDER[season.round]].name} · you are {ord} on {st.points} pts
+                    </span>
+                  </div>
+                  <div className="season-acts">
+                    <button type="button" className="season-go" onClick={() => onResumeSeason(racerName)}>
+                      RESUME
+                    </button>
+                    <button
+                      type="button"
+                      className="season-drop"
+                      onClick={() => { onAbandonSeason(); setSeason(null); }}
+                    >
+                      ABANDON
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
       </header>
