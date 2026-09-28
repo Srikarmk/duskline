@@ -16,6 +16,7 @@ import {
 import { warmRaceAssets } from "@/src/ui/warm";
 import { loadCareer, seedFromHistory, isUnlocked, CAR_REQUIREMENT, nextUnlock, type Career } from "@/src/ui/progress";
 import { loadSeason, seasonStanding, SEASON_ORDER, type SeasonState } from "@/src/ui/season";
+import { todaysChallenge, dailyResult, msUntilNext } from "@/src/ui/daily";
 
 // live 3D garage preview — client-only (WebGL), so it must never be SSR'd
 const CarShowroom = dynamic(() => import("./CarShowroom"), { ssr: false });
@@ -26,6 +27,8 @@ interface Props {
   /** pick a saved championship back up where it was left */
   onResumeSeason: (name: string) => void;
   onAbandonSeason: () => void;
+  /** today's fixed challenge — same realm, car and laps for everyone */
+  onStartDaily: (name: string) => void;
 }
 
 const LAP_OPTIONS = [1, 2, 3, 5, 7];
@@ -139,7 +142,7 @@ function realmAccent(id: RealmId): string {
  *   - the free-text name field is gone: you arrive as a numbered guest or
  *     connect Google.
  */
-export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAbandonSeason }: Props) {
+export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAbandonSeason, onStartDaily }: Props) {
   const [ident, setIdent] = useState<Identity | null>(null);
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -161,6 +164,10 @@ export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAban
   const [career, setCareer] = useState<Career>(() => loadCareer());
   /** a championship left part-finished, offered back rather than lost */
   const [season, setSeason] = useState<SeasonState | null>(() => loadSeason());
+  /** today's fixed challenge, and whether it has been taken */
+  const [daily] = useState(() => todaysChallenge());
+  const [dailyRun, setDailyRun] = useState(() => dailyResult(daily.day));
+  useEffect(() => { setDailyRun(dailyResult(daily.day)); }, [daily.day, lastResult]);
   useEffect(() => {
     setCareer(seedFromHistory(loadScores().length));
   }, []);
@@ -359,6 +366,27 @@ export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAban
                 {ownWorld ?? REALMS[realm].name} · {CAR_SPECS[car].name} · {MODE_LABEL[mode]}
               </span>
             </button>
+            {(() => {
+              const hrs = Math.floor(msUntilNext() / 3_600_000);
+              return (
+                <div className={`daily-card ${dailyRun ? "done" : ""}`}>
+                  <div className="daily-copy">
+                    <strong>DAILY CHALLENGE</strong>
+                    <span>
+                      {REALMS[daily.realm].name} · {CAR_SPECS[daily.car].name} · {daily.laps} laps
+                      {dailyRun ? ` — you scored ${dailyRun.score.toLocaleString()}` : ""}
+                    </span>
+                  </div>
+                  {dailyRun ? (
+                    <span className="daily-wait">NEW IN {hrs}H</span>
+                  ) : (
+                    <button type="button" className="daily-go" onClick={() => onStartDaily(racerName)}>
+                      TAKE IT
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
             {season && season.round > 0 && (() => {
               const st = seasonStanding(season, racerName);
               const ord = ["1ST", "2ND", "3RD"][st.place - 1] ?? `${st.place}TH`;

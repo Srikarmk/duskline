@@ -2915,3 +2915,45 @@ html, body { overscroll-behavior: none; }
   .season-resume { flex-direction: column; align-items: stretch; }
   .season-acts { justify-content: flex-end; }
 }
+
+/* --- the daily challenge -------------------------------------------------
+   Same shape as the season card so the two read as one row of "things
+   waiting for you" rather than two unrelated widgets. */
+.daily-card {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #38bdf8;
+  border-radius: var(--r-md);
+  background: linear-gradient(180deg, rgba(56, 189, 248, 0.14), rgba(56, 189, 248, 0.05));
+}
+.daily-card.done { border-color: var(--line-soft); background: rgba(148, 163, 184, 0.08); }
+.daily-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.daily-copy strong { font-size: 0.68rem; letter-spacing: 0.1em; color: #bae6fd; }
+.daily-card.done .daily-copy strong { color: #94a3b8; }
+.daily-copy span { font-size: 0.78rem; color: var(--text-dim, #a5b0dd); }
+.daily-go {
+  flex: 0 0 auto;
+  background: #38bdf8;
+  color: #04202f;
+  border: none;
+  border-radius: var(--r-sm, 8px);
+  padding: 7px 14px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+.daily-wait {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+}
+@media (max-width: 560px) {
+  .daily-card { flex-direction: column; align-items: stretch; }
+  .daily-go, .daily-wait { align-self: flex-end; }
+}

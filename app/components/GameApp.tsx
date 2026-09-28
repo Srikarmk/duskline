@@ -8,6 +8,7 @@ import { saveScore, saveLastName, saveLastCar, submitGlobalScore, loadScores } f
 import { beginRace } from "@/src/ui/raceToken";
 import { recordResult } from "@/src/ui/progress";
 import { loadSeason, saveSeason, clearSeason, SEASON_ORDER, type SeasonState } from "@/src/ui/season";
+import { todaysChallenge, recordDaily, dayKey } from "@/src/ui/daily";
 import HomeScreen from "./HomeScreen";
 import ResultsScreen from "./ResultsScreen";
 import dynamic from "next/dynamic";
@@ -107,6 +108,8 @@ export default function GameApp() {
 
   /** cars earned by the race just finished, shown once on the results screen */
   const [unlocked, setUnlocked] = useState<CarId[]>([]);
+  /** the UTC day whose challenge is being raced, or null for an ordinary race */
+  const [dailyDay, setDailyDay] = useState<string | null>(null);
 
   const applyStandings = (champ: Record<string, number>, standings: RaceStanding[]) => {
     const next = { ...champ };
@@ -123,6 +126,14 @@ export default function GameApp() {
     // aggregate is deliberately not counted as a fifteenth one.
     const gained = recordResult(result).unlocked;
     if (gained.length) setUnlocked(gained);
+
+    // A daily run is logged against the day it was FOR, not the day it
+    // finished — a race started at 23:59 UTC would otherwise be filed under
+    // tomorrow and hand the player a second attempt.
+    if (dailyDay) {
+      recordDaily({ day: dailyDay, score: result.score, timeMs: result.timeMs, position: result.position });
+      setDailyDay(null);
+    }
 
     if (mode === "grandprix" && gp) {
       const champ = applyStandings(gp.champ, result.standings ?? []);
@@ -395,6 +406,19 @@ export default function GameApp() {
         setScreen("intermission");
       }}
       onAbandonSeason={() => { clearSeason(); setGp(null); }}
+      onStartDaily={(playerName) => {
+        const ch = todaysChallenge();
+        setName(playerName);
+        saveLastName(playerName);
+        setMode("classic");
+        setRealm(ch.realm);
+        setCar(ch.car);            // deliberately NOT saveLastCar — the daily
+        setLaps(ch.laps);          // assigns a car, it does not buy you one
+        setGp(null);
+        setLastResult(null);
+        setDailyDay(dayKey());
+        startRace();
+      }}
       onStart={(playerName, playerMode, playerRealm, playerCar, playerLaps) => {
         setName(playerName);
         saveLastName(playerName);
@@ -403,6 +427,7 @@ export default function GameApp() {
         setLaps(playerLaps);
         setMode(playerMode);
         setLastResult(null);
+        setDailyDay(null);
         if (playerMode === "grandprix") {
           const fresh: GpState = {
             round: 0, champ: {}, totalScore: 0, totalTimeMs: 0, gems: 0, stunts: 0,
