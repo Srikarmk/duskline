@@ -40,6 +40,12 @@ without it "RACER 1015" is a local random number rather than the 1015th guest.
 Decide: connect Upstash (free tier is ample), or ship with the GLOBAL tab
 removed so nobody expects one.
 
+Since this was written the same store has picked up a third job: a signed-in
+player's synced profile (`/api/profile` — settings, career, season). That one
+also needs `NEXT_PUBLIC_GOOGLE_CLIENT_ID`, because it is keyed by the Google
+subject id and verifies every call against it. Both unset is the current
+state, and all three features say so in the UI rather than failing.
+
 ### [BLOCKER] No measured performance floor
 Still open, and still for the same reason: **no frame-time number from any
 hardware but this machine.** Every attempt to sample one from the preview pane
