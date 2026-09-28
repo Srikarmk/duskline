@@ -16,6 +16,8 @@ interface Props {
   prevBest: number;
   /** names of cars this race unlocked, if any */
   unlocked?: string[];
+  /** present only when the race left a complete lap behind */
+  onWatchLap?: () => void;
   onRaceAgain: () => void;
   onMenu: () => void;
 }
@@ -62,7 +64,8 @@ function taunt(solo: boolean, pos: number, total: number) {
 }
 
 export default function ResultsScreen({
-  result, realmName, realmId, carName, racer, modeLabel, isNewBest, prevBest, unlocked, onRaceAgain, onMenu,
+  result, realmName, realmId, carName, racer, modeLabel, isNewBest, prevBest, unlocked,
+  onWatchLap, onRaceAgain, onMenu,
 }: Props) {
   const [sharing, setSharing] = useState(false);
   const [shareMsg, setShareMsg] = useState<string | null>(null);
@@ -225,6 +228,11 @@ export default function ResultsScreen({
         {/* Nothing this game produced was shareable, which for a browser game
             is the whole distribution problem — the only way anyone hears about
             it is if a player has something to show. */}
+        {onWatchLap && (
+          <button type="button" className="result-menu" onClick={onWatchLap}>
+            ▸ WATCH LAP
+          </button>
+        )}
         <button type="button" className="result-menu" disabled={sharing} onClick={onShare}>
           {shareMsg ?? (sharing ? "…" : "SHARE RESULT")}
         </button>

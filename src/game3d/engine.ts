@@ -61,7 +61,7 @@ import { Minimap } from "./minimap";
 import { Sound } from "./sound";
 import { loadSetting, loadSettings, type Settings, QUALITY, type Quality } from "../ui/settings";
 import { Input } from "../game/input";
-import { drawHud, drawToasts, drawCallout, drawCenterText, drawSpeedFx, drawFrameGrade, drawStartLights, type Toast,
+import { drawHud, drawToasts, drawCallout, drawCenterText, drawSpeedFx, drawFrameGrade, drawStartLights, drawReplayBar, type Toast,
 } from "../game/render";
 import type { GameMode, GameResult, GameOptions, RaceStanding, CarId } from "../game/engine";
 
@@ -623,6 +623,26 @@ export class Game {
   private offTrackExitDist = 0; // arc distance where you left the ribbon — respawn point
   private terrSamp?: { sx: Float64Array; sz: Float64Array; sy: Float64Array; sag: Float64Array }; // cached track polyline for ground-height queries
   private camSnap = true;
+
+  // --- LAP REPLAY -----------------------------------------------------------
+  // The car's path, sampled every physics step. Four numbers a frame — the
+  // two ground coordinates, the heading and the jump height — because those
+  // are the only things render() needs to put the car back where it was;
+  // everything else (wheel spin, body pitch, the camera) is derived from them
+  // and comes out the same on the way back.
+  //
+  // Two buffers, not one. `replayCur` fills as the current lap is driven and
+  // moves to `replayLast` at the line, so what is offered afterwards is a
+  // COMPLETE lap rather than however much of one the player happened to be
+  // partway through. At 60 Hz a 47-second lap is about 2,800 samples, or
+  // 45 kB — small enough to keep two of without thinking about it.
+  private replayCur: number[] = [];
+  private replayLast: number[] = [];
+  /** when replaying, the sample index being shown; -1 = not replaying */
+  private replayAt = -1;
+  private replayData: number[] | null = null;
+  /** handed in through GameOptions; started once the world is actually built */
+  private pendingReplay: number[] | null = null;
   /** eased version of the camera's ground clamp — see the floor block in render() */
   private camFloor = 0;
   private cameraIndex = 0;
@@ -821,6 +841,10 @@ export class Game {
     if (this.cfg.combat) this.heldItems = ["missile", "missile"]; // start armed
     this.carId = options.car ?? "f40";
     this.carStat = CAR_SPECS[this.carId].stat;
+    // Not started here — there is no world yet. init() is async, and calling
+    // startReplay before buildWorld would put the car on a track that does not
+    // exist. Held until the build finishes.
+    this.pendingReplay = options.replay ?? null;
 
     // fill the container at its true aspect ratio (full-width, no letterbox)
     const w = Math.max(1, container.clientWidth || window.innerWidth);
@@ -1086,6 +1110,13 @@ export class Game {
     this.overtakeCd = 0;
     this.callout = null;
     this.phase = "countdown";
+    // The world exists now, so a recorded lap can finally be put on it. No
+    // countdown: there is nothing to get set for.
+    if (this.pendingReplay) {
+      const data = this.pendingReplay;
+      this.pendingReplay = null;
+      this.startReplay(data);
+    }
   }
 
   // --- world building ------------------------------------------------------
@@ -4362,6 +4393,81 @@ export class Game {
     this.rafId = requestAnimationFrame(this.frame);
   };
 
+  /**
+   * The most recently COMPLETED lap, as a flat [x, z, heading, alt, …] array.
+   *
+   * Flat rather than an array of objects because it crosses a React state
+   * boundary and gets held while the engine is torn down and rebuilt — a few
+   * thousand plain numbers survive that cleanly and cost nothing to copy.
+   *
+   * Falls back to the lap in progress when no full one was finished, so a
+   * one-lap race or a retirement still has something to show.
+   */
+  lastLapReplay(): number[] | null {
+    const buf = this.replayLast.length > 120 ? this.replayLast : this.replayCur;
+    return buf.length > 120 ? buf.slice() : null;
+  }
+
+  /** Play a recorded lap instead of racing. */
+  startReplay(data: number[]): void {
+    this.replayData = data;
+    this.replayAt = 0;
+    this.phase = "racing";      // keeps the world updating and the HUD sane
+    this.paused = false;
+    this.camSnap = true;
+    // The rivals are BUILT but never updated while a replay runs, so they would
+    // stand on the grid for the whole lap like a row of parked cars. They were
+    // not in the recording; they should not be in the picture.
+    for (const o of this.opponents) o.obj.visible = false;
+    // Likewise the starting lights: this is not a race about to begin.
+    this.countdownT = 0;
+  }
+
+  /** 0..1 through the replay, for a progress bar. */
+  replayProgress(): number {
+    if (!this.replayData) return 0;
+    return Math.min(1, this.replayAt / Math.max(1, this.replayData.length / 4));
+  }
+
+  private replayStep(dt: number): void {
+    const d = this.replayData!;
+    const frames = Math.floor(d.length / 4);
+    this.replayAt += dt * 60;                       // recorded at the fixed step
+    if (this.replayAt >= frames - 1) {
+      // Loop, so it can be watched twice without going back to the menu — and
+      // SNAP the camera when it does. The wrap teleports the car a whole lap
+      // backwards; without this the chase camera eases across the entire
+      // circuit, which is a two-second pan over the scenery from nowhere.
+      this.replayAt = 0;
+      this.camSnap = true;
+    }
+    const i = Math.floor(this.replayAt);
+    const k = i * 4;
+    // Interpolate between samples so playback is smooth even when the display
+    // is not running at the rate this was recorded at.
+    const t = this.replayAt - i;
+    const j = Math.min(frames - 1, i + 1) * 4;
+    const fd = this.freeDrive;
+    fd.x = d[k] + (d[j] - d[k]) * t;
+    fd.z = d[k + 1] + (d[j + 1] - d[k + 1]) * t;
+    // headings are angles: lerping 359 -> 1 the short way round matters
+    let dh = d[j + 2] - d[k + 2];
+    dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+    fd.heading = d[k + 2] + dh * t;
+    this.alt = d[k + 3] + (d[j + 3] - d[k + 3]) * t;
+    // keep the projection (and therefore the camera's road floor) in step
+    const pr = this.track.project(fd.x, fd.z);
+    fd.dist = pr.dist;
+    fd.lateral = pr.lateral;
+    this.position = pr.dist;
+    // wheels should turn at the speed the car is actually moving
+    const vx = (d[j] - d[k]) * 60, vz = (d[j + 1] - d[k + 1]) * 60;
+    this.speed = Math.hypot(vx, vz);
+    // The HUD clock reads the lap as it was driven, so the replay is watchable
+    // against the time on the results screen rather than sitting at 0:00.
+    this.raceTime = this.replayAt / 60;
+  }
+
   pause() {
     this.paused = true;
     this.sound.setEngine(0, false);
@@ -4667,6 +4773,17 @@ export class Game {
   }
 
   private update(dt: number) {
+    // REPLAY takes the update over completely: the car is placed from the
+    // recording instead of being driven, and nothing else in the simulation
+    // runs. Stepping the physics from recorded positions would fight the
+    // recording (the wheels would be turning against a body that is being
+    // teleported), and the rivals have no business racing a lap that is
+    // already over.
+    if (this.replayData) {
+      this.replayStep(dt);
+      return;
+    }
+
     // Drift the cloud deck. A full revolution takes ~12 minutes, which at the
     // dome radius is a few metres a second of apparent motion — enough that the
     // sky is alive when you look at it, slow enough that it never pulls the eye
@@ -4750,6 +4867,10 @@ export class Game {
           // rather than a lap count it never completed.
           distanceM: Math.max(0, Math.round(this.playerProgress())),
           standings: this.finalStandings,
+          // The lap itself, so the results screen has something to offer.
+          // Handed over here because `stop()` runs moments later and takes the
+          // whole engine with it.
+          replay: this.lastLapReplay() ?? undefined,
         });
       }
       return;
@@ -5083,6 +5204,13 @@ export class Game {
       ? 0.26 + (this.speed / MAX_SPEED) * 0.16
       : 0.32 + (this.speed / MAX_SPEED) * 0.55 + (this.nitroT > 0 ? 0.18 : 0));
 
+    // Sample the path for the replay. After the drive step, so what is stored
+    // is where the car ENDED this frame — the same state render() is about to
+    // draw, so a replay and a live lap put the car in identical places.
+    if (this.phase === "racing") {
+      this.replayCur.push(this.freeDrive.x, this.freeDrive.z, this.freeDrive.heading, this.alt);
+    }
+
     // advance & laps — `position` is the free-roam projection onto the track;
     // detect a forward crossing of the start/finish seam (guard jitter/reverse)
     const len = this.track.length;
@@ -5095,6 +5223,9 @@ export class Game {
 
       if (this.lapProgress >= len) {
         this.lapProgress -= len;
+        // A lap just completed: keep it, and start collecting the next one.
+        if (this.replayCur.length > 120) this.replayLast = this.replayCur;
+        this.replayCur = [];
         this.lap++;
         if (this.lap > this.cfg.laps) {
           this.phase = "finished";
@@ -6102,7 +6233,7 @@ export class Game {
     // once finished, freeze the position at the placement taken at the line —
     // the car keeps coasting past it, so a live recompute would drift (e.g. creep
     // to "1st") as you roll on
-    const position = this.opponents.length
+    const position = this.opponents.length && !this.replayData
       ? (this.phase === "finished" ? this.finalPosition : this.computePosition())
       : undefined;
     drawHud(ctx, {
@@ -6110,11 +6241,14 @@ export class Game {
       // nitro — a cap you can believe, not a 300 that makes every number
       // meaningless.
       mph: Math.min(SPEEDO_MAX, Math.round((this.speed / MAX_SPEED) * SPEEDO_SCALE)),
+      // A replay is a recording of one lap: no score accruing, no nitro to
+      // spend, no field to be placed against. See HudState.replay.
+      replay: !!this.replayData,
       score: Math.max(0, Math.round(this.score)),
       lap: Math.min(this.lap, this.cfg.laps),
       totalLaps: this.cfg.laps,
       raceTime: this.raceTime,
-      nitroCharges: this.nitroCharges,
+      nitroCharges: this.replayData ? 0 : this.nitroCharges,
       nitroFill: this.nitroFill,
       nitroActive: this.nitroT > 0,
       nitroBurn: this.nitroT / NITRO_DURATION,
@@ -6127,7 +6261,7 @@ export class Game {
       transformT: this.transformed ? this.transformT : 0,
       crashFlash: this.crashFlash,
       position,
-      totalRacers: this.opponents.length ? this.opponents.length + 1 : undefined,
+      totalRacers: this.opponents.length && !this.replayData ? this.opponents.length + 1 : undefined,
       cameraName: CAMERA_PRESETS[this.cameraIndex].name,
       fps: this.showFps ? Math.round(1000 / Math.max(1, this.frameMs)) : undefined,
       frameMs: this.showFps ? this.frameMs : undefined,
@@ -6166,7 +6300,9 @@ export class Game {
     // once finished so it doesn't fight the FINISH! banner
     if (this.callout && this.phase !== "finished") drawCallout(ctx, this.callout, vw, vh);
 
-    if (this.phase === "countdown") {
+    if (this.replayData) {
+      drawReplayBar(ctx, this.replayProgress(), vw, vh);
+    } else if (this.phase === "countdown") {
       drawStartLights(ctx, this.countdownT, vw, vh);
     } else if (this.phase === "finished") {
       drawCenterText(ctx, "FINISH!", 64, "#fbbf24", vw, vh);

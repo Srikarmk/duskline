@@ -73,6 +73,17 @@ export interface GameResult {
   standings?: RaceStanding[];
   /** metres actually driven this race, for career progress */
   distanceM?: number;
+  /**
+   * The last complete lap, as a flat [x, z, heading, alt, ...] array — what
+   * the results screen replays.
+   *
+   * It rides on the result rather than being pulled off the engine through a
+   * ref because the engine is torn down the instant the race ends; by the time
+   * React has a results screen to put a button on, there is nothing left to
+   * ask. Everything that persists a result (saveScore, submitGlobalScore)
+   * picks its fields explicitly, so this never reaches storage or the network.
+   */
+  replay?: number[];
 }
 
 export interface GameOptions {
@@ -81,6 +92,12 @@ export interface GameOptions {
   car?: CarId;
   laps?: number;
   onFinish: (result: GameResult) => void;
+  /**
+   * Play a recorded lap instead of racing it. The world is built exactly as
+   * normal — same realm, same car, same weather bands — and then the car is
+   * placed from the recording each step instead of being driven.
+   */
+  replay?: number[];
   /**
    * Something failed while building or running the world.
    *

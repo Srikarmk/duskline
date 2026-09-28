@@ -558,6 +558,15 @@ export interface HudState {
   /** endless mode: there is no lap target, so show distance instead */
   endless?: boolean;
   distanceM?: number;
+  /**
+   * A recorded lap is being watched, not driven.
+   *
+   * The HUD is a set of controls as much as a readout, and in a replay none of
+   * them are yours: the nitro cells advertise a key that does nothing, and the
+   * footer offers a pause for a race that finished. So the interactive half is
+   * dropped and the panel that carried the score carries the lap time.
+   */
+  replay?: boolean;
 }
 
 function panel(
@@ -634,15 +643,19 @@ export function drawHud(
   ctx.fillStyle = "#fbbf24";
   ctx.font = "bold 26px monospace";
   ctx.textAlign = "right";
-  ctx.fillText(`${hud.score}`, vw - 28, 38);
+  // In a replay the score is fixed and already on the results screen behind
+  // this; the clock running through the lap is the number worth watching.
+  ctx.fillText(hud.replay ? formatTime(hud.raceTime) : `${hud.score}`, vw - 28, 38);
   ctx.fillStyle = "#cfc9e8";
   ctx.font = "14px monospace";
   // Endless has no lap target — "LAP 1/9999" is meaningless, so show how far
   // you've actually driven, which IS the score in that mode.
   ctx.fillText(
-    hud.endless
-      ? `${((hud.distanceM ?? 0) / 1000).toFixed(2)} KM   ${formatTime(hud.raceTime)}`
-      : `LAP ${hud.lap}/${hud.totalLaps}   ${formatTime(hud.raceTime)}`,
+    hud.replay
+      ? "LAST LAP"
+      : hud.endless
+        ? `${((hud.distanceM ?? 0) / 1000).toFixed(2)} KM   ${formatTime(hud.raceTime)}`
+        : `LAP ${hud.lap}/${hud.totalLaps}   ${formatTime(hud.raceTime)}`,
     vw - 28, 64);
 
   // --- race position (below score) ---
@@ -683,7 +696,7 @@ export function drawHud(
   // outline-and-sliver while it earns, which reads as "not yet" at a glance.
   // A live boost drains its own cell in real time and the label says BOOSTING,
   // which is also the answer to "why won't it fire again".
-  {
+  if (!hud.replay) {
     const cells = NITRO_MAX_CHARGES;
     const gap = 5, cellW = 82, bh = 18;
     const bw = cells * cellW + (cells - 1) * gap;
@@ -825,7 +838,9 @@ export function drawHud(
     ctx.fillStyle = "#6f6a8a";
     ctx.font = "11px monospace";
     ctx.textAlign = "left";
-    ctx.fillText(`[C] ${hud.cameraName}    [M] SOUND ${hud.soundMuted ? "OFF" : "ON"}    [ESC] PAUSE`, 18, vh - 74);
+    ctx.fillText(
+      `[C] ${hud.cameraName}    [M] SOUND ${hud.soundMuted ? "OFF" : "ON"}    [ESC] ${hud.replay ? "EXIT REPLAY" : "PAUSE"}`,
+      18, vh - 74);
   }
 
   // --- transform timer (top center) ---
@@ -1067,6 +1082,43 @@ export function drawCenterText(
   ctx.fillRect(0, vh / 2 - size, vw, size * 2);
   ctx.fillStyle = color;
   ctx.fillText(text, vw / 2, vh / 2);
+}
+
+/**
+ * The replay bar: a label and a scrub line across the top of the screen.
+ *
+ * Deliberately at the TOP and deliberately thin. A replay is watched for the
+ * driving, so the one thing the overlay must not do is sit in the part of the
+ * screen the car is in — and the top strip is already the HUD's, so it costs
+ * nothing new.
+ */
+export function drawReplayBar(
+  ctx: CanvasRenderingContext2D, progress: number, vw = WIDTH, vh = HEIGHT
+) {
+  const w = Math.min(420, vw * 0.44);
+  const x = (vw - w) / 2;
+  const y = Math.round(vh * 0.035);
+  ctx.save();
+  ctx.fillStyle = "rgba(11, 11, 26, 0.62)";
+  ctx.fillRect(x, y, w, 30);
+  ctx.strokeStyle = "rgba(103, 232, 249, 0.55)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, 29);
+  ctx.font = "bold 13px monospace";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "#67e8f9";
+  ctx.fillText("\u25b8 REPLAY", x + 10, y + 11);
+  ctx.textAlign = "right";
+  ctx.fillStyle = "rgba(232, 224, 255, 0.6)";
+  ctx.fillText("[ESC] EXIT", x + w - 10, y + 11);
+  // the scrub line
+  const bx = x + 10, bw = w - 20;
+  ctx.fillStyle = "rgba(232, 224, 255, 0.18)";
+  ctx.fillRect(bx, y + 21, bw, 3);
+  ctx.fillStyle = "#67e8f9";
+  ctx.fillRect(bx, y + 21, bw * Math.max(0, Math.min(1, progress)), 3);
+  ctx.restore();
 }
 
 /** F1-style start gantry: five columns of red bulbs fill up left-to-right over

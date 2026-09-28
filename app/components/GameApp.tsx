@@ -36,7 +36,7 @@ const GameCanvas = dynamic(() => import("./GameCanvas"), {
   ),
 });
 
-type Screen = "home" | "race" | "intermission" | "gpresult" | "result";
+type Screen = "home" | "race" | "intermission" | "gpresult" | "result" | "replay";
 
 // Championship rounds only draw from realms that are live in the picker —
 // Ember Wastes is archived while its art is rebuilt.
@@ -110,6 +110,13 @@ export default function GameApp() {
   const [unlocked, setUnlocked] = useState<CarId[]>([]);
   /** the UTC day whose challenge is being raced, or null for an ordinary race */
   const [dailyDay, setDailyDay] = useState<string | null>(null);
+  /**
+   * The lap the last race recorded, held so WATCH LAP can build a fresh engine
+   * around it. Kept in its own state rather than read off `lastResult` at the
+   * click, because a Grand Prix replaces the result with an aggregate that was
+   * never driven and so has no lap on it.
+   */
+  const [lastLap, setLastLap] = useState<number[] | null>(null);
 
   const applyStandings = (champ: Record<string, number>, standings: RaceStanding[]) => {
     const next = { ...champ };
@@ -126,6 +133,8 @@ export default function GameApp() {
     // aggregate is deliberately not counted as a fifteenth one.
     const gained = recordResult(result).unlocked;
     if (gained.length) setUnlocked(gained);
+    // Every finished race, including each GP round, leaves a lap behind.
+    setLastLap(result.replay ?? null);
 
     // A daily run is logged against the day it was FOR, not the day it
     // finished — a race started at 23:59 UTC would otherwise be filed under
@@ -373,6 +382,11 @@ export default function GameApp() {
         isNewBest={resultBest.isNew}
         prevBest={resultBest.prev}
         unlocked={unlocked.map((id) => CAR_SPECS[id].name)}
+        // Only offered when there IS a lap. A retirement on lap one, or an
+        // endless run that never crossed a line, has nothing to show, and a
+        // button that loads a world to display an empty road is worse than no
+        // button.
+        onWatchLap={lastLap ? () => setScreen("replay") : undefined}
         onRaceAgain={() => {
           setLastResult(null);
           setUnlocked([]);
@@ -381,8 +395,26 @@ export default function GameApp() {
         onMenu={() => {
           setLastResult(null);
           setUnlocked([]);
+          setLastLap(null);
           setScreen("home");
         }}
+      />
+    );
+  }
+
+  if (screen === "replay" && lastLap) {
+    return (
+      <GameCanvas
+        mode={mode}
+        realm={realm}
+        car={car}
+        laps={laps}
+        replay={lastLap}
+        // A replay cannot finish a race. onFinish is required by the prop
+        // contract and unreachable here — update() hands over to replayStep
+        // before any of the lap or finish logic runs.
+        onFinish={() => {}}
+        onQuit={() => setScreen("result")}
       />
     );
   }

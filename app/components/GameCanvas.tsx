@@ -20,11 +20,13 @@ interface Props {
   realm: RealmId;
   car: CarId;
   laps: number;
+  /** watch a recorded lap instead of driving one */
+  replay?: number[];
   onFinish: (result: GameResult) => void;
   onQuit: () => void;
 }
 
-export default function GameCanvas({ mode, realm, car, laps, onFinish, onQuit }: Props) {
+export default function GameCanvas({ mode, realm, car, laps, replay, onFinish, onQuit }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const gameRef = useRef<Game | null>(null);
   // Latest-callback ref, so the engine can be built once and still call the
@@ -105,6 +107,7 @@ export default function GameCanvas({ mode, realm, car, laps, onFinish, onQuit }:
       realm,
       car,
       laps,
+      replay,
       onFinish: (result) => onFinishRef.current(result),
       // The async world build is the likeliest thing to fail on someone
       // else's machine, and a rejected promise reaches neither the React
@@ -126,7 +129,7 @@ export default function GameCanvas({ mode, realm, car, laps, onFinish, onQuit }:
       game.stop();
       gameRef.current = null;
     };
-  }, [mode, realm, car, laps, runId, cap.ok, fatal, cap.renderer]);
+  }, [mode, realm, car, laps, replay, runId, cap.ok, fatal, cap.renderer]);
 
   // AUDIO AUTOPLAY. The race starts from a click, so the AudioContext is
   // normally allowed — but iOS Safari only honours a resume() made INSIDE the
@@ -159,6 +162,15 @@ export default function GameCanvas({ mode, realm, car, laps, onFinish, onQuit }:
       // Photo mode owns Escape while it is up — it has its own handler that
       // returns you to the pause menu rather than un-pausing the race.
       if (photo) return;
+      // A REPLAY has no race to pause. Pausing one would offer Restart and
+      // Quit for a lap that is already in the past, so Escape just leaves.
+      if (replay) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          onQuit();
+        }
+        return;
+      }
       if (e.key === "Escape" || e.key.toLowerCase() === "p") {
         e.preventDefault();
         setPaused((p) => {
@@ -171,7 +183,7 @@ export default function GameCanvas({ mode, realm, car, laps, onFinish, onQuit }:
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [photo]);
+  }, [photo, replay, onQuit]);
 
   if (!cap.ok) {
     return (
@@ -218,8 +230,13 @@ export default function GameCanvas({ mode, realm, car, laps, onFinish, onQuit }:
           🔊 TAP FOR SOUND
         </button>
       )}
-      {!paused && !photo && <FirstRunHint touch={touch} />}
-      {touch && !paused && !photo && <TouchControls onPause={() => { gameRef.current?.pause(); setPaused(true); }} />}
+      {replay && (
+        <button type="button" className="replay-exit" onClick={onQuit}>
+          ◂ BACK TO RESULTS
+        </button>
+      )}
+      {!replay && !paused && !photo && <FirstRunHint touch={touch} />}
+      {!replay && touch && !paused && !photo && <TouchControls onPause={() => { gameRef.current?.pause(); setPaused(true); }} />}
       {photo && (
         <PhotoMode
           // Display names, not ids: the caption is part of the photograph's
