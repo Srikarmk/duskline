@@ -2817,3 +2817,67 @@ html, body { overscroll-behavior: none; }
   .photo-keys { display: none; }
   .photo-what { font-size: 9px; }
 }
+
+/* --- locked cars ---------------------------------------------------------
+   A locked card still shows the car's stats — the point of a requirement is
+   that you can see what you are working toward, so hiding the thing would
+   defeat it. It is dimmed, not blanked, with the requirement across the top
+   and a bar showing how close it is. */
+.car-card.locked {
+  opacity: 0.52;
+  cursor: not-allowed;
+  filter: saturate(0.35);
+}
+.car-card.locked:hover { transform: none; }
+.car-card .car-lock {
+  position: absolute;
+  inset: 0 0 auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px 7px;
+  background: linear-gradient(180deg, rgba(8, 6, 24, 0.94), rgba(8, 6, 24, 0.72));
+  border-bottom: 1px solid var(--line-soft);
+  border-radius: var(--r-md) var(--r-md) 0 0;
+  z-index: 2;
+}
+.car-card .car-lock em {
+  font-style: normal;
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  color: #cbd5f5;
+  text-transform: uppercase;
+}
+.car-card .car-lock-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(203, 213, 245, 0.18);
+  overflow: hidden;
+}
+.car-card .car-lock-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+/* a car earned by the race you just finished */
+.result-unlock {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border: 1px solid #fbbf24;
+  border-radius: var(--r-sm, 8px);
+  background: rgba(251, 191, 36, 0.12);
+  color: #fde68a;
+  font-size: 0.82rem;
+  letter-spacing: 0.03em;
+}
+.result-unlock strong { color: #fbbf24; margin-right: 6px; letter-spacing: 0.08em; }
+
+.showroom-next {
+  margin: 6px 0 0;
+  font-size: 0.74rem;
+  letter-spacing: 0.05em;
+  color: #9aa6d4;
+  text-transform: uppercase;
+}
+.showroom-next b { color: #e5e7fb; }

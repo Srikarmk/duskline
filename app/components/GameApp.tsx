@@ -6,6 +6,7 @@ import { REALMS } from "@/src/game3d/realms";
 import { CAR_SPECS } from "@/src/game3d/carData";
 import { saveScore, saveLastName, saveLastCar, submitGlobalScore, loadScores } from "@/src/ui/leaderboard";
 import { beginRace } from "@/src/ui/raceToken";
+import { recordResult } from "@/src/ui/progress";
 import HomeScreen from "./HomeScreen";
 import ResultsScreen from "./ResultsScreen";
 import dynamic from "next/dynamic";
@@ -107,6 +108,9 @@ export default function GameApp() {
     setScreen("race");
   };
 
+  /** cars earned by the race just finished, shown once on the results screen */
+  const [unlocked, setUnlocked] = useState<CarId[]>([]);
+
   const applyStandings = (champ: Record<string, number>, standings: RaceStanding[]) => {
     const next = { ...champ };
     for (const s of standings) {
@@ -117,6 +121,12 @@ export default function GameApp() {
   };
 
   const handleFinish = (result: GameResult) => {
+    // Career progress, before anything branches. Every finished race counts —
+    // including each Grand Prix ROUND, which is a race you drove. The GP's
+    // aggregate is deliberately not counted as a fifteenth one.
+    const gained = recordResult(result).unlocked;
+    if (gained.length) setUnlocked(gained);
+
     if (mode === "grandprix" && gp) {
       const champ = applyStandings(gp.champ, result.standings ?? []);
       const totals: GpState = {
@@ -346,12 +356,15 @@ export default function GameApp() {
         racer={name}
         isNewBest={resultBest.isNew}
         prevBest={resultBest.prev}
+        unlocked={unlocked.map((id) => CAR_SPECS[id].name)}
         onRaceAgain={() => {
           setLastResult(null);
+          setUnlocked([]);
           startRace();
         }}
         onMenu={() => {
           setLastResult(null);
+          setUnlocked([]);
           setScreen("home");
         }}
       />

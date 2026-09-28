@@ -71,6 +71,8 @@ export interface GameResult {
   position?: number;
   totalRacers?: number;
   standings?: RaceStanding[];
+  /** metres actually driven this race, for career progress */
+  distanceM?: number;
 }
 
 export interface GameOptions {

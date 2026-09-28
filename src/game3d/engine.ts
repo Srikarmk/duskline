@@ -4724,6 +4724,11 @@ export class Game {
           timeMs: Math.round(this.raceTime * 1000),
           position: this.finalPosition,
           totalRacers: this.opponents.length + 1,
+          // Distance actually driven, for career progress. `playerProgress` is
+          // laps x length + position, which is the same number the ranking
+          // uses — so a retired or endless run reports what it really covered
+          // rather than a lap count it never completed.
+          distanceM: Math.max(0, Math.round(this.playerProgress())),
           standings: this.finalStandings,
         });
       }

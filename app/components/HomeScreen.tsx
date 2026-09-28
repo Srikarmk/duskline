@@ -14,6 +14,7 @@ import {
   type Identity,
 } from "@/src/ui/identity";
 import { warmRaceAssets } from "@/src/ui/warm";
+import { loadCareer, seedFromHistory, isUnlocked, CAR_REQUIREMENT, nextUnlock, type Career } from "@/src/ui/progress";
 
 // live 3D garage preview — client-only (WebGL), so it must never be SSR'd
 const CarShowroom = dynamic(() => import("./CarShowroom"), { ssr: false });
@@ -151,10 +152,20 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
   const [isGlobal, setIsGlobal] = useState(false);
   const [board, setBoard] = useState<"global" | "local">("global");
 
+  // Career progress. Seeded once from the saved scores of anyone who played
+  // before this existed — see progress.ts for why that credit is races only.
+  const [career, setCareer] = useState<Career>(() => loadCareer());
+  useEffect(() => {
+    setCareer(seedFromHistory(loadScores().length));
+  }, []);
+
   useEffect(() => {
     setIdent(loadIdentity());
     const savedCar = loadLastCar();
-    if (savedCar && CAR_SPECS[savedCar]) setCar(savedCar);
+    // …but only if it is still theirs. A car saved before progression existed
+    // can be one they have not earned; falling back beats starting the player
+    // on a locked card they cannot race.
+    if (savedCar && CAR_SPECS[savedCar] && isUnlocked(savedCar)) setCar(savedCar);
     setLocalScores(loadScores());
     fetchGlobalScores().then((res) => {
       if (res) {
@@ -456,6 +467,19 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
                     <strong style={{ color: liveryUI }}>{CAR_SPECS[car].name}</strong>
                   </div>
                   <p className="showroom-blurb">{CAR_SPECS[car].blurb}</p>
+                  {(() => {
+                    // The nearest locked car, so the garage always shows one
+                    // thing worth driving toward rather than a wall of
+                    // padlocks with no order to them.
+                    const next = nextUnlock(career);
+                    return next ? (
+                      <p className="showroom-next">
+                        NEXT: <b>{CAR_SPECS[next.id].name}</b> — {next.req.label}
+                      </p>
+                    ) : (
+                      <p className="showroom-next">Every car unlocked.</p>
+                    );
+                  })()}
                 </div>
               </div>
               <div className="cars">
@@ -463,16 +487,28 @@ export default function HomeScreen({ lastResult, onStart }: Props) {
                   const spec = CAR_SPECS[id];
                   const swatch = carUIHex(id);   // the grid swatch has to survive a black livery too
                   const isSel = car === id;
+                  const open = isUnlocked(id, career);
+                  const req = CAR_REQUIREMENT[id];
+                  const pct = open ? 1 : req.progress(career);
                   return (
                     <button
                       type="button"
                       key={id}
-                      className={`car-card ${isSel ? "selected" : ""}`}
+                      className={`car-card ${isSel ? "selected" : ""} ${open ? "" : "locked"}`}
                       aria-pressed={isSel}
-                      aria-label={`${spec.name} — speed ${spec.stars.speed} of 5, acceleration ${spec.stars.accel} of 5, handling ${spec.stars.handling} of 5`}
-                      onClick={() => setCar(id)}
-                      style={{ ["--accent" as string]: swatch }}
+                      disabled={!open}
+                      aria-label={open
+                        ? `${spec.name} — speed ${spec.stars.speed} of 5, acceleration ${spec.stars.accel} of 5, handling ${spec.stars.handling} of 5`
+                        : `${spec.name} — locked. ${req.label}.`}
+                      onClick={() => open && setCar(id)}
+                      style={{ ["--accent" as string]: swatch, ["--earned" as string]: `${Math.round(pct * 100)}%` }}
                     >
+                      {!open && (
+                        <span className="car-lock">
+                          <em>{req.label}</em>
+                          <span className="car-lock-bar"><i style={{ width: `${Math.round(pct * 100)}%` }} /></span>
+                        </span>
+                      )}
                       <span className="pick-flag" aria-hidden="true">PICKED</span>
                       <span className="car-head">
                         <span className="car-chip" style={{ background: swatch, color: swatch }} />

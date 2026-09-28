@@ -48,6 +48,20 @@ else bad("every car has a ROAD_CARS body", `missing: ${missingBody.join(", ")}`)
 if (!missingNum.length) ok("every car has a race number");
 else bad("every car has a race number", `missing: ${missingNum.join(", ")}`);
 
+// --- every car costs something, or is deliberately free -------------------
+// `isUnlocked` falls back to "always" for an id with no entry, so a car added
+// without a requirement ships free and silently. That is the failure this
+// catches: the fallback is there so a missing entry cannot crash the garage,
+// not so it can be relied on.
+const prog = read("../src/ui/progress.ts");
+const reqBlock = prog.slice(prog.indexOf("export const CAR_REQUIREMENT"));
+// Anchored to the start of a line, so a commented-out entry does not count —
+// `(^|\s)` matched the space after `//` and the guard passed with the entry
+// disabled, which I only found by disabling one.
+const noReq = ids.filter((id) => !new RegExp(`^\\s*${id}:\\s*(always|after\\()`, "m").test(reqBlock));
+if (!noReq.length) ok("every car has an unlock requirement");
+else bad("every car has an unlock requirement", `missing: ${noReq.join(", ")} — they would ship unlocked`);
+
 // --- rib tables ----------------------------------------------------------
 // Row = [zFrac, floorLift, wFloor, wMax, shoulderFrac, wDeck, deckFrac].
 const tables = [...cars.matchAll(/const (RIBS_[A-Z0-9]+): RibRow\[\] = \[([\s\S]*?)\n\];/g)];

@@ -14,6 +14,8 @@ interface Props {
   modeLabel: string;
   isNewBest: boolean;
   prevBest: number;
+  /** names of cars this race unlocked, if any */
+  unlocked?: string[];
   onRaceAgain: () => void;
   onMenu: () => void;
 }
@@ -60,7 +62,7 @@ function taunt(solo: boolean, pos: number, total: number) {
 }
 
 export default function ResultsScreen({
-  result, realmName, realmId, carName, racer, modeLabel, isNewBest, prevBest, onRaceAgain, onMenu,
+  result, realmName, realmId, carName, racer, modeLabel, isNewBest, prevBest, unlocked, onRaceAgain, onMenu,
 }: Props) {
   const [sharing, setSharing] = useState(false);
   const [shareMsg, setShareMsg] = useState<string | null>(null);
@@ -181,6 +183,12 @@ export default function ResultsScreen({
             <span className="result-best">best {prevBest.toLocaleString()}</span>
           )}
         </div>
+
+        {unlocked && unlocked.length > 0 && (
+          <p className="result-unlock">
+            <strong>UNLOCKED</strong> {unlocked.join(" · ")} — now in the garage
+          </p>
+        )}
 
         <div className="result-stats">
           {rows.map((r) => (
