@@ -2057,6 +2057,20 @@ export class Game {
       for (let off = ROAD_HALF_WIDTH + 12; off <= 90; off += 9) {
         const jd = this.track.wrap(d + dd);
         const q = this.track.pointAt(jd, side * off);
+        // THE PROP'S OWN FOOTPRINT HAS TO CLEAR THE ROAD, and this had no such
+        // check — which is how a waterfall ended up standing across the track.
+        //
+        // The mechanism is worth spelling out because "search for the steepest
+        // ground" sounds safe and is not: where a road cuts THROUGH a hill, the
+        // steepest ground for a hundred metres in any direction is the cutting
+        // itself. So the search reliably picked the embankment at the very
+        // first offset it tried, and a waterfall scaled 1.5-2.2x overhung the
+        // tarmac from there. Looking for a cliff finds the one the road made.
+        //
+        // roadClear tests against the WHOLE circuit, not just this point, so it
+        // also stops a prop being planted on a different part of the lap that
+        // happens to pass nearby.
+        if (!this.roadClear(q.x, q.z, reach, 6)) continue;
         const spread = this.groundSpreadUnder(q.x, q.z, reach);
         if (spread > bestSpread) { bestSpread = spread; bestOff = off; bestD = jd; }
         if (spread >= Game.CLIFF_SPREAD) return { d: jd, off };
@@ -2579,7 +2593,13 @@ export class Game {
         quad(deck, prev.R, R, Rb, prev.Rb);
         quad(rail, prev.rlo, prev.rhi, rhi, rlo);   // parapets
         quad(rail, prev.rlo2, rlo2, rhi2, prev.rhi2);
-        quad(rail, prev.rhi, prev.rhi2, rhi2, rhi);
+        // NO third quad here. There used to be one spanning prev.rhi -> rhi2,
+        // i.e. from the LEFT parapet's inner top across to the RIGHT parapet's
+        // inner top — a 16 m x 92 m stone LID roofing the whole carriageway at
+        // 0.92 m, which you drove straight through and which read on screen as
+        // a huge hard-edged black slab lying over the road. Each parapet is
+        // already a closed sloped band (rlo -> rhi) and the material is
+        // DoubleSide, so nothing is left open by dropping it.
       }
       prev = { L, R, Lb, Rb, rlo, rhi, rlo2, rhi2 };
       // a pier at each span crossing
