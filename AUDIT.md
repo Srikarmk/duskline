@@ -1030,9 +1030,31 @@ different problems:
     car running wide.
 15. ✅ **The gated fork.** See the bug section below — nine separate faults,
     none of them the fork itself.
-16. ◻ **Progression**: cars unlocked by distance or podiums.
-17. ◻ **A real championship**: Grand Prix is three rounds; a season with
-    standings is the same code with persistence.
+16. ✅ **Progression** — `src/ui/progress.ts`. The garage used to hand you all
+    fourteen cars on the first visit, which makes the roster a menu rather than
+    something you get to. Every car now sits behind a visible requirement, and
+    the requirements are written so there is always exactly one that is close.
+
+    Nobody loses a car: a returning player has saved scores but no record of
+    where they FINISHED, so podiums and wins cannot be reconstructed.
+    `seedFromHistory` credits one race per saved score and leaves the rest at
+    zero — a head start that is honest about what it knows, rather than either
+    wiping the garage or silently unlocking everything.
+
+    One bug worth remembering: `nextUnlock` ranked by fractional progress, so on
+    a fresh career every car was at zero, the sort was a no-op, and it pointed
+    at MERIDIAN — six wins, the hardest car in the game. It ranks by remaining
+    effort now.
+17. ✅ **A real championship** — `src/ui/season.ts`. The Grand Prix already had
+    three rounds and a points table; it lived entirely in React state, so
+    closing the tab threw the season away. Now persisted, offered back on the
+    home screen, and kept when you quit to the menu (only finishing or
+    abandoning clears it).
+
+    Standings are keyed by racer NAME, which broke the moment the player signed
+    in or was issued a different guest number — the resume card reported them
+    last on zero points in a championship they were leading. The season stamps
+    the player's name at the start and looks their row up by that.
 
 ### Product
 18. ✅ **Share a result.** `src/ui/shareCard.ts` — a 1200×630 card (the Open
