@@ -1,5 +1,7 @@
 # Duskline
 
+<a href="https://playduskline.vercel.app"><img alt="Play" src="https://img.shields.io/badge/play-playduskline.vercel.app-5b4fc9" /></a> <a href="https://www.srikarmk.dev/projects/duskline"><img alt="Case study" src="https://img.shields.io/badge/case%20study-srikarmk.dev-5b4fc9" /></a> <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue" /></a>
+
 A browser racing game. Twelve worlds, ten road cars, and an endless neon
 highway — no install, no account, no download screen.
 
