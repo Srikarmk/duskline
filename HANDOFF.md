@@ -47,7 +47,7 @@ Four commits, all green and all live:
 
 ## What is left
 
-### 1. Sound — first pass done 2026-10-21, on branch `sound-pass`, awaiting the user's ears
+### 1. Sound — first pass shipped 2026-10-21 (PR #1, merge `0349709`)
 
 Deferred twice in September; on 2026-10-21 the user asked for all of it —
 engine, effects, music, mix — and then for CC0 recorded sounds as well. AUDIT
@@ -57,8 +57,9 @@ synth / recorded side by side from the real code and measures them. The user
 asked to keep the lab. Use it before and after any audio change: levels in
 particular move without anyone touching a gain.
 
-Not yet heard by the user in the game itself; the branch's Vercel preview is
-for that. Merge to `main` only on their word.
+The user approved it and it is live. Further changes go the same way: judge
+them in the lab, then open a PR and merge after CI — a direct push to `main`
+is blocked by the session's permission check.
 
 ### 2. ~~Code-split the engine~~ — done 2026-10-21, see above and AUDIT 2.1
 
