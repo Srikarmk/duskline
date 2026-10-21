@@ -22,7 +22,7 @@
  *    the engine shipped on first paint and was written off as unavoidable;
  *    the cause was one static import (src/ui/warm.ts → game3d/textures.ts)
  *    reaching three from the home screen, which no `dynamic()` can undo.
- *  - **Texture weight.** A first visit downloaded 12.1 MB; recompressing to
+ *  - **Texture weight** (and the recorded effects in public/sfx). A first visit downloaded 12.1 MB; recompressing to
  *    WebP took it to 916 kB. Dropping a new full-resolution PNG into
  *    public/textures undoes that quietly.
  *
@@ -60,6 +60,9 @@ const BUDGETS = {
   firstLoadJsKB: 185,      // currently ~159 by this script's measure
   texturesKB: 1600,        // currently ~1338
   previewsKB: 600,         // currently ~389
+  // 32 trimmed mono AAC takes. The source packs were 6.4 MB; most of that was
+  // two 5-second thruster loops of which the game plays 0.9 s.
+  sfxKB: 400,              // currently ~289
 };
 
 if (!existsSync(NEXT)) {
@@ -143,6 +146,15 @@ const prevKB = await dirKB(path.join(ROOT, "public", "previews"), [".webp"]);
 report.push(["public/previews (webp)", prevKB, BUDGETS.previewsKB]);
 if (prevKB > BUDGETS.previewsKB) {
   failures.push(`public/previews is ${prevKB} kB, over the ${BUDGETS.previewsKB} kB budget.`);
+}
+
+const sfxKB = await dirKB(path.join(ROOT, "public", "sfx"), [".m4a", ".ogg", ".mp3", ".wav"]);
+report.push(["public/sfx", sfxKB, BUDGETS.sfxKB]);
+if (sfxKB > BUDGETS.sfxKB) {
+  failures.push(
+    `public/sfx is ${sfxKB} kB, over the ${BUDGETS.sfxKB} kB budget. ` +
+      `Trim takes to what the game plays and encode mono AAC (see tools/sound-lab/README.md).`,
+  );
 }
 
 for (const [what, actual, budget] of report) {

@@ -761,6 +761,40 @@ scroll on 1366×768, the commonest laptop screen there is.
 
 ## 2. What we could improve
 
+### Sound — 2026-10-21 pass (branch `sound-pass`)
+
+Measured in the sound lab, `tools/sound-lab/`. What changed and why:
+
+- **Music timing.** Every note used to fire from a 200 ms `setInterval` at
+  `ctx.currentTime`, so rhythm was only as steady as the main thread. Notes are
+  now booked 160 ms ahead on the audio clock. The 12.8 s loop is an 8-bar
+  25.6 s form. The drone is continuous, levelled to the old one's *average*:
+  the old drone was re-struck each bar and decayed in ~0.6 s, so the same gain
+  held continuously measured 3× as loud.
+- **Road layer, new.** Wind with speed², tarmac rumble, gravel off-road, and a
+  tyre squeal driven by `freeDrive.slip`. In a game built on drifting there
+  was no tyre sound at all. Verified in play: slip 6.5 m/s → squeal at full,
+  back to 0 when the slide ends.
+- **Effects.** Square-wave beeps replaced with chimes on the music's bell
+  partials; gems climb the scale as you chain them; ±2.5% variation on
+  repeated hits; `finish` no longer runs on `setTimeout`.
+- **Recordings.** Seven effects use CC0 Kenney takes (`public/sfx`, 289 kB,
+  `CREDITS.md`), with the synth voice as fallback.
+- **Loop seams.** Brown-noise buffers looped with a jump of up to 10.7× an
+  ordinary step — a tick every 2 s under the engine. Crossfaded: ~2×.
+- **Hidden tab** now suspends the audio along with the race.
+
+Two of my own claims this pass were wrong, and the lab is how they were caught:
+
+- I wrote that stacked effects clipped and added a compressor for it. The old
+  mix never clipped — worst stack −8.0 dBFS. The compressor's automatic
+  make-up gain then made everything 4–7 dB louder. Removed; a −1 dBFS limiter
+  stays as a safety net that measured stacks never reach.
+- First-pass levels for the new hits were up to +25 dB over the old ones
+  (land, bump). Levels are now set from a per-effect trim table: lap and
+  music within 1 dB of the old mix, each recording within 3 dB RMS of its
+  synth voice.
+
 ### Performance
 1. ✅ **Code-split the engine — fixed 2026-10-21, for real this time.** The
    cause was never Next or `dynamic()`: `HomeScreen` imports `src/ui/warm.ts`,

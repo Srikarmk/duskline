@@ -10,9 +10,10 @@ highway — no install, no account, no download screen.
 ![Duskline](docs/screenshots/void.jpg)
 
 Built with Next.js 16, TypeScript and Three.js. Everything you see is generated
-in code: the skies are shaders, the cars are lofted from cross-sections, the
-tracks are splines with real elevation, and every sound is synthesised at
-runtime by the Web Audio API. There is not one audio file in this repository.
+in code: the skies are shaders, the cars are lofted from cross-sections, and the
+tracks are splines with real elevation. The engine, tyres, wind and music are
+synthesised at runtime by the Web Audio API; the crashes, nitro and a handful of
+impacts are CC0 recordings (see `CREDITS.md`).
 
 ## What's in it
 
@@ -66,6 +67,7 @@ before launch, `AUDIT.md` the open bugs and the ideas worth building,
 
 ## Licence
 
-Game code, art direction, geometry, textures and audio are original work.
-Third-party assets are CC0 (Kenney models, Poly Haven textures) or MIT/OFL
+Game code, art direction, geometry, textures and synthesised audio are original
+work. Third-party assets are CC0 (Kenney models and sound effects, Poly Haven
+textures) or MIT/OFL
 (three.js, Next, React, Orbitron, Rajdhani) — see `CREDITS.md`.
