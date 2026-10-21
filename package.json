@@ -16,7 +16,8 @@
     "test:render": "node test/render-budget.mjs",
     "test:cars": "node --experimental-strip-types --no-warnings test/car-catalogue.mjs",
     "test:ci": "npm run typecheck && npm run lint && npm test && npm run build && npm run test:budget",
-    "test:sync": "node --experimental-strip-types --no-warnings test/profile-merge.mjs"
+    "test:sync": "node --experimental-strip-types --no-warnings test/profile-merge.mjs",
+    "sound-lab": "node tools/sound-lab/build.mjs"
   },
   "dependencies": {
     "next": "^16.3.6",

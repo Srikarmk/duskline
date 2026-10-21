@@ -47,18 +47,18 @@ Four commits, all green and all live:
 
 ## What is left
 
-### 1. Sound — the user's own priority, explicitly deferred
+### 1. Sound — first pass done 2026-10-21, on branch `sound-pass`, awaiting the user's ears
 
-Their words, back in September: *"Sound needs a lot of work but it's okay for
-later."* Then, when clearing the feature list: *"Do all except sound."* So it
-was left alone on purpose, twice, and it is the one thing they have named as
-weak that nobody has touched.
+Deferred twice in September; on 2026-10-21 the user asked for all of it —
+engine, effects, music, mix — and then for CC0 recorded sounds as well. AUDIT
+2 "Sound" has what changed. It was judged in **the sound lab**
+(`npm run sound-lab`, `tools/sound-lab/README.md`), which renders before /
+synth / recorded side by side from the real code and measures them. The user
+asked to keep the lab. Use it before and after any audio change: levels in
+particular move without anyone touching a gain.
 
-It is all generated at runtime — oscillators, filtered noise and envelopes in
-`src/game3d/sound.ts`. There is not a single audio file in the repository, so
-this is DSP work, not asset work. **Ask what specifically sounds wrong before
-rewriting anything**; "needs work" is not a brief, and the engine is the kind
-of thing where a confident rewrite can easily be worse.
+Not yet heard by the user in the game itself; the branch's Vercel preview is
+for that. Merge to `main` only on their word.
 
 ### 2. ~~Code-split the engine~~ — done 2026-10-21, see above and AUDIT 2.1
 

@@ -3,11 +3,30 @@
 Every third-party asset in this repository, with its source and terms. Audited
 2026-09-14.
 
-## Audio — none third-party
+## Audio — mostly synthesised; recorded effects from Kenney, CC0
 
-All sound is generated at runtime by the Web Audio API: oscillators, filtered
-noise and envelopes in `src/game3d/sound.ts`. There are no audio files in the
-repository and nothing is streamed. Nothing to licence.
+The engine, the road and tyres, the music, the ambience and most effects are
+generated at runtime by the Web Audio API in `src/game3d/sound.ts`.
+
+Seven effects use recordings, all from two Kenney packs (kenney.nl), CC0 /
+public domain. Licences: `public/sfx/LICENSE-kenney-impact-sounds.txt` and
+`public/sfx/LICENSE-kenney-sci-fi-sounds.txt`. Each take was trimmed of
+leading silence, cut to what the game plays, mixed to mono and encoded as
+96 kbps AAC; the source files are otherwise unchanged.
+
+| In `public/sfx` | Used for | Kenney pack | Source files |
+| --- | --- | --- | --- |
+| `crash-metal-0…4` | crash | Impact Sounds | `impactMetal_heavy_000…004` |
+| `crash-plate-0…4` | crash | Impact Sounds | `impactPlate_heavy_000…004` |
+| `bump-0…4` | car contact | Impact Sounds | `impactPlate_medium_000…004` |
+| `land-0…4` | landing | Impact Sounds | `impactSoft_heavy_000…004` |
+| `hit-0…4` | monster hit | Impact Sounds | `impactPunch_heavy_000…004` |
+| `smash-0…2` | rock smash | Sci-fi Sounds | `explosionCrunch_000`, `_001`, `_003` |
+| `nitro-0…1` | nitro | Sci-fi Sounds | `thrusterFire_001`, `_003` (first 0.9 s) |
+| `transform-0…1` | mech transform | Sci-fi Sounds | `forceField_000`, `_002` |
+
+If a browser cannot decode AAC, each of these falls back to its synthesised
+voice, so nothing goes silent.
 
 ## 3D models — Kenney, CC0
 
@@ -60,4 +79,4 @@ Full dependency licences resolve through `npm`; run `npx license-checker
 ## Original work
 
 Everything not listed above — all game code, all realm and car design, all
-procedural geometry, textures and audio — is original to this project.
+procedural geometry, textures and synthesised audio — is original to this project.

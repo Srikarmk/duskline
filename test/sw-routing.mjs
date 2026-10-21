@@ -45,6 +45,8 @@ const cases = [
   ["https://fantasy-racer.vercel.app/_next/static/chunks/abc123.js", "navigate-no", "cacheFirst"],
   ["https://fantasy-racer.vercel.app/previews/realm-bay.jpg", "no", "staleWhileRevalidate"],
   ["https://fantasy-racer.vercel.app/icon-192.png", "no", "staleWhileRevalidate"],
+  // recorded effects: offline play has to keep its crashes and its nitro
+  ["https://fantasy-racer.vercel.app/sfx/crash-metal-0.m4a", "no", "staleWhileRevalidate"],
   ["https://fantasy-racer.vercel.app/api/scores", "no", "PASSTHROUGH"],
   ["https://fantasy-racer.vercel.app/api/guest", "no", "PASSTHROUGH"],
   ["https://accounts.google.com/gsi/client", "no", "PASSTHROUGH"],

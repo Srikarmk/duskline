@@ -12,7 +12,7 @@
  * to strand everyone on an old build with no way to tell them.
  *
  *   /_next/static/**  content-hashed, immutable    -> cache-first, forever
- *   /previews, /models, /textures, icons            -> stale-while-revalidate
+ *   /previews, /models, /textures, /sfx, icons      -> stale-while-revalidate
  *   navigations (the HTML)                          -> network-first
  *   /api/**                                         -> never touched
  */
@@ -51,6 +51,7 @@ function isAsset(url) {
     url.pathname.startsWith("/previews/") ||
     url.pathname.startsWith("/models/") ||
     url.pathname.startsWith("/textures/") ||
+    url.pathname.startsWith("/sfx/") ||
     url.pathname.endsWith(".png") ||
     url.pathname.endsWith(".svg")
   );

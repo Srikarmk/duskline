@@ -1,0 +1,448 @@
+<meta charset="utf-8">
+<title>Duskline Sound Lab</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;800&family=Rajdhani:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: one column of A/B listening strips, the game's own dusk palette and faces. Single dark look, by choice. */
+  :root {
+    --bg: #0b0a14;
+    --panel: #141226;
+    --line: #2a2546;
+    --fg: #e9e6f8;
+    --muted: #9c96bf;
+    --before: #8d88ad;
+    --after: #c4b5fd;
+    --rec: #7fd4c1;
+    --clip: #fb7185;
+    --display: "Orbitron", "Arial Black", system-ui, sans-serif;
+    --body: "Rajdhani", "Segoe UI", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    color-scheme: dark;
+  }
+  html { background: var(--bg); }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--body);
+    font-size: 17px;
+    font-weight: 500;
+    line-height: 1.5;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 40px 72px;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; display: grid; gap: 44px; }
+  header { display: grid; gap: 12px; }
+  .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+  h1 { font-family: var(--display); font-weight: 800; font-size: clamp(28px, 5vw, 44px); letter-spacing: 0.06em; margin: 0; text-wrap: balance; }
+  h1 span { color: var(--after); }
+  h2 { font-family: var(--display); font-weight: 700; font-size: 15px; letter-spacing: 0.16em; text-transform: uppercase; margin: 0; }
+  p { margin: 0; max-width: 65ch; }
+  .lede { color: var(--muted); font-size: 18px; }
+  .note { color: var(--muted); font-size: 15px; }
+  section { display: grid; gap: 16px; }
+
+  .scene { display: grid; gap: 10px; padding-block: 18px; border-top: 1px solid var(--line); }
+  .scene-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
+  .scene-head strong { font-family: var(--display); font-size: 14px; letter-spacing: 0.1em; text-transform: uppercase; }
+  .scene-head .dur { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .scene p { color: var(--muted); font-size: 15.5px; }
+  .strip { display: grid; grid-template-columns: 112px minmax(0, 1fr) minmax(0, 190px); gap: 12px; align-items: center; }
+  .strip canvas { width: 100%; height: 46px; display: block; background: var(--panel); border-radius: 4px; }
+  .stats { font-family: var(--mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; line-height: 1.45; min-width: 0; }
+  .stats b { color: var(--fg); font-weight: 500; }
+  .stats .bad { color: var(--clip); }
+
+  button {
+    font: 600 14px/1 var(--body);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--fg);
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 9px 12px;
+    cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    white-space: nowrap;
+  }
+  button::before { content: ""; width: 0; height: 0; border-left: 7px solid currentColor; border-top: 4.5px solid transparent; border-bottom: 4.5px solid transparent; }
+  button.playing::before { width: 8px; height: 8px; border: 0; background: currentColor; }
+  button[data-kind="before"] { color: var(--before); }
+  button[data-kind="after"] { color: var(--after); border-color: color-mix(in srgb, var(--after) 45%, var(--line)); }
+  button[data-kind="rec"] { color: var(--rec); border-color: color-mix(in srgb, var(--rec) 45%, var(--line)); }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 15px; color: var(--muted); }
+  .legend b { font-weight: 700; }
+  .legend .k-before { color: var(--before); } .legend .k-after { color: var(--after); } .legend .k-rec { color: var(--rec); }
+  button:hover { background: var(--panel); }
+  button:focus-visible { outline: 2px solid var(--after); outline-offset: 2px; }
+  button[disabled] { opacity: 0.55; cursor: progress; }
+
+  .fx { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+  .fx-item { display: grid; gap: 8px; padding: 12px; background: var(--panel); border-radius: 6px; }
+  .fx-item strong { font-family: var(--mono); font-size: 13px; font-weight: 500; }
+  .fx-item .pair { display: flex; gap: 8px; flex-wrap: wrap; }
+  .fx-item .why { font-size: 14px; color: var(--muted); line-height: 1.35; }
+
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; min-width: 640px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); font-size: 15px; }
+  th { font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); font-weight: 400; }
+  td.num { font-family: var(--mono); font-size: 13.5px; }
+  td .bad { color: var(--clip); }
+  td .good { color: var(--after); }
+
+  ul.changes { margin: 0; padding-left: 1.1em; display: grid; gap: 8px; max-width: 70ch; }
+  ul.changes li::marker { color: var(--after); }
+  ul.changes b { font-weight: 700; }
+
+  @media (max-width: 620px) {
+    .strip { grid-template-columns: 1fr; gap: 6px; }
+    .strip button { justify-self: start; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Duskline · procedural audio · 2026-10-21</div>
+    <h1>SOUND <span>LAB</span></h1>
+    <p class="lede">Every clip on this page is rendered in your browser, right now, by the game's actual audio code. Headphones or real speakers help; a laptop speaker cannot play the bottom octave of the engine at all.</p>
+    <div class="legend"><span><b class="k-before">Before</b> what is live today</span><span><b class="k-after">Synth</b> the new code, everything synthesised</span><span><b class="k-rec">Recorded</b> the new code with CC0 recordings for impacts, nitro and the mech</span></div>
+  </header>
+
+  <section aria-labelledby="scenes-h">
+    <h2 id="scenes-h">Scenes</h2>
+    <div id="scenes"></div>
+  </section>
+
+  <section aria-labelledby="fx-h">
+    <h2 id="fx-h">Effects, one at a time</h2>
+    <p class="note">Gem plays four pickups in a row, because the new one climbs the scale as you chain them. Recorded appears on the seven effects that use recordings.</p>
+    <div class="fx" id="fx"></div>
+  </section>
+
+  <section aria-labelledby="m-h">
+    <h2 id="m-h">What was measured</h2>
+    <p class="note">Peak is the loudest sample; anything over 0 dBFS is clipped by the speakers. RMS is average level, which is roughly loudness. "Seam" is the jump at the loop point of the engine's noise buffer, as a multiple of an ordinary sample-to-sample step: anything well above 1× is a click.</p>
+    <div class="table-wrap"><table id="measure"><thead><tr><th>Check</th><th>Before</th><th>Synth</th><th>Recorded</th></tr></thead><tbody></tbody></table></div>
+    <div><button id="remeasure" data-kind="after" type="button">Measure again in this browser</button></div>
+  </section>
+
+  <section aria-labelledby="c-h">
+    <h2 id="c-h">What changed since Before</h2>
+    <ul class="changes" id="changes">
+      <li><b>Mix.</b> A glue compressor and a limiter on the output, so stacked hits no longer clip. The music ducks under crashes, nitro and the finish. The engine's sub is halved and high-passed at 32 Hz.</li>
+      <li><b>Music.</b> Notes are booked on the audio clock ahead of time instead of fired from a timer, so the rhythm no longer depends on the frame rate. The 4-bar loop is now an 8-bar form: the bell line rotates, the second half lifts an octave, the eighth bar ends on a taiko fill. The drone is one continuous voice instead of a re-struck note every bar.</li>
+      <li><b>Engine and road.</b> The engine's character is unchanged, with an exhaust crack on upshifts under load. New: wind that rises with the square of speed, tyre rumble on tarmac, gravel off-road, and a tyre squeal driven by the car's side-slip.</li>
+      <li><b>Effects.</b> Square-wave beeps replaced with chimes and hits from the music's own bell partials. Gems climb the Hirajoshi scale as you chain them. Every repeated hit varies its pitch by ±2.5%. The finish fanfare runs on the audio clock, not setTimeout.</li>
+      <li><b>Recordings.</b> Seven effects can use CC0 recordings from Kenney's Impact and Sci-fi packs: crash, car contact, landing, rock smash, monster hit, nitro and the mech transform. Each has several takes and never repeats the last one. Every take is trimmed, mono AAC, 289 kB for all 32. If a browser cannot decode one, the synthesised voice plays instead.</li>
+      <li><b>Levels.</b> Matched by measurement, not by ear: the lap and the music sit within 1 dB of the old mix, and each recording within 3 dB RMS of the synthesised voice it replaces.</li>
+      <li><b>Loops and tabs.</b> Noise buffers loop without a click. A hidden tab now suspends the audio along with the race, instead of droning on.</li>
+    </ul>
+  </section>
+</div>
+
+<script>
+/*__SOUNDS__*/
+</script>
+<script>
+const SR = 48000;
+const KINDS = { before: OldSound, after: NewSound, rec: NewSound };
+const KIND_LABEL = { before: "Before", after: "Synth", rec: "Recorded" };
+const ALL_KINDS = ["before", "after", "rec"];
+const SAMPLED = new Set(["crash", "bump", "land", "smash", "monsterHit", "nitro", "transform"]);
+
+/** Start one version of the engine's Sound on an offline context. */
+function boot(kind, off, music) {
+  const s = new KINDS[kind]();
+  let musicFn = null;
+  if (kind === "before") {
+    // the old unlock() builds its own AudioContext and its own music timer
+    const RealAC = window.AudioContext, RealSI = window.setInterval;
+    window.AudioContext = function () { return off; };
+    window.setInterval = (fn) => { musicFn = fn; return 0; };
+    try { s.unlock(); } finally { window.AudioContext = RealAC; window.setInterval = RealSI; }
+  } else {
+    s.unlock(off);
+  }
+  if (!music && s.musicBus) s.musicBus.gain.value = 0;
+  let last = -1;
+  const tick = (t) => {
+    if (!music) return;
+    if (kind === "before") {
+      // best case for the old code: its timer fired exactly on time, every time
+      if (musicFn && t - last >= 0.2 - 1e-6) { last = t; musicFn(); }
+    } else {
+      s.scheduleMusic(t + 0.16);
+    }
+  };
+  return { s, tick };
+}
+
+async function render(kind, scene) {
+  const off = new OfflineAudioContext(2, Math.ceil(SR * scene.seconds), SR);
+  const { s, tick } = boot(kind, off, scene.music);
+  // .mp4, not .m4a: the same MPEG-4 audio bytes, under a name every static
+  // host serves (the artifact host refuses .m4a)
+  if (kind === "rec") await s.loadSamples("sfx/", "mp4");
+  if (scene.ambient) s.setAmbient(scene.ambient);
+  const run = scene.script();
+  const Q = 1024 / SR;
+  run(s, 0); tick(0);
+  for (let i = 1; i * Q < scene.seconds - Q; i++) {
+    const t = i * Q;
+    off.suspend(t).then(() => { run(s, t); tick(t); off.resume(); });
+  }
+  const buf = await off.startRendering();
+  try { s.dispose(); } catch (e) { /* offline contexts cannot close */ }
+  return buf;
+}
+
+/** Fire timed one-shots once each, plus a continuous per-tick driver. */
+function timeline(events, drive) {
+  return () => {
+    const fired = new Set();
+    return (s, t) => {
+      events.forEach(([at, name], i) => { if (t >= at && !fired.has(i)) { fired.add(i); s.play(name); } });
+      if (drive) drive(s, t);
+    };
+  };
+}
+
+const lerp = (a, b, x) => a + (b - a) * Math.max(0, Math.min(1, x));
+
+const SCENES = [
+  {
+    id: "drive", label: "A lap, compressed", seconds: 12, music: true, ambient: "wind",
+    about: "Countdown, launch through the gears, a lift and a drift, nitro, a jump and landing, four gems, a crash, back on the power.",
+    script: timeline(
+      [[0.1, "beep"], [0.6, "beep"], [1.1, "beep"], [1.6, "go"], [6.2, "nitro"], [7.8, "jump"], [8.5, "land"],
+       [8.8, "gem"], [9.0, "gem"], [9.2, "gem"], [9.4, "gem"], [9.9, "crash"], [11.2, "lap"]],
+      (s, t) => {
+        if (t < 1.6) { s.setEngine(0.05, false, 0); s.setRoad?.(0, 0, false, false); s.setMusicIntensity(0.32); return; }
+        let sp = Math.min(0.82, (t - 1.6) * 0.2);
+        let load = 1, slip = 0, air = false;
+        if (t > 4.2 && t < 4.55) load = 0.22;
+        if (t > 4.3 && t < 5.7) { slip = 4.6 * Math.sin(((t - 4.3) / 1.4) * Math.PI); sp -= 0.04; }
+        const boost = t > 6.2 && t < 7.6;
+        if (t > 6.2) sp = lerp(0.82, 1, (t - 6.2) / 1.2);
+        if (t > 7.8 && t < 8.5) { air = true; load = 0.22; }
+        if (t > 9.9) sp = t < 10.3 ? lerp(0.98, 0.35, (t - 9.9) / 0.4) : lerp(0.35, 0.7, (t - 10.3) / 1.7);
+        if (t > 9.9 && t < 10.5) load = 0;
+        s.setEngine(sp, boost, load);
+        s.setRoad?.(sp, slip, air, false);
+        s.setMusicIntensity(0.32 + sp * 0.55 + (boost ? 0.18 : 0));
+      }),
+  },
+  {
+    id: "stack", label: "Worst case: everything at once", seconds: 3, music: true,
+    about: "Flat out on nitro with the music at full intensity, then a crash, a nitro, a gem, a bump and a landing on the same frame: the loudest moment the game can produce.",
+    script: timeline([[1.0, "crash"], [1.0, "nitro"], [1.0, "gem"], [1.0, "bump"], [1.0, "land"]],
+      (s) => { s.setEngine(1, true, 1); s.setRoad?.(1, 0, false, false); s.setMusicIntensity(1); }),
+  },
+  {
+    id: "drift", label: "A long drift", seconds: 6, music: false,
+    about: "Engine and road only. A slide that builds, holds and recovers at 70% speed. The old code has no tyre sound, so Before is the engine alone.",
+    script: timeline([], (s, t) => {
+      const slip = t < 1 ? 0 : t < 2 ? (t - 1) * 5 : t < 4.5 ? 5 : t < 5.3 ? (5.3 - t) * 6.25 : 0;
+      s.setEngine(0.7, false, t > 1 && t < 1.4 ? 0.22 : 1);
+      s.setRoad?.(0.7, slip, false, false);
+    }),
+  },
+  {
+    id: "music", label: "The music bed", seconds: 26, music: true,
+    about: "Twenty-six seconds at mid intensity, nothing else playing. The old bed repeats every 12.8 seconds; the new one has an 8-bar form of 25.6.",
+    script: timeline([], (s) => s.setMusicIntensity(0.6)),
+  },
+];
+
+const FX = [
+  ["beep", "countdown pip"], ["go", "start"], ["gem", "×4, chained"], ["airGem", "gem in the air"], ["nitroCharge", "nitro pickup"],
+  ["nitro", "boost fired"], ["jump", "ramp launch"], ["stunt", "trick landed"], ["land", "touchdown"], ["crash", "hit scenery"],
+  ["bump", "car contact"], ["oob", "out of bounds"], ["lane", "lane bonus"], ["lap", "new lap"], ["finish", "chequered flag"],
+  ["transform", "mech form"], ["powerDown", "mech ends"], ["slash", "sword"], ["smash", "rock smashed"], ["monsterHit", "monster hits you"],
+];
+const fxScene = (name) => ({
+  id: "fx-" + name, seconds: name === "finish" ? 2.4 : 1.6, music: false,
+  script: timeline(name === "gem" ? [[0.05, "gem"], [0.25, "gem"], [0.45, "gem"], [0.65, "gem"]] : [[0.05, name]]),
+});
+
+function stats(buf) {
+  let peak = 0, clipped = 0, sum = 0, n = 0;
+  for (let c = 0; c < buf.numberOfChannels; c++) {
+    const d = buf.getChannelData(c);
+    for (let i = 0; i < d.length; i++) {
+      const a = Math.abs(d[i]);
+      if (a > peak) peak = a;
+      if (a > 1) clipped++;
+      sum += d[i] * d[i]; n++;
+    }
+  }
+  const db = (x) => (x > 0 ? 20 * Math.log10(x) : -Infinity);
+  return { peakDb: db(peak), clipped, rmsDb: db(Math.sqrt(sum / n)) };
+}
+const fmtDb = (x) => (x === -Infinity ? "−∞" : (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(1)) + " dB";
+
+function draw(canvas, buf) {
+  const w = canvas.clientWidth || 600, h = canvas.clientHeight || 46, dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+  const g = canvas.getContext("2d");
+  g.scale(dpr, dpr);
+  const css = getComputedStyle(document.documentElement);
+  const kind = canvas.dataset.kind;
+  const col = css.getPropertyValue({ before: "--before", after: "--after", rec: "--rec" }[kind]).trim();
+  const clip = css.getPropertyValue("--clip").trim();
+  const d0 = buf.getChannelData(0), d1 = buf.numberOfChannels > 1 ? buf.getChannelData(1) : d0;
+  const per = Math.max(1, Math.floor(d0.length / w));
+  // the strip is drawn to 1.0 = full height, so anything past it is visibly over
+  for (let x = 0; x < w; x++) {
+    let m = 0;
+    for (let i = x * per; i < (x + 1) * per && i < d0.length; i++) m = Math.max(m, Math.abs(d0[i]), Math.abs(d1[i]));
+    g.fillStyle = m > 1 ? clip : col;
+    const bh = Math.min(1, m) * (h / 2 - 2);
+    g.fillRect(x, h / 2 - bh, 1, Math.max(1, bh * 2));
+  }
+}
+
+const cache = new Map();
+async function get(kind, scene) {
+  const key = kind + ":" + scene.id;
+  if (!cache.has(key)) cache.set(key, render(kind, scene));
+  return cache.get(key);
+}
+
+let player = null, playingSrc = null, playingBtn = null;
+function stop() {
+  try { playingSrc?.stop(); } catch (e) { /* already ended */ }
+  playingBtn?.classList.remove("playing");
+  playingSrc = null; playingBtn = null;
+}
+async function play(btn, kind, scene, after) {
+  if (playingBtn === btn) { stop(); return; }
+  stop();
+  player = player || new AudioContext();
+  if (player.state === "suspended") await player.resume();
+  btn.disabled = true;
+  const buf = await get(kind, scene);
+  btn.disabled = false;
+  after?.(buf);
+  const src = player.createBufferSource();
+  src.buffer = buf;
+  src.connect(player.destination);
+  src.onended = () => { if (playingSrc === src) stop(); };
+  src.start();
+  playingSrc = src; playingBtn = btn;
+  btn.classList.add("playing");
+}
+
+function statLine(el, buf) {
+  const st = stats(buf);
+  el.innerHTML = `peak <b class="${st.clipped ? "bad" : ""}">${fmtDb(st.peakDb)}</b><br>` +
+    (st.clipped ? `<span class="bad">${st.clipped.toLocaleString()} samples clipped</span>` : `no clipping`) +
+    ` · rms ${fmtDb(st.rmsDb)}`;
+}
+
+const scenesEl = document.getElementById("scenes");
+const pending = [];
+for (const sc of SCENES) {
+  const box = document.createElement("div");
+  box.className = "scene";
+  box.innerHTML = `<div class="scene-head"><strong>${sc.label}</strong><span class="dur">${sc.seconds} s</span></div><p>${sc.about}</p>`;
+  for (const kind of ALL_KINDS) {
+    const row = document.createElement("div");
+    row.className = "strip";
+    const btn = document.createElement("button");
+    btn.type = "button"; btn.dataset.kind = kind; btn.id = `play-${sc.id}-${kind}`;
+    btn.textContent = KIND_LABEL[kind];
+    const cv = document.createElement("canvas");
+    cv.dataset.kind = kind; cv.setAttribute("aria-label", `${kind} waveform`);
+    const st = document.createElement("div");
+    st.className = "stats"; st.textContent = "rendering…";
+    const show = (buf) => { draw(cv, buf); statLine(st, buf); };
+    btn.addEventListener("click", () => play(btn, kind, sc, show));
+    pending.push(() => get(kind, sc).then(show, () => { st.textContent = "could not render in this browser"; }));
+    row.append(btn, cv, st);
+    box.append(row);
+  }
+  scenesEl.append(box);
+}
+
+const fxEl = document.getElementById("fx");
+for (const [name, why] of FX) {
+  const item = document.createElement("div");
+  item.className = "fx-item";
+  item.innerHTML = `<strong>${name}</strong><span class="why">${why}</span>`;
+  const pair = document.createElement("div");
+  pair.className = "pair";
+  for (const kind of (SAMPLED.has(name) ? ALL_KINDS : ["before", "after"])) {
+    const b = document.createElement("button");
+    b.type = "button"; b.dataset.kind = kind; b.id = `fx-${name}-${kind}`;
+    b.textContent = KIND_LABEL[kind];
+    b.addEventListener("click", () => play(b, kind, fxScene(name)));
+    pair.append(b);
+  }
+  item.append(pair);
+  fxEl.append(item);
+}
+
+/** Jump at the loop point vs an ordinary step, for the engine's brown noise. */
+function seam(kind) {
+  const s = new KINDS[kind]();
+  s.ctx = new OfflineAudioContext(1, SR, SR);
+  let worst = 0;
+  for (let k = 0; k < 20; k++) {
+    const d = s.makeNoiseBuffer(2, true).getChannelData(0);
+    let step = 0;
+    for (let i = 1; i < d.length; i++) step += Math.abs(d[i] - d[i - 1]);
+    step /= d.length - 1;
+    worst = Math.max(worst, Math.abs(d[d.length - 1] - d[0]) / step);
+  }
+  return worst;
+}
+
+async function measure() {
+  const rows = [];
+  const cell = (st) => `<span class="${st.clipped ? "bad" : ""}">${fmtDb(st.peakDb)}</span> peak · ${fmtDb(st.rmsDb)} rms`;
+  for (const sc of SCENES) {
+    const r = [sc.label];
+    for (const k of ALL_KINDS) r.push(cell(stats(await get(k, sc))));
+    rows.push(r);
+  }
+  const clip = { before: 0, after: 0, rec: 0 }, loud = { before: -Infinity, after: -Infinity, rec: -Infinity };
+  for (const [name] of FX) {
+    for (const k of ALL_KINDS) {
+      const st = stats(await get(k, fxScene(name)));
+      clip[k] += st.clipped ? 1 : 0; loud[k] = Math.max(loud[k], st.peakDb);
+    }
+  }
+  rows.push(["Loudest single effect", ...ALL_KINDS.map((k) => fmtDb(loud[k]))]);
+  rows.push(["Effects that clip", ...ALL_KINDS.map((k) => `${clip[k]} of ${FX.length}`)]);
+  const sb = seam("before"), sa = seam("after");
+  rows.push(["Noise loop seam (worst of 20)", `<span class="bad">${sb.toFixed(1)}×</span>`, `${sa.toFixed(1)}×`, `${sa.toFixed(1)}×`]);
+  rows.push(["Music repeats after", "12.8 s", "25.6 s", "25.6 s"]);
+  rows.push(["Music timing", "timer, fired at “now”", "booked ahead on the audio clock", "booked ahead on the audio clock"]);
+  renderRows(rows);
+  return rows;
+}
+
+function renderRows(rows) {
+  document.querySelector("#measure tbody").innerHTML =
+    rows.map((r) => `<tr><td>${r[0]}</td>${r.slice(1).map((c) => `<td class="num">${c}</td>`).join("")}</tr>`).join("");
+}
+const MEASURED = /*__MEASURED__*/null;
+if (MEASURED) renderRows(MEASURED);
+else document.querySelector("#measure tbody").innerHTML = `<tr><td colspan="4">Not measured yet. Press the button below.</td></tr>`;
+document.getElementById("remeasure").addEventListener("click", async (e) => {
+  const b = e.currentTarget;
+  b.disabled = true; b.textContent = "Measuring…";
+  try { await measure(); b.textContent = "Measure again in this browser"; }
+  catch (err) { b.textContent = "Measuring failed: " + err.message; }
+  b.disabled = false;
+});
+// Render every strip once on load, one at a time so the page stays responsive;
+// playing a strip later reuses the same render.
+(async () => { for (const job of pending) await job(); })();
+window.lab = { render, stats, seam, measure, SCENES, FX, fxScene, get };
+</script>
