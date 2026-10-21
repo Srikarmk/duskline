@@ -4471,6 +4471,7 @@ export class Game {
   pause() {
     this.paused = true;
     this.sound.setEngine(0, false);
+    this.sound.setRoad(0, 0, false, false);
   }
 
   resume() {
@@ -4487,6 +4488,7 @@ export class Game {
     this.photo = true;
     this.paused = true;                 // freeze the world, keep rendering it
     this.sound.setEngine(0, false);
+    this.sound.setRoad(0, 0, false, false);
     this.hudCanvas.style.display = "none";
     // Start from roughly where the chase camera was, so entering photo mode
     // does not teleport the view — you adjust from the shot you were in.
@@ -4835,6 +4837,7 @@ export class Game {
         this.sound.play(n > 0 ? "beep" : "go");
       }
       this.sound.setEngine(0.05, false, 0);
+      this.sound.setRoad(0, 0, false, false);
       this.countdownT -= dt;
       if (this.countdownT <= 0) this.phase = "racing";
       return;
@@ -4846,6 +4849,7 @@ export class Game {
       this.speed = Math.max(0, this.speed + DECEL * dt);
       this.position = this.track.wrap(this.position + this.speed * dt);
       this.sound.setEngine(this.speed / MAX_SPEED, false, 0);
+      this.sound.setRoad(this.speed / MAX_SPEED, 0, false, false);
       this.updateOpponents(dt);
       this.finishT -= dt;
       if (this.finishT <= 0 && !this.finished) {
@@ -5197,6 +5201,9 @@ export class Game {
     // driving, coasting and braking rather than tracking speed alone
     this.sound.setEngine(this.speed / MAX_SPEED, this.nitroT > 0,
       throttling ? 1 : braking ? 0 : 0.22);
+    // wind, tarmac and tyres — what the car is doing to the world around it
+    this.sound.setRoad(this.speed / MAX_SPEED, this.freeDrive.slip,
+      this.alt > 0.35, this.freeDrive.offRoad);
     // lift the music with speed + nitro so the track drives harder when flat out
     // In NEON RUN the music should stay ambient and hypnotic however fast you go
     // — ramping it with speed is exactly the tension the mode is meant to avoid.

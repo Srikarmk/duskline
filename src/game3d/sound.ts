@@ -12,6 +12,54 @@ export type AmbientKind =
 
 const MUTE_KEY = "muted";
 
+/** One music step. 16 steps a bar, so a bar is 3.2 s and the 8-bar form 25.6 s. */
+const STEP = 0.2;
+
+/**
+ * How far ahead of the audio clock the sequencer books notes.
+ *
+ * The old sequencer fired every note from a setInterval at "now", so its
+ * rhythm was only as steady as the main thread — and in a WebGL game the main
+ * thread is the busiest thing on the machine. Notes are now scheduled on the
+ * audio clock a little ahead of time (the "two clocks" pattern): the timer can
+ * be late by up to this much and every onset still lands exactly on the grid.
+ */
+const LOOKAHEAD = 0.16;
+
+/**
+ * Per-effect trim, in dB, set by measurement rather than by ear: rendered
+ * offline and levelled so the big events (crash, finish, nitro) peak near
+ * −12 dBFS and the small ones (gems, lane, countdown) near −15. Re-measure with
+ * the sound lab before changing a voice, or the balance drifts again.
+ */
+const FX_TRIM: Record<Sfx, number> = {
+  beep: 1, go: -1, gem: 0, airGem: 3.5, nitroCharge: 1, nitro: 2.8,
+  jump: 7, stunt: 0.5, land: -4, crash: -3.7, oob: 3, lane: 3.5,
+  transform: 3, powerDown: 5.5, slash: -2, smash: -3.5, monsterHit: -2.5,
+  lap: 0.5, finish: -4, bump: -3.2,
+};
+
+/**
+ * Recorded one-shots, all CC0 from Kenney's Impact and Sci-fi packs (see
+ * public/sfx/LICENSE-kenney.txt), trimmed, mono, AAC. Synthesis is good at
+ * tones and bad at the dense, irregular spectrum of metal and rubber hitting
+ * things, so these are the effects that use recordings. Each name has several
+ * takes; the count is how many files `/sfx/<name>-<i>.m4a` there are.
+ */
+const SAMPLE_TAKES = {
+  "crash-metal": 5, "crash-plate": 5, bump: 5, land: 5, smash: 3, hit: 5, nitro: 2, transform: 2,
+} as const;
+type SampleName = keyof typeof SAMPLE_TAKES;
+
+/** Linear gain per recording, levelled against the synthesised voices it
+ *  replaces (the files themselves are all normalised to −1 dBFS). */
+const SAMPLE_GAIN = {
+  crashMetal: 0.5, crashPlate: 0.35, bump: 0.3, land: 0.35, smash: 0.2, hit: 0.45, nitro: 0.15, transform: 0.14,
+};
+
+/** Hirajoshi on D across two octaves — gems climb this as you chain them. */
+const GEM_SCALE = [587.33, 659.25, 698.46, 880.0, 932.33, 1174.66, 1318.51, 1396.91, 1760.0];
+
 /**
  * A running ambience graph. Every long-lived node is tracked so the whole
  * thing can be crossfaded out and stopped/disconnected on demand. `gain` is
@@ -24,21 +72,42 @@ interface AmbientGraph {
   timers: ReturnType<typeof setInterval>[];
 }
 
+interface ToneOpts {
+  sweepTo?: number;
+  attack?: number;
+  lowpass?: number;
+  dest?: AudioNode;
+  detune?: number;
+}
+
 /**
  * Procedural audio via Web Audio — no external assets. A continuous engine
- * hum whose pitch tracks speed, one-shot SFX, and a soft ambient music loop.
- * Every call is guarded so audio failures never affect gameplay.
+ * whose note tracks revs and load, a road layer (wind, rumble, tyres), one-shot
+ * SFX, a per-realm ambience and a scheduled music bed. Every call is guarded
+ * so audio failures never affect gameplay.
+ *
+ * Signal flow: engine / road / sfx / music(→duck) / ambience → mix → limiter
+ * → master (mute) → speakers. The limiter is a safety net, not a sound: the
+ * worst stack measured (flat out on nitro, five hits on one frame) peaks at
+ * −2.2 dBFS synthesised and −5.7 with the recordings, under its threshold.
  */
 export class Sound {
-  private ctx: AudioContext | null = null;
+  private ctx: BaseAudioContext | null = null;
   private master: GainNode | null = null;
   private sfxBus: GainNode | null = null;
   private musicBus: GainNode | null = null;
+  private musicDuck: GainNode | null = null;
   private engineBus: GainNode | null = null;
+  private roadBus: GainNode | null = null;
   private ambientBus: GainNode | null = null;
 
   private ambientKind: AmbientKind = "none";
   private ambient: AmbientGraph | null = null;
+
+  /** Shared, seamlessly looping noise. One-shots read a random window of it
+   *  instead of allocating and filling a fresh buffer on every hit. */
+  private white: AudioBuffer | null = null;
+  private brown: AudioBuffer | null = null;
 
   private engineA: OscillatorNode | null = null;
   private engineB: OscillatorNode | null = null;
@@ -57,13 +126,32 @@ export class Sound {
   private engineJitter = 0;   // small rpm wander so it isn't a perfect tone
   private engineLoad = 0;     // smoothed throttle/coast state
 
+  // road layer: what the car is doing to the air and the tarmac
+  private rushBP: BiquadFilterNode | null = null;
+  private rushGain: GainNode | null = null;
+  private rumbleLP: BiquadFilterNode | null = null;
+  private rumbleGain: GainNode | null = null;
+  private squealGain: GainNode | null = null;
+  private squealBP: BiquadFilterNode | null = null;
+
   private musicTimer: ReturnType<typeof setInterval> | null = null;
   private musicStep = 0;
+  private nextStepAt = 0;
   private musicVerb: ConvolverNode | null = null;  // the space the music sits in
   private musicSend: GainNode | null = null;       // reverb send
+  private droneGain: GainNode | null = null;
+
+  private samples: Partial<Record<SampleName, AudioBuffer[]>> = {};
+  private lastTake: Partial<Record<SampleName, number>> = {};
+
+  /** Where one-shots go while play() runs: a per-call trim node on sfxBus. */
+  private fxOut: AudioNode | null = null;
+  private gemRun = 0;
+  private gemLast = -10;
 
   private muted = false;
   private started = false;
+  private suspendedByUs = false;
   private musicVol = 0.7;
   private sfxVol = 0.9;
   private musicIntensity = 0.4; // eased value the sequencer reads
@@ -75,45 +163,159 @@ export class Sound {
     }
   }
 
-  /** Create/resume the context after a user gesture and start hum + music. */
-  unlock() {
+  /**
+   * Create/resume the context after a user gesture and start everything.
+   *
+   * `ctx` is for rendering offline (an OfflineAudioContext), which is how the
+   * mix is measured — peaks, clipping, onsets — without a pair of ears.
+   */
+  unlock(ctx?: BaseAudioContext) {
     try {
       if (!this.ctx) {
-        const Ctor = window.AudioContext ||
-          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-        if (!Ctor) return;
-        this.ctx = new Ctor();
-
-        this.master = this.ctx.createGain();
-        this.master.gain.value = this.muted ? 0 : 0.9;
-        this.master.connect(this.ctx.destination);
-
-        this.sfxBus = this.ctx.createGain();
-        this.sfxBus.gain.value = 0.85 * this.sfxVol;
-        this.sfxBus.connect(this.master);
-
-        this.musicBus = this.ctx.createGain();
-        this.musicBus.gain.value = 0.22 * this.musicVol;
-        this.musicBus.connect(this.master);
-
-        this.engineBus = this.ctx.createGain();
-        this.engineBus.gain.value = 0;
-        this.engineBus.connect(this.master);
-
-        // Ambience sits well under music/engine and is tied to the music
-        // volume in setVolumes. Under master, so mute affects it too.
-        this.ambientBus = this.ctx.createGain();
-        this.ambientBus.gain.value = 0.18 * this.musicVol;
-        this.ambientBus.connect(this.master);
-
-        this.startEngine();
-        this.startMusic();
+        if (ctx) {
+          this.ctx = ctx;
+        } else {
+          const Ctor = window.AudioContext ||
+            (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+          if (!Ctor) return;
+          this.ctx = new Ctor();
+          document.addEventListener("visibilitychange", this.onVisibility);
+        }
+        this.build(this.ctx);
+        if (!ctx) void this.loadSamples();
       }
-      if (this.ctx.state === "suspended") void this.ctx.resume();
+      const live = this.live();
+      if (live && live.state === "suspended" && !this.suspendedByUs) void live.resume();
       this.started = true;
     } catch {
       // audio unavailable; ignore
     }
+  }
+
+  private live(): AudioContext | null {
+    return typeof AudioContext !== "undefined" && this.ctx instanceof AudioContext ? this.ctx : null;
+  }
+
+  /**
+   * A hidden tab stops requestAnimationFrame, so the race freezes — but the
+   * audio kept going: the engine droned on at whatever it was last told, and
+   * the throttled timers fed the music in one-second clumps. Suspend with the
+   * race, and pick up where it left off.
+   */
+  private onVisibility = () => {
+    const live = this.live();
+    if (!live) return;
+    if (document.hidden) {
+      if (live.state === "running") { this.suspendedByUs = true; void live.suspend(); }
+    } else if (this.suspendedByUs) {
+      this.suspendedByUs = false;
+      void live.resume();
+    }
+  };
+
+  private build(ctx: BaseAudioContext) {
+    this.white = this.makeNoiseBuffer(2, false);
+    this.brown = this.makeNoiseBuffer(2, true);
+
+    this.master = ctx.createGain();
+    this.master.gain.value = this.muted ? 0 : 0.9;
+    this.master.connect(ctx.destination);
+
+    // Only ever touches a stack of hits louder than anything measured, so the
+    // mix sounds the same with it as without it.
+    const limiter = ctx.createDynamicsCompressor();
+    limiter.threshold.value = -1;
+    limiter.knee.value = 0;
+    limiter.ratio.value = 20;
+    limiter.attack.value = 0.001;
+    limiter.release.value = 0.12;
+    limiter.connect(this.master);
+
+    const mix = ctx.createGain();
+    mix.gain.value = 1;
+    mix.connect(limiter);
+
+    this.sfxBus = ctx.createGain();
+    this.sfxBus.gain.value = 0.85 * this.sfxVol;
+    this.sfxBus.connect(mix);
+
+    // Music sits under a duck, so a crash or a nitro punches through instead
+    // of fighting the bed for the same headroom.
+    this.musicDuck = ctx.createGain();
+    this.musicDuck.gain.value = 1;
+    this.musicDuck.connect(mix);
+    this.musicBus = ctx.createGain();
+    this.musicBus.gain.value = 0.22 * this.musicVol;
+    this.musicBus.connect(this.musicDuck);
+
+    // Nothing useful lives below ~30 Hz on any speaker this will play on, and
+    // the sub there was spending the compressor's headroom on rumble.
+    const engineHP = ctx.createBiquadFilter();
+    engineHP.type = "highpass";
+    engineHP.frequency.value = 32;
+    engineHP.Q.value = 0.7;
+    engineHP.connect(mix);
+    this.engineBus = ctx.createGain();
+    this.engineBus.gain.value = 0;
+    this.engineBus.connect(engineHP);
+
+    // The road layer belongs to the car, so it follows the SFX volume.
+    this.roadBus = ctx.createGain();
+    this.roadBus.gain.value = 0.85 * this.sfxVol;
+    this.roadBus.connect(mix);
+
+    // Ambience sits well under music/engine and is tied to the music
+    // volume in setVolumes. Under master, so mute affects it too.
+    this.ambientBus = ctx.createGain();
+    this.ambientBus.gain.value = 0.18 * this.musicVol;
+    this.ambientBus.connect(mix);
+
+    this.startEngine();
+    this.startRoad();
+    this.startMusic();
+  }
+
+  /**
+   * Fetch and decode the recorded one-shots. Never awaited by the game: until a
+   * take arrives — or if this browser cannot decode AAC — that effect plays its
+   * synthesised voice, so nothing is ever silent for want of a file.
+   */
+  async loadSamples(base = "/sfx/") {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    await Promise.all(Object.entries(SAMPLE_TAKES).map(async ([name, n]) => {
+      const takes: AudioBuffer[] = [];
+      await Promise.all(Array.from({ length: n }, async (_, i) => {
+        try {
+          const res = await fetch(`${base}${name}-${i}.m4a`);
+          if (!res.ok) return;
+          takes[i] = await ctx.decodeAudioData(await res.arrayBuffer());
+        } catch {
+          // this take is unavailable; the others (or the synth) cover it
+        }
+      }));
+      const ok = takes.filter(Boolean);
+      if (ok.length) this.samples[name as SampleName] = ok;
+    }));
+  }
+
+  /** Play one take of a recording. False if none is loaded, so the caller can
+   *  fall back to synthesis. Never the same take twice running. */
+  private sample(name: SampleName, gain: number, at: number, rate = 1): boolean {
+    const takes = this.samples[name];
+    if (!this.ctx || !this.sfxBus || !takes?.length) return false;
+    let i = Math.floor(Math.random() * takes.length);
+    if (takes.length > 1 && i === this.lastTake[name]) i = (i + 1) % takes.length;
+    this.lastTake[name] = i;
+    const src = this.ctx.createBufferSource();
+    src.buffer = takes[i];
+    src.playbackRate.value = rate * (1 + (Math.random() - 0.5) * 0.06);
+    const g = this.ctx.createGain();
+    g.gain.value = gain;
+    src.connect(g);
+    g.connect(this.fxOut ?? this.sfxBus);
+    src.start(at);
+    return true;
   }
 
   get isMuted() {
@@ -126,10 +328,13 @@ export class Sound {
    * is the one that actually does this: it requires the resume to happen
    * inside the gesture's own call stack, and the race starts a tick later from
    * a React effect. The UI uses this to offer a tap rather than leaving the
-   * player in silence with no explanation.
+   * player in silence with no explanation. A suspend of our own (hidden tab)
+   * is not a block.
    */
   get blocked() {
-    return !this.ctx || this.ctx.state === "suspended";
+    if (!this.ctx) return true;
+    const live = this.live();
+    return !!live && live.state === "suspended" && !this.suspendedByUs;
   }
 
   setVolumes(music: number, sfx: number) {
@@ -139,12 +344,13 @@ export class Sound {
     const t = this.ctx.currentTime;
     this.musicBus?.gain.setTargetAtTime(0.22 * music, t, 0.05);
     this.sfxBus?.gain.setTargetAtTime(0.85 * sfx, t, 0.05);
+    this.roadBus?.gain.setTargetAtTime(0.85 * sfx, t, 0.05);
     this.ambientBus?.gain.setTargetAtTime(0.18 * music, t, 0.05);
   }
 
   /** 0..1 — how hard the music drives. The engine feeds this from the car's
-   *  speed + nitro so the track lifts (hats, snare, lead, extra kicks) as you
-   *  go faster and settles when you slow. Safe before the context exists. */
+   *  speed + nitro so the bed thickens as you go faster and settles when you
+   *  slow. Safe before the context exists. */
   setMusicIntensity(x: number) {
     this.musicIntTarget = Math.max(0, Math.min(1, x));
   }
@@ -161,6 +367,8 @@ export class Sound {
     }
     return this.muted;
   }
+
+  // ---------------------------------------------------------------- engine
 
   /** A custom harmonic spectrum for the engine tone.
    *
@@ -222,12 +430,14 @@ export class Sound {
 
     const wave = this.engineWave();
 
-    // sub: weight you feel rather than hear
+    // sub: weight you feel rather than hear. Half what it was — at f0/2 it sat
+    // at 16–60 Hz, mostly below what a laptop or phone can reproduce, and it
+    // was the loudest thing feeding the compressor.
     this.engineSub = ctx.createOscillator();
     this.engineSub.type = "sine";
     this.engineSub.frequency.value = 30;
     const subGain = ctx.createGain();
-    subGain.gain.value = 0.8;
+    subGain.gain.value = 0.4;
     this.engineSub.connect(subGain);
     subGain.connect(this.engineFilter);
     this.engineSub.start();
@@ -255,10 +465,9 @@ export class Sound {
     this.engineB.start();
 
     // air: intake/exhaust turbulence
-    const buf = this.makeNoiseBuffer(2, true);
-    if (buf) {
+    if (this.brown) {
       this.engineNoise = ctx.createBufferSource();
-      this.engineNoise.buffer = buf;
+      this.engineNoise.buffer = this.brown;
       this.engineNoise.loop = true;
       this.engineNoiseBP = ctx.createBiquadFilter();
       this.engineNoiseBP.type = "bandpass";
@@ -302,6 +511,7 @@ export class Sound {
     const within = span > 0 ? (sp - gear * span) / span : 0;
     const topOut = 1 - gear * 0.06;
     let rpm = 0.26 + within * (topOut - 0.26);
+    const upshift = gear > this.engineGear;
     const shifting = this.engineGear !== gear;
     this.engineGear = gear;
 
@@ -335,16 +545,9 @@ export class Sound {
       0.025 + sp * 0.05 + ld * 0.05 + (boosting ? 0.08 : 0), t, smooth);
 
     // formants: the upper bite only opens on the power (and hard on boost); the
-    // low boom eases off as revs climb, like a real car leaving its lumpy range
-    // Brightness is no longer the enemy now that the fundamental sits at ~84 Hz
-    // instead of 196. A mosquito is a THIN HIGH PURE TONE; rich harmonics over a
-    // LOW fundamental is a growl. The first pass over-corrected into muffled
-    // (centroid 347 Hz, only 3 audible harmonics, and on/off throttle measured
-    // near-identical) — so open it up hard on the power and keep it shut when
-    // coasting. That contrast is most of what makes a car sound alive.
-    // Edge pulled right back (was +9 on load): that upper peak is exactly what
-    // read as noisy/harsh. Growl carries the character instead — it sits low
-    // enough to be a tone rather than grit.
+    // low boom eases off as revs climb, like a real car leaving its lumpy range.
+    // Edge kept modest — that upper peak is exactly what read as harsh; the
+    // growl carries the character instead.
     this.engineFormantEdge?.gain.setTargetAtTime(-2 + ld * 3.5 + (boosting ? 3 : 0), t, 0.12);
     this.engineFormantGrowl?.gain.setTargetAtTime(5.5 + ld * 3.5, t, 0.12);
     this.engineFormantBody?.gain.setTargetAtTime(3.5 - rpm * 1.5, t, 0.12); // less boom
@@ -358,97 +561,339 @@ export class Sound {
     const loadLevel = 0.6 + ld * 0.4;
     this.engineBus.gain.setTargetAtTime(
       (0.05 + sp * 0.11 + (boosting ? 0.05 : 0)) * lift * loadLevel, t, smooth);
+
+    // An upshift on the power gets the little exhaust crack a real box makes as
+    // the throttle closes and reopens. Only from third up and only on load —
+    // at every shift it turns into a stutter.
+    if (upshift && gear >= 2 && ld > 0.6) {
+      this.burst(0.07, 0.11, "lowpass", 900, { dest: this.engineBus, at: t + 0.015 });
+    }
   }
 
-  private tone(freq: number, dur: number, type: OscillatorType, gain: number, sweepTo?: number) {
-    if (!this.ctx || !this.sfxBus) return;
+  // ------------------------------------------------------------ road layer
+
+  /**
+   * Wind, tarmac and tyres. A drift game had no tyre sound at all, and nothing
+   * rose with speed except the engine — so 300 km/h sounded like the engine at
+   * a high note rather than like going fast.
+   */
+  private startRoad() {
+    if (!this.ctx || !this.roadBus || !this.white || !this.brown) return;
+    const ctx = this.ctx;
+    const loop = (buf: AudioBuffer) => {
+      const s = ctx.createBufferSource();
+      s.buffer = buf;
+      s.loop = true;
+      s.start(0, Math.random() * buf.duration);
+      return s;
+    };
+
+    // wind rush past the car: broadband, rising in pitch and level with speed
+    this.rushBP = ctx.createBiquadFilter();
+    this.rushBP.type = "bandpass";
+    this.rushBP.frequency.value = 400;
+    this.rushBP.Q.value = 0.55;
+    this.rushGain = ctx.createGain();
+    this.rushGain.gain.value = 0;
+    loop(this.white).connect(this.rushBP);
+    this.rushBP.connect(this.rushGain);
+    this.rushGain.connect(this.roadBus);
+
+    // tyres on tarmac: low, dark, rough — and gravel when you leave the road
+    this.rumbleLP = ctx.createBiquadFilter();
+    this.rumbleLP.type = "lowpass";
+    this.rumbleLP.frequency.value = 170;
+    this.rumbleGain = ctx.createGain();
+    this.rumbleGain.gain.value = 0;
+    loop(this.brown).connect(this.rumbleLP);
+    this.rumbleLP.connect(this.rumbleGain);
+    this.rumbleGain.connect(this.roadBus);
+
+    // squeal: a rubber squeal is noise excited into a couple of narrow
+    // resonances, with a fast wobble from the tread stick-slipping — not a tone
+    this.squealBP = ctx.createBiquadFilter();
+    this.squealBP.type = "bandpass";
+    this.squealBP.frequency.value = 1350;
+    this.squealBP.Q.value = 9;
+    const squealHi = ctx.createBiquadFilter();
+    squealHi.type = "bandpass";
+    squealHi.frequency.value = 2250;
+    squealHi.Q.value = 12;
+    const squealHiGain = ctx.createGain();
+    squealHiGain.gain.value = 0.5;
+    const squealLP = ctx.createBiquadFilter();
+    squealLP.type = "lowpass";
+    squealLP.frequency.value = 3800;
+    this.squealGain = ctx.createGain();
+    this.squealGain.gain.value = 0;
+    const src = loop(this.white);
+    src.connect(this.squealBP);
+    src.connect(squealHi);
+    squealHi.connect(squealHiGain);
+    this.squealBP.connect(squealLP);
+    squealHiGain.connect(squealLP);
+    squealLP.connect(this.squealGain);
+    this.squealGain.connect(this.roadBus);
+    const wob = ctx.createOscillator();
+    wob.frequency.value = 7.3;
+    const wobDepth = ctx.createGain();
+    wobDepth.gain.value = 70;
+    wob.connect(wobDepth);
+    wobDepth.connect(this.squealBP.frequency);
+    wob.start();
+  }
+
+  /**
+   * Feed the road layer each frame.
+   * @param speedPercent 0..1 of top speed
+   * @param slip side-slip speed in m/s (freeDrive.slip) — the tyres' complaint
+   * @param airborne wheels off the ground: no rumble, no squeal, more wind
+   * @param offRoad on grass/dirt: gravel instead of squeal
+   */
+  setRoad(speedPercent: number, slip: number, airborne: boolean, offRoad: boolean) {
+    if (!this.ctx || !this.rushGain || !this.rumbleGain || !this.squealGain) return;
     const t = this.ctx.currentTime;
+    const sp = Math.max(0, Math.min(1, speedPercent));
+
+    // wind goes with the square of speed, like the drag that makes it
+    this.rushBP?.frequency.setTargetAtTime(350 + sp * 1900, t, 0.1);
+    this.rushGain.gain.setTargetAtTime(sp * sp * (airborne ? 0.13 : 0.09), t, 0.1);
+
+    const ground = airborne ? 0 : 1;
+    this.rumbleLP?.frequency.setTargetAtTime(offRoad ? 650 : 170, t, 0.08);
+    this.rumbleGain.gain.setTargetAtTime(
+      ground * Math.min(1, sp * 2.2) * (offRoad ? 0.34 : 0.13), t, 0.06);
+
+    // Squeal starts where freedrive starts calling it a drift (1.8 m/s) and is
+    // full by a big slide. Needs real speed too — you can't squeal at a crawl.
+    const s = Math.max(0, Math.min(1, (Math.abs(slip) - 1.6) / 3.2));
+    const squeal = ground * (offRoad ? 0 : 1) * s * Math.min(1, sp * 3);
+    this.squealBP?.frequency.setTargetAtTime(1250 + s * 250 + sp * 150, t, 0.1);
+    this.squealGain.gain.setTargetAtTime(squeal * 0.16, t, squeal > 0 ? 0.05 : 0.09);
+  }
+
+  // ------------------------------------------------------------ one-shots
+
+  /** ±2.5% pitch, so a run of the same sound is a performance, not a machine gun. */
+  private vary(f: number) {
+    return f * (1 + (Math.random() - 0.5) * 0.05);
+  }
+
+  private tone(freq: number, dur: number, type: OscillatorType, gain: number, at?: number, o: ToneOpts = {}) {
+    if (!this.ctx || !this.sfxBus) return;
+    const t = at ?? this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
     const g = this.ctx.createGain();
     osc.type = type;
     osc.frequency.setValueAtTime(freq, t);
-    if (sweepTo) osc.frequency.exponentialRampToValueAtTime(Math.max(1, sweepTo), t + dur);
+    if (o.detune) osc.detune.value = o.detune;
+    if (o.sweepTo) osc.frequency.exponentialRampToValueAtTime(Math.max(1, o.sweepTo), t + dur);
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(gain, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(gain, t + (o.attack ?? 0.006));
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     osc.connect(g);
-    g.connect(this.sfxBus);
+    let tail: AudioNode = g;
+    if (o.lowpass) {
+      const f = this.ctx.createBiquadFilter();
+      f.type = "lowpass";
+      f.frequency.value = o.lowpass;
+      g.connect(f);
+      tail = f;
+    }
+    tail.connect(o.dest ?? this.fxOut ?? this.sfxBus);
     osc.start(t);
     osc.stop(t + dur + 0.02);
   }
 
-  private noise(dur: number, gain: number, filterType: BiquadFilterType, freq: number, sweepTo?: number) {
-    if (!this.ctx || !this.sfxBus) return;
-    const t = this.ctx.currentTime;
-    const len = Math.floor(this.ctx.sampleRate * dur);
-    const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+  private burst(
+    dur: number, gain: number, filterType: BiquadFilterType, freq: number,
+    o: { sweepTo?: number; q?: number; attack?: number; dest?: AudioNode; at?: number } = {},
+  ) {
+    if (!this.ctx || !this.sfxBus || !this.white) return;
+    const t = o.at ?? this.ctx.currentTime;
     const src = this.ctx.createBufferSource();
-    src.buffer = buf;
+    src.buffer = this.white;
     const filt = this.ctx.createBiquadFilter();
     filt.type = filterType;
     filt.frequency.setValueAtTime(freq, t);
-    if (sweepTo) filt.frequency.exponentialRampToValueAtTime(Math.max(1, sweepTo), t + dur);
+    if (o.q) filt.Q.value = o.q;
+    if (o.sweepTo) filt.frequency.exponentialRampToValueAtTime(Math.max(1, o.sweepTo), t + dur);
     const g = this.ctx.createGain();
-    g.gain.setValueAtTime(gain, t);
+    if (o.attack) {
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(gain, t + o.attack);
+    } else {
+      g.gain.setValueAtTime(gain, t);
+    }
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     src.connect(filt);
     filt.connect(g);
-    g.connect(this.sfxBus);
-    src.start(t);
-    src.stop(t + dur);
+    g.connect(o.dest ?? this.fxOut ?? this.sfxBus);
+    const room = Math.max(0, this.white.duration - dur - 0.01);
+    src.start(t, Math.random() * room, dur + 0.01);
+  }
+
+  /** A struck chime with the music's inharmonic bell partials, so pickups sit
+   *  in the same world as the score instead of on top of it as square beeps. */
+  private chime(freq: number, gain: number, decay: number, at?: number) {
+    const partials = [1, 2.76, 5.4];
+    const levels = [1, 0.36, 0.14];
+    for (let i = 0; i < partials.length; i++) {
+      this.tone(freq * partials[i], decay / (1 + i * 0.7), "sine", gain * levels[i], at, { attack: 0.003 });
+    }
+  }
+
+  /** A hit with weight: a pitched body falling away under a short noise skin. */
+  private thud(freq: number, gain: number, dur: number, at?: number) {
+    // A few ms of slop, so several thuds on one frame do not start on the same
+    // sample and sum in phase — that is what pushed a five-hit stack to −1 dB.
+    const t = (at ?? this.ctx?.currentTime ?? 0) + Math.random() * 0.006;
+    this.tone(freq, dur, "sine", gain, t, { sweepTo: freq * 0.45, attack: 0.002 });
+    this.burst(Math.min(0.06, dur), gain * 0.5, "lowpass", 1400, { at: t });
+  }
+
+  /** Pull the music down for a moment so a big event lands. */
+  private duck(depth: number, hold: number) {
+    if (!this.ctx || !this.musicDuck) return;
+    const t = this.ctx.currentTime;
+    const g = this.musicDuck.gain;
+    g.cancelScheduledValues(t);
+    g.setTargetAtTime(1 - depth, t, 0.015);
+    g.setTargetAtTime(1, t + hold, 0.25);
   }
 
   play(name: Sfx) {
-    if (!this.ctx) return;
-    switch (name) {
-      case "beep": this.tone(520, 0.14, "square", 0.25); break;
-      case "go": this.tone(880, 0.3, "square", 0.3); break;
-      case "gem": this.tone(880, 0.12, "sine", 0.25, 1320); break;
-      case "airGem": this.tone(1245, 0.15, "sine", 0.28, 1760); break;
-      case "nitroCharge": this.tone(660, 0.1, "triangle", 0.22, 990); break;
-      case "nitro":
-        this.noise(0.5, 0.3, "bandpass", 600, 3000);
-        this.tone(120, 0.4, "sawtooth", 0.15, 260);
-        break;
-      case "jump": this.tone(300, 0.25, "square", 0.22, 900); break;
-      case "stunt":
-        this.tone(660, 0.15, "square", 0.2);
-        this.tone(880, 0.18, "square", 0.2, 990);
-        this.tone(1320, 0.22, "square", 0.2);
-        break;
-      case "land": this.noise(0.15, 0.25, "lowpass", 400); break;
-      case "crash":
-        this.noise(0.35, 0.4, "lowpass", 900, 150);
-        this.tone(160, 0.3, "sawtooth", 0.2, 60);
-        break;
-      case "oob": this.tone(200, 0.25, "sawtooth", 0.2, 90); break;
-      case "lane": this.tone(1046, 0.12, "sine", 0.2, 1318); break;
-      case "transform":
-        this.tone(200, 0.5, "sawtooth", 0.22, 1200);
-        this.tone(600, 0.5, "sine", 0.15, 1600);
-        break;
-      case "powerDown": this.tone(700, 0.4, "sawtooth", 0.18, 180); break;
-      case "slash":
-        this.noise(0.18, 0.35, "highpass", 2000, 6000);
-        this.tone(1600, 0.12, "sine", 0.2, 2600);
-        break;
-      case "smash":
-        this.noise(0.25, 0.35, "lowpass", 1200, 200);
-        this.tone(220, 0.2, "square", 0.18, 90);
-        break;
-      case "monsterHit":
-        this.tone(90, 0.4, "sawtooth", 0.3, 50);
-        this.noise(0.3, 0.3, "lowpass", 600);
-        break;
-      case "lap": this.tone(990, 0.2, "sine", 0.25, 1320); break;
-      case "finish":
-        [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => this.tone(f, 0.25, "square", 0.28), i * 130));
-        break;
-      case "bump": this.noise(0.1, 0.25, "lowpass", 500); break;
+    if (!this.ctx || !this.sfxBus) return;
+    const t = this.ctx.currentTime;
+    const trim = this.ctx.createGain();
+    trim.gain.value = Math.pow(10, FX_TRIM[name] / 20);
+    trim.connect(this.sfxBus);
+    this.fxOut = trim;
+    try {
+      this.playVoices(name, t);
+    } finally {
+      this.fxOut = null;
     }
   }
+
+  private playVoices(name: Sfx, t: number) {
+    switch (name) {
+      // countdown: a soft, clear pip, then a bright two-note GO — readable
+      // without the old square wave's buzz
+      case "beep":
+        this.tone(880, 0.16, "sine", 0.26, t, { attack: 0.004 });
+        this.tone(1760, 0.08, "triangle", 0.05, t);
+        break;
+      case "go":
+        this.tone(1174.66, 0.55, "sine", 0.26, t, { attack: 0.004 });
+        this.tone(1760, 0.45, "sine", 0.12, t);
+        this.tone(587.33, 0.5, "triangle", 0.1, t, { lowpass: 2400 });
+        break;
+
+      // gems climb the scale while you chain them, so a line of pickups plays a
+      // phrase; a pause resets it to the bottom
+      case "gem": {
+        this.gemRun = t - this.gemLast < 1.3 ? Math.min(this.gemRun + 1, GEM_SCALE.length - 1) : 0;
+        this.gemLast = t;
+        this.chime(GEM_SCALE[this.gemRun], 0.17, 0.45, t);
+        break;
+      }
+      case "airGem":
+        this.chime(this.vary(1760), 0.15, 0.6, t);
+        this.chime(this.vary(2637), 0.07, 0.5, t + 0.05);
+        break;
+      case "nitroCharge":
+        this.chime(this.vary(880), 0.13, 0.3, t);
+        this.chime(this.vary(1318.5), 0.12, 0.35, t + 0.07);
+        break;
+
+      // a whoosh that opens up, under an exhaust roar that climbs
+      case "nitro":
+        if (this.sample("nitro", SAMPLE_GAIN.nitro, t)) {
+          this.burst(0.6, 0.14, "bandpass", 500, { sweepTo: 3400, q: 0.9, attack: 0.03 });
+        } else {
+          this.burst(0.7, 0.32, "bandpass", 380, { sweepTo: 3400, q: 0.9, attack: 0.03 });
+          this.tone(70, 0.6, "sawtooth", 0.16, t, { sweepTo: 150, attack: 0.02, lowpass: 700 });
+        }
+        this.thud(95, 0.22, 0.18, t);
+        this.duck(0.35, 0.35);
+        break;
+      case "jump":
+        this.burst(0.35, 0.18, "bandpass", 500, { sweepTo: 1800, q: 1.2, attack: 0.02 });
+        this.tone(this.vary(240), 0.25, "triangle", 0.08, t, { sweepTo: 520, lowpass: 1600 });
+        break;
+      case "stunt":
+        // a rising arpeggio on the bells — scheduled on the audio clock, so the
+        // three notes are evenly spaced however busy the frame was
+        [880, 1174.66, 1760].forEach((f, i) => this.chime(f, 0.16, 0.5, t + i * 0.075));
+        break;
+      case "land":
+        if (!this.sample("land", SAMPLE_GAIN.land, t)) {
+          this.thud(this.vary(85), 0.38, 0.2, t);
+          this.burst(0.12, 0.12, "bandpass", 2400, { q: 2, at: t + 0.01 }); // suspension clunk
+        }
+        break;
+      case "crash":
+        // metal and a body panel, a few ms apart, over the synthesised weight
+        if (this.sample("crash-metal", SAMPLE_GAIN.crashMetal, t)) {
+          this.sample("crash-plate", SAMPLE_GAIN.crashPlate, t + 0.004);
+          this.thud(70, 0.3, 0.42, t);
+        } else {
+          this.thud(70, 0.55, 0.42, t);
+          this.burst(0.35, 0.3, "bandpass", 1300, { sweepTo: 400, q: 0.8 });     // crunch
+          [430, 990, 1680].forEach((f, i) => this.tone(this.vary(f), 0.22 - i * 0.04, "triangle", 0.07, t + 0.01));
+        }
+        this.duck(0.45, 0.4);
+        break;
+      case "oob":
+        this.tone(330, 0.13, "triangle", 0.18, t, { lowpass: 1500 });
+        this.tone(247, 0.2, "triangle", 0.18, t + 0.15, { lowpass: 1500 });
+        break;
+      case "lane": this.chime(this.vary(1318.5), 0.11, 0.35, t); break;
+      case "transform":
+        if (!this.sample("transform", SAMPLE_GAIN.transform, t)) {
+          this.tone(160, 0.6, "sawtooth", 0.18, t, { sweepTo: 960, lowpass: 2200, attack: 0.03 });
+          this.burst(0.6, 0.14, "bandpass", 600, { sweepTo: 4000, q: 1.5, attack: 0.05 });
+        }
+        this.chime(1174.66, 0.14, 0.8, t + 0.5);
+        this.duck(0.35, 0.6);
+        break;
+      case "powerDown":
+        this.tone(700, 0.45, "sawtooth", 0.15, t, { sweepTo: 160, lowpass: 1500 });
+        break;
+      case "slash":
+        this.burst(0.18, 0.3, "highpass", 2200, { sweepTo: 6500, attack: 0.01 });
+        this.tone(this.vary(1600), 0.1, "sine", 0.1, t, { sweepTo: 2600 });
+        break;
+      case "smash":
+        if (!this.sample("smash", SAMPLE_GAIN.smash, t)) {
+          this.thud(this.vary(90), 0.4, 0.25, t);
+          this.burst(0.25, 0.28, "bandpass", 1500, { sweepTo: 500, q: 0.9 });
+        }
+        break;
+      case "monsterHit":
+        // the growl stays synthesised; the blow itself is a recording
+        this.tone(90, 0.4, "sawtooth", 0.22, t, { sweepTo: 50, lowpass: 600 });
+        if (!this.sample("hit", SAMPLE_GAIN.hit, t)) this.thud(60, 0.4, 0.3, t);
+        break;
+      case "lap":
+        this.chime(880, 0.17, 0.6, t);
+        this.chime(1174.66, 0.17, 0.8, t + 0.11);
+        break;
+      case "finish":
+        // was four square waves fired from setTimeout, so its rhythm depended
+        // on the frame that happened to be running
+        [587.33, 698.46, 880, 1174.66].forEach((f, i) => this.chime(f, 0.2, 1.1, t + i * 0.13));
+        this.thud(80, 0.35, 0.4, t);
+        this.duck(0.5, 1.2);
+        break;
+      case "bump":
+        if (!this.sample("bump", SAMPLE_GAIN.bump, t)) this.thud(this.vary(110), 0.3, 0.12, t);
+        break;
+    }
+  }
+
+  // ----------------------------------------------------------------- music
 
   /** A synthetic reverb impulse: stereo decaying noise, slightly darker in the
    *  tail. Reverb is the single thing that turns a set of tones into a PLACE,
@@ -473,16 +918,17 @@ export class Sound {
 
   /** AKIRA-flavoured cyberpunk / ethereal bed.
    *
-   *  Replaces the old four-on-the-floor Am-F-C-G dance groove, which was
-   *  energetic but generic. This is built the way Geinoh Yamashirogumi's Akira
-   *  score is: gamelan-like INHARMONIC bells, deep taiko heartbeat, breathy
-   *  choral pads and a sustained drone, all in a big reverberant space, over a
-   *  Japanese HIRAJOSHI mode (D E F A Bb) instead of functional pop harmony.
-   *  Slow and hypnotic — 200 ms per step, a 12.8 s loop.
+   *  Built the way Geinoh Yamashirogumi's Akira score is: gamelan-like
+   *  INHARMONIC bells, deep taiko heartbeat, breathy choral pads and a
+   *  sustained drone, all in a big reverberant space, over a Japanese HIRAJOSHI
+   *  mode (D E F A Bb) instead of functional pop harmony.
    *
-   *  `musicIntensity` (speed + nitro) still drives it, but it thickens the
-   *  texture — more bells, more taiko, brighter pad — rather than adding a
-   *  dance beat. */
+   *  It used to be one 4-bar loop played identically for a whole race. Now the
+   *  same four harmonies run as an 8-bar form: the bell line rotates each pass,
+   *  the second half lifts an octave, and the eighth bar closes on a taiko fill.
+   *  The drone is one continuous voice rather than re-struck every bar, which
+   *  put a small bump at each downbeat. `musicIntensity` (speed + nitro) still
+   *  thickens the texture — more bells, more taiko, brighter pad. */
   private startMusic() {
     if (!this.ctx || !this.musicBus) return;
     const ctx = this.ctx;
@@ -499,9 +945,71 @@ export class Sound {
     this.musicSend.gain.value = 1;
     this.musicSend.connect(this.musicVerb);
 
+    // the drone: one voice for the whole race, breathing through a slow filter
+    const D2 = 73.42;
+    this.droneGain = ctx.createGain();
+    this.droneGain.gain.value = 0.028;
+    const droneLP = ctx.createBiquadFilter();
+    droneLP.type = "lowpass";
+    droneLP.frequency.value = 260;
+    const breathe = ctx.createOscillator();
+    breathe.frequency.value = 0.07;
+    const breatheDepth = ctx.createGain();
+    breatheDepth.gain.value = 90;
+    breathe.connect(breatheDepth);
+    breatheDepth.connect(droneLP.frequency);
+    breathe.start();
+    const saw = ctx.createOscillator();
+    saw.type = "sawtooth";
+    saw.frequency.value = D2;
+    const oct = ctx.createOscillator();
+    oct.type = "sine";
+    oct.frequency.value = D2 * 2;
+    const octGain = ctx.createGain();
+    octGain.gain.value = 0.5;
+    saw.connect(droneLP);
+    oct.connect(octGain);
+    octGain.connect(droneLP);
+    droneLP.connect(this.droneGain);
+    this.droneGain.connect(this.musicBus);
+    const droneWet = ctx.createGain();
+    droneWet.gain.value = 0.5;
+    this.droneGain.connect(droneWet);
+    droneWet.connect(this.musicSend);
+    saw.start();
+    oct.start();
+
+    this.nextStepAt = ctx.currentTime + 0.05;
+    if (this.live()) {
+      this.musicTimer = setInterval(() => {
+        if (this.ctx) this.scheduleMusic(this.ctx.currentTime + LOOKAHEAD);
+      }, 25);
+    }
+  }
+
+  /**
+   * Book every music step up to `until` on the audio clock. If the timer fell
+   * badly behind (a long frame, a debugger pause), skip the missed steps rather
+   * than firing them all at once in a heap.
+   */
+  scheduleMusic(until: number) {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    if (this.nextStepAt < now - 0.05) {
+      const missed = Math.ceil((now - this.nextStepAt) / STEP);
+      this.musicStep += missed;
+      this.nextStepAt += missed * STEP;
+    }
+    while (this.nextStepAt < until) {
+      if (!this.muted) this.musicStepAt(this.musicStep, this.nextStepAt);
+      this.musicStep++;
+      this.nextStepAt += STEP;
+    }
+  }
+
+  private musicStepAt(s: number, at: number) {
     // Hirajoshi on D — the interval that gives it the eastern, slightly uneasy
     // colour is the minor 2nd between E and F sitting over an open D-A fifth.
-    const D2 = 73.42;
     const N = { D3: 146.83, E3: 164.81, F3: 174.61, A3: 220.0, Bb3: 233.08,
                 D4: 293.66, E4: 329.63, F4: 349.23, A4: 440.0, Bb4: 466.16,
                 D5: 587.33, F5: 698.46, A5: 880.0 };
@@ -514,42 +1022,50 @@ export class Sound {
       { pad: [N.D3, N.A3, N.E3], bell: [N.A4, N.F4, N.D4, N.A3] },
     ];
 
-    this.musicTimer = setInterval(() => {
-      if (!this.ctx || !this.musicBus || this.muted) return;
-      this.musicIntensity += (this.musicIntTarget - this.musicIntensity) * 0.15;
-      const I = this.musicIntensity;
-      const s = this.musicStep++;
-      const step = s % 16;
-      const bar = bars[Math.floor(s / 16) % 4];
+    this.musicIntensity += (this.musicIntTarget - this.musicIntensity) * 0.15;
+    const I = this.musicIntensity;
+    const step = s % 16;
+    const barNo = Math.floor(s / 16);
+    const bar = bars[barNo % 4];
+    const inForm = barNo % 8;           // 0..7 within the 8-bar form
+    const pass = Math.floor(barNo / 8); // rotates the bell line each time round
+    const lift = inForm >= 4 ? 2 : 1;   // second half of the form an octave up
 
-      // drone + choral pad renew each bar and hang over the whole thing
-      if (step === 0) {
-        this.mDrone(D2, 3.9, 0.075 + (1 - I) * 0.02);
-        this.mChoir(bar.pad, 3.8, 0.032 + I * 0.022);
-      }
+    if (step === 0) {
+      // Matched to the old drone's AVERAGE level. That one was re-struck each
+      // bar and decayed to nothing within about a second (τ ≈ 0.6 s), so the
+      // same gain held continuously came out three times as loud.
+      this.droneGain?.gain.setTargetAtTime(0.021 + (1 - I) * 0.01, at, 0.8);
+      this.mChoir(bar.pad, 3.8, 0.032 + I * 0.022, at);
+    }
 
-      // taiko heartbeat — the pulse the whole bed hangs off
-      if (step === 0) this.mTaiko(0.5);
-      if (step === 8) this.mTaiko(0.4);
-      if (I > 0.5 && step === 12) this.mTaiko(0.3);
-      if (I > 0.78 && step === 6) this.mTaiko(0.26);
+    // taiko heartbeat — the pulse the whole bed hangs off
+    if (step === 0) this.mTaiko(0.5, at);
+    if (step === 8) this.mTaiko(0.4, at);
+    if (I > 0.5 && step === 12) this.mTaiko(0.3, at);
+    if (I > 0.78 && step === 6) this.mTaiko(0.26, at);
+    // the eighth bar turns the form over with a fill
+    if (inForm === 7 && I > 0.4 && step >= 13) this.mTaiko(0.18 + (step - 13) * 0.07, at);
 
-      // gamelan bells: irregular placement so it never reads as a dance beat
-      const bellSteps = I > 0.72 ? [0, 3, 6, 10, 13] : I > 0.42 ? [0, 6, 10] : [0, 6];
-      if (bellSteps.includes(step)) {
-        this.mGamelan(bar.bell[(s >> 1) % bar.bell.length], 0.055 + I * 0.05);
-      }
-      // a high shimmer up top when you're really moving
-      if (I > 0.62 && step === 14) this.mGamelan(N.A5, 0.03 + I * 0.02);
-      // sub pulse for forward motion without a kick drum
-      if (step === 0 || step === 8) this.mTone(D2 * 0.5, 0.9, "sine", 0.1, undefined, 180);
-    }, 200);
+    // gamelan bells: irregular placement so it never reads as a dance beat
+    const bellSteps = I > 0.72 ? [0, 3, 6, 10, 13] : I > 0.42 ? [0, 6, 10] : [0, 6];
+    const k = bellSteps.indexOf(step);
+    if (k >= 0) {
+      const note = bar.bell[(k + pass + (inForm >> 1)) % bar.bell.length];
+      // the lift only on the higher bells, so the low end of the line stays put
+      this.mGamelan(note * (note < 300 ? 1 : lift), (0.055 + I * 0.05) / (lift > 1 ? 1.25 : 1), at);
+    }
+    // a high shimmer up top when you're really moving
+    if (I > 0.62 && step === 14) this.mGamelan(N.A5, 0.03 + I * 0.02, at);
+    // a soft pulse on the drone's own pitch for forward motion without a kick.
+    // It was at 37 Hz, which a laptop speaker cannot play at all.
+    if (step === 0 || step === 8) this.mTone(73.42, 0.7, "sine", 0.045, at, undefined, 220);
   }
 
   /** One musical tone routed to the music bus, with an optional reverb send. */
-  private mTone(freq: number, dur: number, type: OscillatorType, gain: number, sweepTo?: number, filterHz?: number, wet = 0) {
+  private mTone(freq: number, dur: number, type: OscillatorType, gain: number, at: number, sweepTo?: number, filterHz?: number, wet = 0) {
     if (!this.ctx || !this.musicBus) return;
-    const t = this.ctx.currentTime;
+    const t = at;
     const osc = this.ctx.createOscillator();
     const g = this.ctx.createGain();
     osc.type = type;
@@ -578,39 +1094,10 @@ export class Sound {
     osc.stop(t + dur + 0.02);
   }
 
-  /** One percussive noise hit routed to the music bus. */
-  private mNoise(dur: number, gain: number, filterType: BiquadFilterType, freq: number, wet = 0) {
-    if (!this.ctx || !this.musicBus) return;
-    const t = this.ctx.currentTime;
-    const len = Math.floor(this.ctx.sampleRate * dur);
-    const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
-    const src = this.ctx.createBufferSource();
-    src.buffer = buf;
-    const filt = this.ctx.createBiquadFilter();
-    filt.type = filterType;
-    filt.frequency.value = freq;
-    const g = this.ctx.createGain();
-    g.gain.setValueAtTime(gain, t);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    src.connect(filt);
-    filt.connect(g);
-    g.connect(this.musicBus);
-    if (wet > 0 && this.musicSend) {
-      const w = this.ctx.createGain();
-      w.gain.value = wet;
-      g.connect(w);
-      w.connect(this.musicSend);
-    }
-    src.start(t);
-    src.stop(t + dur);
-  }
-
   /** Deep taiko: a pitched thump with a skin transient over it. */
-  private mTaiko(gain: number) {
-    if (!this.ctx || !this.musicBus) return;
-    const t = this.ctx.currentTime;
+  private mTaiko(gain: number, at: number) {
+    if (!this.ctx || !this.musicBus || !this.white) return;
+    const t = at;
     const osc = this.ctx.createOscillator();
     const g = this.ctx.createGain();
     osc.type = "sine";
@@ -628,31 +1115,26 @@ export class Sound {
     }
     osc.start(t);
     osc.stop(t + 0.45);
-    this.mNoise(0.09, gain * 0.3, "lowpass", 900, 0.3); // the stick on the skin
+    // the stick on the skin
+    this.burst(0.09, gain * 0.3, "lowpass", 900, { dest: this.musicBus, at: t });
   }
 
   /** Gamelan / temple bell: INHARMONIC partials (2.76, 5.4, 8.93 — the ratios a
    *  struck metal bowl actually rings at, not integer harmonics). This is what
    *  makes it read as struck bronze instead of a synth lead. */
-  private mGamelan(freq: number, gain: number) {
+  private mGamelan(freq: number, gain: number, at: number) {
     const partials = [1, 2.76, 5.4, 8.93];
     const levels = [1, 0.5, 0.28, 0.16];
     const decays = [2.6, 1.7, 1.1, 0.7];
     for (let i = 0; i < partials.length; i++) {
-      this.mTone(freq * partials[i], decays[i], "sine", gain * levels[i], undefined, undefined, 0.85);
+      this.mTone(freq * partials[i], decays[i], "sine", gain * levels[i], at, undefined, undefined, 0.85);
     }
   }
 
-  /** Sustained low drone with a slow filter so it breathes. */
-  private mDrone(freq: number, dur: number, gain: number) {
-    this.mTone(freq, dur, "sawtooth", gain, undefined, 240, 0.5);
-    this.mTone(freq * 2, dur, "sine", gain * 0.5, undefined, 400, 0.6);
-  }
-
   /** Breathy choral pad: detuned voices, slow swell, drenched in the reverb. */
-  private mChoir(freqs: number[], dur: number, gain: number) {
+  private mChoir(freqs: number[], dur: number, gain: number, at: number) {
     if (!this.ctx || !this.musicBus) return;
-    const t = this.ctx.currentTime;
+    const t = at;
     for (const f of freqs) {
       for (const det of [-7, 6]) {
         const osc = this.ctx.createOscillator();
@@ -681,6 +1163,7 @@ export class Sound {
     }
   }
 
+  // -------------------------------------------------------------- ambience
 
   /**
    * Crossfade the background ambience to a new realm atmosphere. Fades the
@@ -713,21 +1196,38 @@ export class Sound {
     this.setAmbient("none");
   }
 
-  /** Fill a mono AudioBuffer with white (or integrated "brown") noise. */
+  /**
+   * Fill a mono AudioBuffer with white (or integrated "brown") noise that
+   * loops WITHOUT A SEAM.
+   *
+   * Brown noise wanders, so its last sample is nowhere near its first, and a
+   * looping source jumps between them: a click every loop — every two seconds
+   * under the engine, every three under the lava. The end is crossfaded into
+   * the start, so sample N-1 runs straight into sample 0.
+   */
   private makeNoiseBuffer(seconds: number, brown = false): AudioBuffer | null {
     if (!this.ctx) return null;
-    const len = Math.floor(this.ctx.sampleRate * seconds);
-    const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
-    const data = buf.getChannelData(0);
-    if (brown) {
-      let last = 0;
-      for (let i = 0; i < len; i++) {
-        const white = Math.random() * 2 - 1;
+    const rate = this.ctx.sampleRate;
+    const len = Math.floor(rate * seconds);
+    const fade = Math.floor(rate * 0.05);
+    const raw = new Float32Array(len + fade);
+    let last = 0;
+    for (let i = 0; i < raw.length; i++) {
+      const white = Math.random() * 2 - 1;
+      if (brown) {
         last = (last + 0.02 * white) / 1.02;
-        data[i] = Math.max(-1, Math.min(1, last * 3.5));
+        raw[i] = Math.max(-1, Math.min(1, last * 3.5));
+      } else {
+        raw[i] = white;
       }
-    } else {
-      for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+    }
+    const buf = this.ctx.createBuffer(1, len, rate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = raw[i];
+    // equal-power crossfade of the overrun into the head
+    for (let i = 0; i < fade; i++) {
+      const w = i / fade;
+      data[i] = raw[i] * Math.sin(w * Math.PI / 2) + raw[len + i] * Math.cos(w * Math.PI / 2);
     }
     return buf;
   }
@@ -745,13 +1245,13 @@ export class Sound {
     top.gain.value = 0.0001;
     top.connect(this.ambientBus);
 
-    // A looping noise bed.
-    const noiseSource = (seconds: number, brownNoise = false) => {
-      const buf = this.makeNoiseBuffer(seconds, brownNoise);
+    // A looping noise bed, from the shared seamless buffers.
+    const noiseSource = (brownNoise = false) => {
+      const buf = brownNoise ? this.brown : this.white;
       const src = ctx.createBufferSource();
       if (buf) src.buffer = buf;
       src.loop = true;
-      src.start();
+      src.start(0, buf ? Math.random() * buf.duration : 0);
       sources.push(src);
       return src;
     };
@@ -792,8 +1292,7 @@ export class Sound {
         bp.Q.value = 0.9;
         const g = ctx.createGain();
         g.gain.value = 0.22;
-        const src = noiseSource(3);
-        src.connect(bp);
+        noiseSource().connect(bp);
         bp.connect(g);
         g.connect(top);
         lfo(0.08, 260, bp.frequency); // sweep the passband -> gusts
@@ -807,8 +1306,7 @@ export class Sound {
         lp.frequency.value = 80;
         const g = ctx.createGain();
         g.gain.value = 0.32;
-        const src = noiseSource(3, true);
-        src.connect(lp);
+        noiseSource(true).connect(lp);
         lp.connect(g);
         g.connect(top);
         lfo(0.15, 0.1, g.gain); // tremolo
@@ -827,8 +1325,7 @@ export class Sound {
         hp.frequency.value = 2200;
         const g = ctx.createGain();
         g.gain.value = 0.05;
-        const src = noiseSource(3);
-        src.connect(hp);
+        noiseSource().connect(hp);
         hp.connect(g);
         g.connect(top);
         lfo(0.06, 0.03, g.gain); // distant traffic ebb and flow
@@ -858,8 +1355,7 @@ export class Sound {
         hp.frequency.value = 1600;
         const g = ctx.createGain();
         g.gain.value = 0.06;
-        const src = noiseSource(3);
-        src.connect(hp);
+        noiseSource().connect(hp);
         hp.connect(g);
         g.connect(top);
         lfo(0.09, 0.03, g.gain); // breeze swell
@@ -876,8 +1372,7 @@ export class Sound {
         lp.frequency.value = 300;
         const g = ctx.createGain();
         g.gain.value = 0.14;
-        const src = noiseSource(4);
-        src.connect(lp);
+        noiseSource().connect(lp);
         lp.connect(g);
         g.connect(top);
         lfo(0.03, 90, lp.frequency); // very slow cutoff drift
@@ -957,6 +1452,7 @@ export class Sound {
 
   dispose() {
     if (this.musicTimer) clearInterval(this.musicTimer);
+    if (typeof document !== "undefined") document.removeEventListener("visibilitychange", this.onVisibility);
     if (this.ambient) {
       for (const timer of this.ambient.timers) clearInterval(timer);
       try {
@@ -980,7 +1476,7 @@ export class Sound {
       // already stopped
     }
     try {
-      void this.ctx?.close();
+      void this.live()?.close();
     } catch {
       // ignore
     }
