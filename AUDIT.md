@@ -761,7 +761,7 @@ scroll on 1366×768, the commonest laptop screen there is.
 
 ## 2. What we could improve
 
-### Sound — 2026-10-21 pass (branch `sound-pass`)
+### ✅ Sound — 2026-10-21 pass (shipped in PR #1)
 
 Measured in the sound lab, `tools/sound-lab/`. What changed and why:
 
