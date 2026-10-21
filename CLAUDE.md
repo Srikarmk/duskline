@@ -1,7 +1,7 @@
 # Duskline
 
 A browser racing game built with Next.js + TypeScript + Three.js. Twelve
-worlds, ten procedurally-built road cars, procedural audio. CC0 glTF models
+worlds, fourteen procedurally-built road cars, procedural audio. CC0 glTF models
 from Kenney for scenery (see `public/models/LICENSE-*`).
 
 ## Commands

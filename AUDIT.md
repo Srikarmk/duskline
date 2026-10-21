@@ -732,12 +732,56 @@ bug in the thing I am testing". I reported it as unattributed rather than as
 a fault, which turned out to be the right call — but the cheaper move would
 have been to log `phase` the first time it happened.
 
+### ✅ 🔴 N10 — The car preview vanished below 1080px, and on a phone so did a car
+
+Found 2026-10-21. On step 2 the showroom was `flex: 1; min-height: 0` against
+a car grid that cannot shrink, so it got whatever the cards left over. With
+fourteen cars that is nothing as soon as the grid gains a row:
+
+| Viewport | Showroom before | After |
+| --- | --- | --- |
+| 1920×1080 | 434 px | 434 px |
+| 1440×900 | 275 px | 275 px |
+| 1366×768 | 159 px | 159 px |
+| 1024×768 | **4 px** | 154 px, grid scrolls |
+| 375×812 (phone) | **4 px**, last row under the nav | 162 px, grid scrolls |
+
+On the phone the fit layout is `overflow: hidden`, so the fifth row — FC3S, a
+car a new career has unlocked — rendered beneath the BACK/NEXT bar and could
+not be tapped at all. Measured on the live site before touching anything.
+
+The 1024 case had a second cause: the base `.cars` rule drops to four columns
+at 1080px, which turns fourteen cars into four rows. In the fit layout five
+columns still fit down to 900. The showroom now has a floor of
+`clamp(120px, 20vh, 220px)` and the grid scrolls in its own box once that
+floor bites. It is 20vh and not 22 because 22 put ten pixels of pointless
+scroll on 1366×768, the commonest laptop screen there is.
+
 ---
 
 ## 2. What we could improve
 
 ### Performance
-1. ◻ **Code-split the engine — RECORDED AS FIXED, AND IT IS NOT.** `GameApp`
+1. ✅ **Code-split the engine — fixed 2026-10-21, for real this time.** The
+   cause was never Next or `dynamic()`: `HomeScreen` imports `src/ui/warm.ts`,
+   which imported `SHARED_SETS` from `game3d/textures.ts` — a five-string array
+   sitting in a file whose first line is `import * as THREE from "three"`. One
+   static edge from the home screen into three.js, and no `dynamic()` anywhere
+   else can keep the library out. `SHARED_SETS` now lives in `realms.ts`
+   (three-free by design), and the home screen's static graph has no path to
+   `three`. **First-load JS 234 kB → 159 kB gzip**; the three.js chunk now
+   arrives when the CAR step mounts the showroom. `test/budgets.mjs` fails if
+   any first-paint script contains `__THREE__`, and its ceiling is now 185 kB.
+
+   How it was found, because the paragraphs below show the slow way: walk the
+   import graph from `app/page.tsx`, skipping `dynamic()` and `import type`,
+   and print the chain to the first module that imports `three`. It found the
+   edge in one pass. Everything below is the earlier, wrong record, kept
+   because the two traps in it are still true.
+
+   ---
+
+   *Earlier record:* `GameApp`
    imported `GameCanvas` statically, so three.js shipped in the first chunk.
    That was changed to a `dynamic()` import and measured at the time as
    **first-load JS 398 kB → 126 kB**.
@@ -758,7 +802,7 @@ have been to log `phase` the first time it happened.
      what made it look fine. The manifest and the emitted HTML disagree;
      the HTML is what the browser obeys. Trust the network panel.
 
-   **Left open deliberately rather than chased.** The menu's CAR step renders a
+   **Left open deliberately rather than chased** (wrong — see above). The menu's CAR step renders a
    live 3D showroom through the same `makeKart` the race uses, so three.js is
    not dead weight — it is the car preview, two screens after it downloads,
    and the engine is needed seconds later regardless. `warmRaceAssets` already
@@ -1247,7 +1291,7 @@ and storage cleared:
 
 | | Before | After |
 | --- | --- | --- |
-| First-load JavaScript | 398 kB | **126 kB** |
+| First-load JavaScript | 398 kB | **126 kB** (that figure was wrong — 234 kB really; 159 kB after the 2026-10-21 fix, see 2.1) |
 | Engine chunks (fetched on demand) | — | 278 kB |
 | Textures for the first race | 12,114 kB | **916 kB** |
 | Realm previews | 660 kB | **333 kB** |

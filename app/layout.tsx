@@ -30,7 +30,7 @@ const rajdhani = Rajdhani({
 // Without these, every share link renders as a bare URL with no title, image
 // or description — which is most of what decides whether anyone clicks it.
 const DESCRIPTION =
-  "A browser racing game. Ten road cars, twelve worlds, and an endless neon highway. No install, no account.";
+  "A browser racing game. Fourteen road cars, twelve worlds, and an endless neon highway. No install, no account.";
 
 export const metadata: Metadata = {
   title: "Duskline — drive it in your browser",

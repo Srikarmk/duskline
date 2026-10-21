@@ -17,7 +17,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Duskline",
     short_name: "Duskline",
     description:
-      "A browser racing game. Ten road cars, twelve worlds, and an endless neon highway.",
+      "A browser racing game. Fourteen road cars, twelve worlds, and an endless neon highway.",
     start_url: "/",
     display: "fullscreen",
     orientation: "landscape",

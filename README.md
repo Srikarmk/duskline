@@ -2,14 +2,14 @@
 
 <a href="https://playduskline.vercel.app"><img alt="Play" src="https://img.shields.io/badge/play-playduskline.vercel.app-5b4fc9" /></a> <a href="https://www.srikarmk.dev/projects/duskline"><img alt="Case study" src="https://img.shields.io/badge/case%20study-srikarmk.dev-5b4fc9" /></a> <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue" /></a>
 
-A browser racing game. Twelve worlds, ten road cars, and an endless neon
+A browser racing game. Twelve worlds, fourteen road cars, and an endless neon
 highway — no install, no account, no download screen.
 
 **Play:** https://playduskline.vercel.app
 
 ![Duskline](docs/screenshots/void.jpg)
 
-Built with Next.js 15, TypeScript and Three.js. Everything you see is generated
+Built with Next.js 16, TypeScript and Three.js. Everything you see is generated
 in code: the skies are shaders, the cars are lofted from cross-sections, the
 tracks are splines with real elevation, and every sound is synthesised at
 runtime by the Web Audio API. There is not one audio file in this repository.
@@ -19,8 +19,9 @@ runtime by the Web Audio API. There is not one audio file in this repository.
 - **Twelve worlds** — a coastal causeway at sunset, a snowbound mountain pass,
   eight lanes of new tarmac across a desert, canyon switchbacks above a grid of
   city lights. Each has its own palette, elevation and landmarks.
-- **Ten cars**, each modelled individually rather than recoloured: an F40,
-  a Testa, a Tauro, a Fairlady, an IROC and five more.
+- **Fourteen cars**, each modelled individually rather than recoloured: an
+  F40, a Testa, a Tauro, a Fairlady, an IROC and nine more — unlocked by
+  racing, not handed over on the first visit.
 - **Four modes** — Circuit (nine rivals, a standing grid), Neon Run (an endless
   wet highway under a dead city), Grand Prix (three rounds, points), and Space
   Wars (anti-gravity tube, live ordnance).

@@ -1,6 +1,7 @@
 # Duskline — handoff
 
-Written 2026-10-12, moving to a different machine. `CLAUDE.md` covers the
+Written 2026-10-12, moving to a different machine; updated 2026-10-21 after
+the first session on the new one. `CLAUDE.md` covers the
 architecture, `AUDIT.md` the bug and improvement list, `RELEASE.md` what blocks
 a public launch. This file is the short version: where it stands, what is left,
 and what will waste your afternoon if nobody tells you.
@@ -14,12 +15,19 @@ mismatch trips people up.
 | --- | --- |
 | Live | https://playduskline.vercel.app |
 | Repo | github.com/Srikarmk/duskline, branch `main` |
-| Last commit | `0dea1b3` — "Say what connecting a KV store now buys" |
-| CI | green on `0dea1b3` |
-| Deploy | automatic on push to `main`; `0dea1b3` is the live production deployment |
+| Deploy | automatic on push to `main`; confirm the live SHA with `gh api repos/Srikarmk/duskline/deployments` |
+| CI | `npm run test:ci` locally is the same gate |
 
-Everything is pushed. Local `main`, `origin/main` and the deployed SHA are the
-same commit, and the working tree is clean.
+## 2026-10-21 — first session on the new machine
+
+- **The engine is out of the first load.** AUDIT 2.1 had been written off as
+  unavoidable; it was one static import (`src/ui/warm.ts` →
+  `game3d/textures.ts` → `three`). First-load JS **234 → 159 kB gzip**, and
+  `test:budget` now fails if a first-paint script contains three.js.
+- **The car preview was gone below 1080px wide**: 4px tall at 1024×768 and on
+  phones, and on a phone the last row of cars sat under the nav where it could
+  not be tapped. AUDIT N10 has the before/after per viewport.
+- README / CLAUDE.md / share description said ten cars; there are fourteen.
 
 ## What shipped most recently
 
@@ -52,20 +60,7 @@ this is DSP work, not asset work. **Ask what specifically sounds wrong before
 rewriting anything**; "needs work" is not a brief, and the engine is the kind
 of thing where a confident rewrite can easily be worse.
 
-### 2. Code-split the engine — AUDIT item 1, recorded as fixed and it is NOT
-
-The only open engineering item in `AUDIT.md`. three.js (263 kB raw, 70 kB
-gzip) is an `async <script>` in the prerendered HTML, so the browser fetches it
-on first paint — before the player has even chosen guest-or-Google. Both
-consumers are already `dynamic()` and it happens anyway.
-
-Two things to not re-derive:
-
-- It is **not** a Next 16 regression. `next build --webpack` does the same
-  within 3%.
-- `build-manifest.json`'s `rootMainFiles` does not list the chunk, which is
-  what made it look fixed. The manifest and the emitted HTML disagree, and the
-  browser obeys the HTML. Trust the network panel.
+### 2. ~~Code-split the engine~~ — done 2026-10-21, see above and AUDIT 2.1
 
 ### 3. Two launch blockers that need something outside the repo
 
