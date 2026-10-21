@@ -2405,8 +2405,26 @@ html, body { overscroll-behavior: none; }
 
 /* step 2 — the showroom takes the slack, the grid stays put */
 .home.fit .garage { flex: 1; min-height: 0; gap: clamp(7px, 1vh, 13px); }
-.home.fit .showroom { flex: 1; min-height: 0; height: auto; }
-.home.fit .cars { flex: none; gap: clamp(6px, 0.7vw, 10px); }
+/* The showroom used to be `flex: 1; min-height: 0` against a grid that could
+   not shrink, so every row of cards past three came out of the preview: at
+   1024×768 it was 4px tall, and on a phone the bottom row of cars rendered
+   under the nav, unreachable. Now the preview has a floor, and the grid
+   scrolls in its own box once that floor bites. */
+.home.fit .showroom { flex: 1 1 0; min-height: clamp(120px, 20vh, 220px); height: auto; }
+.home.fit .cars {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  grid-auto-rows: max-content;
+  gap: clamp(6px, 0.7vw, 10px);
+  padding: 2px;   /* room for the picked card's ring inside the scroll box */
+  margin: -2px;
+}
+/* The base `.cars` goes to four columns at 1080px. Here that makes 14 cars a
+   fourth row on every 1024-wide laptop; five columns still fit down to 900. */
+@media (min-width: 901px) {
+  .home.fit .cars { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
 .home.fit .car-card { padding: 8px 10px 9px; gap: 5px; }
 .home.fit .car-card .car-head strong { font-size: 12px; }
 .home.fit .showroom-blurb { font-size: 11.5px; }
