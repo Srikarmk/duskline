@@ -57,9 +57,9 @@ synth / recorded side by side from the real code and measures them. The user
 asked to keep the lab. Use it before and after any audio change: levels in
 particular move without anyone touching a gain.
 
-The user approved it and it is live. Further changes go the same way: judge
-them in the lab, then open a PR and merge after CI — a direct push to `main`
-is blocked by the session's permission check.
+The user approved it and it is live. Judge further audio changes in the lab
+first, then commit and push to `main` like everything else — the user wants
+no branches or PRs here.
 
 ### 2. ~~Code-split the engine~~ — done 2026-10-21, see above and AUDIT 2.1
 
