@@ -1162,3 +1162,11 @@ const GROUND: Record<string, string> = {
 export function groundTextureFor(realmId: string): string {
   return GROUND[realmId] ?? "ground_forest";
 }
+
+/**
+ * Every PBR set a race loads besides the ground, for warming. Lives here, not
+ * in textures.ts, because the menu needs the names and textures.ts imports
+ * three.js: one static import of it from src/ui/warm.ts was enough to put the
+ * whole library in the first-paint chunk, `dynamic()` or not (AUDIT 2.1).
+ */
+export const SHARED_SETS = ["road", "rock", "metal", "bark", "foliage"] as const;

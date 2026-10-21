@@ -21,7 +21,9 @@
  *   - Each URL is fetched once per session.
  */
 
-import { SHARED_SETS, groundTextureFor } from "@/src/game3d/textures";
+// From realms.ts, NOT textures.ts: textures.ts imports three.js, and this file
+// is reached statically from the home screen.
+import { SHARED_SETS, groundTextureFor } from "@/src/game3d/realms";
 
 const MAPS = ["diff", "nor", "arm"] as const;
 const done = new Set<string>();

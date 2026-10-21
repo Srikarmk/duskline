@@ -17,6 +17,11 @@
  *    Scripts marked `nomodule` are skipped, because a modern browser skips
  *    them; counting the legacy polyfill bundle would inflate the number by
  *    ~38 kB that nobody downloads.
+ *
+ *    It also fails outright if any of those scripts IS three.js. For a month
+ *    the engine shipped on first paint and was written off as unavoidable;
+ *    the cause was one static import (src/ui/warm.ts → game3d/textures.ts)
+ *    reaching three from the home screen, which no `dynamic()` can undo.
  *  - **Texture weight.** A first visit downloaded 12.1 MB; recompressing to
  *    WebP took it to 916 kB. Dropping a new full-resolution PNG into
  *    public/textures undoes that quietly.
@@ -49,17 +54,10 @@ const NEXT = path.join(ROOT, ".next");
 // engine getting pulled back into the initial chunk, which is +250 kB or more —
 // trips it, while ordinary UI work does not.
 const BUDGETS = {
-  // Currently ~231 kB, of which ~87 is three.js. The engine IS in the first
-  // load: both of its consumers (GameCanvas and the menu's CarShowroom) are
-  // `dynamic()` imports and it ships anyway, on webpack and Turbopack alike.
-  // That is recorded in AUDIT.md 2.1 and deliberately not chased — the CAR
-  // step renders a live 3D preview through the same builder the race uses, so
-  // three.js is the car preview, not dead weight.
-  //
-  // So this budget is no longer "keep the engine out". It is "do not let the
-  // first load grow past what it already is", with enough headroom for
-  // ordinary UI work and not enough to hide another 87 kB library.
-  firstLoadJsKB: 260,      // currently ~231 by this script's measure
+  // Currently ~159 kB, with three.js OUT (it was ~234 with it in — see the
+  // __THREE__ check below, which is the real guard for that). Headroom for
+  // ordinary UI work, not enough to hide another library.
+  firstLoadJsKB: 185,      // currently ~159 by this script's measure
   texturesKB: 1600,        // currently ~1338
   previewsKB: 600,         // currently ~389
 };
@@ -85,6 +83,7 @@ if (!existsSync(DOC)) {
 const html = await readFile(DOC, "utf8");
 let firstLoad = 0;
 const seen = new Set();
+const threeIn = [];
 for (const [, pre, src, post] of html.matchAll(/<script([^>]*)src="([^"]+)"([^>]*)>/g)) {
   if (!src.startsWith("/_next/") || !src.endsWith(".js")) continue;
   if (/nomodule/i.test(pre + post)) continue;      // a modern browser will not fetch it
@@ -92,11 +91,22 @@ for (const [, pre, src, post] of html.matchAll(/<script([^>]*)src="([^"]+)"([^>]
   seen.add(src);
   const file = path.join(NEXT, src.slice("/_next".length));
   if (!existsSync(file)) continue;
-  firstLoad += gzipSync(await readFile(file), { level: 9 }).length;
+  const body = await readFile(file);
+  firstLoad += gzipSync(body, { level: 9 }).length;
+  // three.js registers itself on `window.__THREE__`; the string survives
+  // minification and appears only in the library's core chunk.
+  if (body.includes("__THREE__")) threeIn.push(src);
 }
 if (seen.size < 3) {
   console.error(`✖ only ${seen.size} first-load scripts found — the document parse is wrong`);
   process.exit(1);
+}
+if (threeIn.length) {
+  failures.push(
+    `three.js is on first paint (${threeIn.join(", ")}). Something the home screen ` +
+      `imports at module scope reaches "three" — find it before the player has even ` +
+      `picked a car. Last time it was src/ui/warm.ts importing game3d/textures.ts.`,
+  );
 }
 const firstLoadKB = Math.round(firstLoad / 1024);
 report.push(["first-load JS (gzipped)", firstLoadKB, BUDGETS.firstLoadJsKB]);
