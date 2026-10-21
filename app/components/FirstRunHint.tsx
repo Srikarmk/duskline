@@ -52,7 +52,7 @@ export default function FirstRunHint({ touch }: { touch: boolean }) {
   const rows: [string, string][] = touch
     ? [
         ["◀ ▶ pads", "steer"],
-        ["GAS / BRAKE", "throttle and brakes"],
+        ["GO / BRK", "throttle and brakes"],   // what the pads actually say
         ["NOS", "nitro — one charge at a time"],
         ["drift", "hold a slide — you get a boost the moment you straighten"],
         ["ramps", "hit them fast, land flat"],
@@ -76,7 +76,7 @@ export default function FirstRunHint({ touch }: { touch: boolean }) {
           </div>
         ))}
       </dl>
-      <em>any key to dismiss</em>
+      <em>{touch ? "tap anywhere to dismiss" : "any key to dismiss"}</em>
     </div>
   );
 }

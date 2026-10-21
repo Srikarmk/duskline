@@ -793,6 +793,34 @@ Two measurement traps, both mine:
   into a factor far above 1 and the camera flew to 10^93 m. Real rAF is
   monotonic, but the frame time is now clamped at zero anyway.
 
+### ✅ UI pass — 2026-10-21, no gameplay changes
+
+Reviewed with taste-skill (inspector + screenshots at 1440, 1024, 390),
+Vercel's Web Interface Guidelines, and the PlayStation design reference for
+type floors. The neon dusk identity — gradients, glows, violet, Orbitron caps —
+was kept deliberately; the dashboard-derived rules that ban those were not
+applied. What changed:
+
+- **The race HUD was set in Courier.** Every canvas string was `monospace`,
+  down to 8px, while every menu around it was Orbitron/Rajdhani. It now reads
+  both faces from next/font's CSS variables, with an 11px floor; the control
+  hints sit on a backing strip (they were near-invisible on a bright sky).
+- **Minimap:** the player is a heading arrow, not a dot the colour of a rival.
+- **Mode step** was ~70% empty card per mode plus a ghost "01". Each card now
+  shows the world it races in; Neon Run got its first preview
+  (`realm-neon`, captured from the running game).
+- **Go step:** the lore sits on a banner of the world you are about to drive.
+- **Locked cars:** the requirement overlay lay on top of the car's name and the
+  whole card was at 52% opacity; now name, requirement and bar read in order.
+- **Phone header:** 230px of an 844px screen with the data-safety line stacked
+  one word per line; now two rows and a full-width DRIVE NOW.
+- **31 font sizes under 11px** raised to the floor; the sign-in screen's body
+  text from 11px to 13px; the disabled Google button's reason from ~2:1.
+- **Behaviour bugs from the guidelines review:** Enter on SHARE / WATCH LAP /
+  MENU started a new race; locked cars were unreachable by keyboard; the pause
+  menu took no focus and RESTART / QUIT / ABANDON acted on one click (they now
+  ask once); the global board said "no scores yet" while loading or failing.
+
 ---
 
 ## 2. What we could improve

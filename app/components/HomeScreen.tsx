@@ -157,6 +157,8 @@ export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAban
   const boardRef = useRef<HTMLElement>(null);
   const [localScores, setLocalScores] = useState<ScoreEntry[]>([]);
   const [globalScores, setGlobalScores] = useState<ScoreEntry[] | null>(null);
+  const [abandonArmed, setAbandonArmed] = useState(false);
+  const [boardFailed, setBoardFailed] = useState(false);
   const [isGlobal, setIsGlobal] = useState(false);
   const [board, setBoard] = useState<"global" | "local">("global");
 
@@ -193,6 +195,8 @@ export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAban
       if (res) {
         setGlobalScores(res.scores);
         setIsGlobal(res.global);
+      } else {
+        setBoardFailed(true);
       }
     });
   }, []);
@@ -339,12 +343,12 @@ export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAban
     return (
       <div className="home gate">
         <div className="hero-glow" aria-hidden="true" />
-        <h1 className="title">DUSKLINE</h1>
+        <h1 className="title" translate="no">DUSKLINE</h1>
         <div className="checker hero-rule" aria-hidden="true" />
         <p className="subtitle">drift · boost · jump · blast</p>
         <div className="gate-card">
           <button type="button" className="gate-btn primary" disabled={authBusy} onClick={asGuest}>
-            {authBusy ? "…" : "CONTINUE AS GUEST"}
+            {authBusy ? "SIGNING IN…" : "CONTINUE AS GUEST"}
             <span>you get the next racer number — nothing to fill in</span>
           </button>
           <button
@@ -361,7 +365,7 @@ export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAban
                 : "not configured on this deployment"}
             </span>
           </button>
-          {authError && <p className="gate-error">{authError}</p>}
+          {authError && <p className="gate-error" role="alert">{authError} Try again, or continue as a guest.</p>}
           <p className="gate-note">
             Your display name is the only thing that ever leaves this device, and only when
             you post a score.
@@ -377,7 +381,7 @@ export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAban
         <div className="hero-glow" aria-hidden="true" />
         <div className="hero-row">
           <div className="hero-id">
-            <h1 className="title">DUSKLINE</h1>
+            <h1 className="title" translate="no">DUSKLINE</h1>
             <span className="hero-kicker">
               <b>{realmIds.length}</b> WORLDS · <b>{CAR_IDS.length}</b> CARS · <b>{MODES.length}</b> MODES
             </span>
@@ -385,7 +389,7 @@ export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAban
 
           <div className="hero-side">
             <button type="button" className="who" onClick={switchRacer} title="Switch racer">
-              {ident.picture && <img src={ident.picture} alt="" />}
+              {ident.picture && <img src={ident.picture} alt="" width={20} height={20} />}
               <span className="who-name">{ident.name}</span>
               <span className="who-swap">SWITCH</span>
             </button>
@@ -394,7 +398,7 @@ export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAban
                 player assuming a browser game syncs, wiping the profile, and
                 finding out it did not. */}
             {ident.kind === "google" ? (
-              <p className={`sync-line ${sync.kind}`}>
+              <p className={`sync-line ${sync.kind}`} role="status">
                 {sync.kind === "syncing" && "SYNCING…"}
                 {sync.kind === "synced" && "✓ SYNCED TO YOUR GOOGLE ACCOUNT"}
                 {sync.kind === "failed" && `SYNC FAILED — ${sync.reason}`}
@@ -460,10 +464,15 @@ export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAban
                     </button>
                     <button
                       type="button"
-                      className="season-drop"
-                      onClick={() => { onAbandonSeason(); setSeason(null); }}
+                      className={`season-drop ${abandonArmed ? "armed" : ""}`}
+                      onClick={() => {
+                        // a whole championship goes with one click, so it asks once
+                        if (!abandonArmed) { setAbandonArmed(true); return; }
+                        onAbandonSeason(); setSeason(null); setAbandonArmed(false);
+                      }}
+                      onBlur={() => setAbandonArmed(false)}
                     >
-                      ABANDON
+                      {abandonArmed ? "PRESS AGAIN TO ABANDON" : "ABANDON"}
                     </button>
                   </div>
                 </div>
@@ -484,7 +493,7 @@ export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAban
             </>
           ) : null}
           <span className="rb-sep">/</span>
-          <span>{lastResult.gems} gems</span>
+          <span>{lastResult.gems} gem{lastResult.gems === 1 ? "" : "s"}</span>
           <span className="rb-sep">/</span>
           <span>{formatTime(lastResult.timeMs)}</span>
         </div>
@@ -612,24 +621,24 @@ export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAban
                       key={id}
                       className={`car-card ${isSel ? "selected" : ""} ${open ? "" : "locked"}`}
                       aria-pressed={isSel}
-                      disabled={!open}
+                      aria-disabled={!open || undefined}
                       aria-label={open
                         ? `${spec.name} — speed ${spec.stars.speed} of 5, acceleration ${spec.stars.accel} of 5, handling ${spec.stars.handling} of 5`
                         : `${spec.name} — locked. ${req.label}.`}
                       onClick={() => open && setCar(id)}
                       style={{ ["--accent" as string]: swatch, ["--earned" as string]: `${Math.round(pct * 100)}%` }}
                     >
+                      <span className="pick-flag" aria-hidden="true">PICKED</span>
+                      <span className="car-head">
+                        <span className="car-chip" style={{ background: swatch, color: swatch }} />
+                        <strong>{spec.name}</strong>
+                      </span>
                       {!open && (
                         <span className="car-lock">
                           <em>{req.label}</em>
                           <span className="car-lock-bar"><i style={{ width: `${Math.round(pct * 100)}%` }} /></span>
                         </span>
                       )}
-                      <span className="pick-flag" aria-hidden="true">PICKED</span>
-                      <span className="car-head">
-                        <span className="car-chip" style={{ background: swatch, color: swatch }} />
-                        <strong>{spec.name}</strong>
-                      </span>
                       <span className="car-stats">
                         <span className="stat-row">
                           <em>SPD</em><Pips n={spec.stars.speed} />
@@ -651,8 +660,16 @@ export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAban
           {step === 3 && (
             <div className="modes-step">
               <div className="modes">
-                {MODES.map((m, i) => {
+                {MODES.map((m) => {
                   const isSel = mode === m.id;
+                  // Each mode shows the world it actually races in, so the
+                  // card is a picture of what you are choosing — it used to be
+                  // two lines of text over 70% empty card and a ghost "01".
+                  const art: RealmId[] =
+                    m.id === "grandprix" ? [...SEASON_ORDER]
+                      : m.id === "spacewars" ? ["void"]
+                        : m.id === "endless" ? ["neon"]
+                          : [realm];
                   return (
                     <button
                       type="button"
@@ -662,12 +679,26 @@ export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAban
                       aria-pressed={isSel}
                       onClick={() => setMode(m.id)}
                     >
-                      <span className="mode-index" aria-hidden="true">{String(i + 1).padStart(2, "0")}</span>
+                      <span className="mode-art" aria-hidden="true" style={{ background: realmFallback(art[0]) }}>
+                        {art.map((id) => (
+                          <img
+                            key={id}
+                            src={`/previews/realm-${id}.webp`}
+                            alt=""
+                            width={480}
+                            height={270}
+                            decoding="async"
+                            onError={(e) => { e.currentTarget.style.display = "none"; }}
+                          />
+                        ))}
+                      </span>
                       <span className="pick-flag" aria-hidden="true">PICKED</span>
-                      <strong>{m.name}</strong>
-                      <span className="mode-blurb">{m.blurb}</span>
-                      <span className="mode-tags">
-                        {m.tags.map((t) => <i key={t}>{t}</i>)}
+                      <span className="mode-copy">
+                        <strong>{m.name}</strong>
+                        <span className="mode-blurb">{m.blurb}</span>
+                        <span className="mode-tags">
+                          {m.tags.map((t) => <i key={t}>{t}</i>)}
+                        </span>
                       </span>
                     </button>
                   );
@@ -699,7 +730,7 @@ export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAban
                       isSpace
                         ? { background: realmFallback("void") }
                         : isNeon
-                          ? { background: realmFallback("neon") }
+                          ? { backgroundImage: `url(/previews/realm-neon.jpg), ${realmFallback("neon")}` }
                           : { backgroundImage: `url(/previews/realm-${realm}.jpg), ${realmFallback(realm)}` }
                     }
                     aria-hidden="true"
@@ -740,9 +771,15 @@ export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAban
                 </button>
               </div>
 
-              <div className="realm-lore">
+              <div
+                className="realm-lore"
+                style={{
+                  ["--art" as string]: `url(/previews/realm-${isSpace ? "void" : isNeon ? "neon" : realm}.webp)`,
+                  background: realmFallback(isNeon ? "neon" : isSpace ? "void" : realm),
+                }}
+              >
                 <em>{ownWorld ?? REALMS[realm].name.toUpperCase()}</em>
-                <p>{isSpace ? REALM_LORE.void : REALM_LORE[realm]}</p>
+                <p>{isSpace ? REALM_LORE.void : isNeon ? REALM_LORE.neon : REALM_LORE[realm]}</p>
               </div>
 
               {/* Neon Run has no finish line, so a lap count is a number that
@@ -809,7 +846,7 @@ export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAban
 
       {showBoard && (
         <div className="board-sheet" role="dialog" aria-modal="true" aria-label="Leaderboard">
-          <div className="board-scrim" onClick={() => setShowBoard(false)} />
+          <div className="board-scrim" aria-hidden="true" onClick={() => setShowBoard(false)} />
           <section className="leaderboard" ref={boardRef}>
             <div className="board-head">
               <h2>HALL OF LEGENDS</h2>
@@ -835,11 +872,17 @@ export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAban
                 CLOSE ✕
               </button>
             </div>
-            {board === "global" && !isGlobal && (
-              <p className="board-hint">shared board activates once a KV store is connected</p>
+            {board === "global" && globalScores !== null && !isGlobal && (
+              <p className="board-hint">The shared board isn&rsquo;t switched on for this server yet, so these are this server&rsquo;s scores only.</p>
             )}
-            {shownScores.length === 0 ? (
-              <p className="board-hint">no scores on the board yet — go plant a flag</p>
+            {board === "global" && globalScores === null ? (
+              <p className="board-hint" role="status">
+                {boardFailed
+                  ? "Couldn’t reach the shared board. Your own times are under This device."
+                  : "Loading the board…"}
+              </p>
+            ) : shownScores.length === 0 ? (
+              <p className="board-hint">No scores on the board yet. Go plant a flag.</p>
             ) : (
               <table className="board-table">
                 <thead>

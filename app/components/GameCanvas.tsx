@@ -187,7 +187,7 @@ export default function GameCanvas({ mode, realm, car, laps, replay, onFinish, o
 
   if (!cap.ok) {
     return (
-      <div className="fatal">
+      <div className="fatal" role="alert">
         <h2>This device can&apos;t run the game.</h2>
         <p>{cap.reason}</p>
         <div className="fatal-actions">
@@ -199,7 +199,7 @@ export default function GameCanvas({ mode, realm, car, laps, replay, onFinish, o
 
   if (fatal) {
     return (
-      <div className="fatal">
+      <div className="fatal" role="alert">
         <h2>The race stopped.</h2>
         <p>
           Something in the 3D engine failed. If it happened as the world was
@@ -220,14 +220,14 @@ export default function GameCanvas({ mode, realm, car, laps, replay, onFinish, o
   return (
     <GameErrorBoundary onQuit={onQuit} context={{ mode, realm, car }}>
     <div className="game-stage">
-      <div ref={mountRef} className="game-mount" />
+      <div ref={mountRef} className="game-mount" role="application" aria-label="Race" />
       {muted && (
         <button
           type="button"
           className="audio-unblock"
           onClick={() => { gameRef.current?.unlockAudio(); setMuted(false); }}
         >
-          🔊 TAP FOR SOUND
+          <span aria-hidden="true">🔊</span> TAP FOR SOUND
         </button>
       )}
       {replay && (

@@ -53,6 +53,8 @@
   box-sizing: border-box;
 }
 
+html { color-scheme: dark; }  /* native select, ranges and scrollbars follow */
+
 html,
 body {
   height: 100%;
@@ -125,6 +127,7 @@ main {
   inset: 0;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;   /* 100vh is taller than the visible area under iOS's toolbar */
   overflow: hidden;
 }
 
@@ -277,7 +280,7 @@ main {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 4px;
   color: var(--cyan-l);
@@ -382,7 +385,7 @@ main {
   display: inline-flex;
   align-items: baseline;
   gap: 6px;
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 2.5px;
   font-weight: 700;
   color: var(--muted);
@@ -603,7 +606,7 @@ main {
 
 .step-eyebrow {
   font-family: var(--font-display);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 4px;
   color: var(--cyan-l);
   font-weight: 800;
@@ -701,7 +704,7 @@ main {
   left: 9px;
   z-index: 2;
   font-family: var(--font-display);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 2px;
   font-weight: 800;
   color: #0a0620;
@@ -721,7 +724,7 @@ main {
   align-items: center;
   gap: 5px;
   font-family: var(--font-display);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 800;
   letter-spacing: 2px;
   color: #0a0620;
@@ -830,7 +833,7 @@ main {
 .showroom-tag {
   display: inline-block;
   font-family: var(--font-display);
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 3px;
   font-weight: 800;
   color: var(--cyan-l);
@@ -947,7 +950,7 @@ main {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 2px;
   color: var(--dim);
   font-weight: 700;
@@ -1012,18 +1015,6 @@ main {
   transition: border-color 0.16s, transform 0.16s var(--ease), box-shadow 0.16s;
 }
 
-.mode-index {
-  position: absolute;
-  right: 12px;
-  bottom: -14px;
-  font-family: var(--font-display);
-  font-size: 68px;
-  font-weight: 900;
-  line-height: 1;
-  color: color-mix(in srgb, var(--accent) 18%, transparent);
-  pointer-events: none;
-  transition: color 0.18s, transform 0.3s var(--ease);
-}
 
 .mode-card:hover {
   transform: translateY(-4px);
@@ -1031,9 +1022,6 @@ main {
   box-shadow: 0 14px 30px rgba(3, 2, 14, 0.5);
 }
 
-.mode-card:hover .mode-index {
-  transform: translateY(-4px);
-}
 
 .mode-card strong {
   font-family: var(--font-display);
@@ -1058,7 +1046,7 @@ main {
 
 .mode-tags i {
   font-style: normal;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 2px;
   color: var(--muted);
@@ -1078,9 +1066,6 @@ main {
   color: #fff;
 }
 
-.mode-card.selected .mode-index {
-  color: color-mix(in srgb, var(--accent) 34%, transparent);
-}
 
 .gp-note {
   width: 100%;
@@ -1159,7 +1144,7 @@ main {
 
 .loadout-txt em {
   font-style: normal;
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 3px;
   color: var(--dim);
   font-weight: 700;
@@ -1177,7 +1162,7 @@ main {
 
 .loadout-chip .swap {
   margin-left: auto;
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 2px;
   color: var(--dim);
   font-weight: 700;
@@ -1202,7 +1187,7 @@ main {
 .realm-lore em {
   font-family: var(--font-display);
   font-style: normal;
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 3px;
   font-weight: 800;
   color: var(--cyan-l);
@@ -1235,7 +1220,7 @@ main {
 .field > span,
 .section-label {
   font-family: var(--font-display);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 3px;
   font-weight: 800;
   color: var(--dim);
@@ -1449,7 +1434,7 @@ main {
 
 .wiz-nav-note {
   font-family: var(--font-display);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 3px;
   color: var(--dim);
   text-transform: uppercase;
@@ -1508,7 +1493,7 @@ main {
   color: var(--dim);
   font: inherit;
   font-weight: 700;
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 2px;
   padding: 6px 14px;
   cursor: pointer;
@@ -1538,7 +1523,7 @@ main {
 }
 
 .board-table thead th {
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 2px;
   color: var(--dim);
   font-weight: 700;
@@ -1586,11 +1571,11 @@ main {
 .board-rank.rank-2 { border: none; color: #12161c; background: linear-gradient(180deg, #f4f7fb, #b9c3d3); }
 .board-rank.rank-3 { border: none; color: #1c0f04; background: linear-gradient(180deg, #f7c99e, #d98a4f); }
 
-.board-mode { font-size: 10px; letter-spacing: 2px; color: var(--dim); font-weight: 700; }
+.board-mode { font-size: 11px; letter-spacing: 2px; color: var(--dim); font-weight: 700; }
 .board-name { font-weight: 700; color: var(--text); }
 
 .board-you {
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 1px;
   color: #0a0620;
   background: linear-gradient(120deg, #fff, var(--magenta));
@@ -1819,7 +1804,7 @@ main {
 .result-score em {
   font-family: var(--font-display);
   font-style: normal;
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 4px;
   font-weight: 800;
   color: var(--dim);
@@ -1876,7 +1861,7 @@ main {
 
 .result-stat em {
   font-style: normal;
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 2px;
   color: var(--dim);
   font-weight: 700;
@@ -1944,7 +1929,7 @@ main {
 .result-standings .pts { color: var(--cyan-l); font-weight: 700; font-size: 13px; letter-spacing: 1px; font-family: var(--font-display); flex: none; }
 
 .result-standings .tag {
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 2px;
   color: #0a0620;
   background: linear-gradient(120deg, #fff, var(--magenta));
@@ -1985,7 +1970,7 @@ main {
 .result-menu kbd {
   font: inherit;
   font-family: var(--font-body);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 1px;
   border: 1px solid var(--line);
   border-radius: 5px;
@@ -2092,7 +2077,7 @@ main {
 .next-realm-txt em {
   font-family: var(--font-display);
   font-style: normal;
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 3px;
   font-weight: 800;
   color: var(--cyan-l);
@@ -2211,11 +2196,11 @@ main {
 .touch-pause {
   position: absolute; top: calc(0.7rem + env(safe-area-inset-top)); left: 50%;
   transform: translateX(-50%); pointer-events: auto;
-  width: 2.4rem; height: 2.4rem; border-radius: 50%;
+  width: 2.75rem; height: 2.75rem; border-radius: 50%;   /* 44px: a thumb-sized target */
   border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(10, 10, 16, 0.5);
   color: #fff; font: inherit; font-size: 0.7rem; letter-spacing: 0.1em;
 }
-html, body { overscroll-behavior: none; }
+@media (pointer: fine) { html, body { overscroll-behavior: none; } }
 .game-stage { touch-action: none; user-select: none; -webkit-user-select: none; }
 
 /* Quality segmented control + its caveat line, in the pause menu. */
@@ -2227,7 +2212,7 @@ html, body { overscroll-behavior: none; }
   font: inherit; font-size: 0.66rem; letter-spacing: 0.1em; cursor: pointer;
 }
 .seg button.on { color: #ffb020; border-color: rgba(255, 176, 32, 0.55); }
-.set-note { margin: 0.1rem 0 0.6rem; font-size: 0.62rem; line-height: 1.5; opacity: 0.5; }
+.set-note { margin: 0.1rem 0 0.6rem; font-size: 0.72rem; line-height: 1.5; color: var(--dim); }
 
 /* Failure screens — capability check and engine crash. */
 .fatal {
@@ -2316,7 +2301,7 @@ html, body { overscroll-behavior: none; }
   box-shadow: 0 0 0 4px rgba(192, 38, 211, 0.12), 0 10px 26px -12px rgba(192, 38, 211, 0.9);
 }
 .hero.slim .quick-race .qr-go { font-size: 0.95rem; }
-.hero.slim .quick-race .qr-sub { font-size: 0.58rem; letter-spacing: 0.14em; }
+.hero.slim .quick-race .qr-sub { font-size: 0.72rem; letter-spacing: 0.14em; }
 
 /* who you are, and the way out of it */
 .who {
@@ -2337,7 +2322,7 @@ html, body { overscroll-behavior: none; }
 .who:hover { border-color: var(--violet-l); }
 .who img { width: 20px; height: 20px; border-radius: 50%; }
 .who-name { font-family: var(--font-display); color: var(--gold-l); }
-.who-swap { font-size: 8.5px; letter-spacing: 2px; color: var(--dim); }
+.who-swap { font-size: 11px; letter-spacing: 2px; color: var(--dim); }
 
 .board-open {
   padding: 7px 14px;
@@ -2346,7 +2331,7 @@ html, body { overscroll-behavior: none; }
   background: rgba(34, 211, 238, 0.08);
   color: var(--cyan-l);
   font: inherit;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 2.4px;
   cursor: pointer;
@@ -2505,21 +2490,25 @@ html, body { overscroll-behavior: none; }
 }
 .gate-btn span {
   font-family: var(--font-body);
-  font-size: 11.5px;
+  font-size: 13.5px;
   font-weight: 500;
   letter-spacing: 0.4px;
   color: var(--muted);
 }
 .gate-btn:hover:not(:disabled) { border-color: var(--violet-l); transform: translateY(-2px); }
-.gate-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+/* Unavailable reads from the dashed edge and the dim title; the line saying
+   WHY stays legible, which at 45% opacity it was not (~2:1). */
+.gate-btn:disabled { cursor: not-allowed; color: var(--dim); border-style: dashed; }
+.gate-btn:disabled span { color: var(--muted); }
+.gate-btn.primary:disabled { opacity: 0.7; }
 .gate-btn.primary {
   border-color: transparent;
   background: var(--neon-hot);
   box-shadow: 0 12px 30px -14px rgba(192, 38, 211, 0.9);
 }
 .gate-btn.primary span { color: rgba(255, 255, 255, 0.82); }
-.gate-error { font-size: 12px; color: #fda4af; }
-.gate-note { font-size: 11px; line-height: 1.5; color: var(--dim); }
+.gate-error { font-size: 14px; color: #fda4af; }
+.gate-note { font-size: 13px; line-height: 1.5; color: var(--muted); }
 
 /* ---------- leaderboard as a sheet, not a slab under step 4 ---------- */
 
@@ -2547,7 +2536,7 @@ html, body { overscroll-behavior: none; }
   background: transparent;
   color: var(--muted);
   font: inherit;
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 2px;
   cursor: pointer;
 }
@@ -2640,14 +2629,14 @@ html, body { overscroll-behavior: none; }
 .first-run dt, .controls-ref dt {
   flex: 0 0 8.5rem;
   font-family: var(--font-display);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 1.6px;
   color: var(--gold);
   text-transform: uppercase;
 }
 .first-run dd, .controls-ref dd { font-size: 12px; color: var(--muted); }
-.first-run em { font-size: 10px; letter-spacing: 2px; color: var(--dim); font-style: normal; }
+.first-run em { font-size: 11px; letter-spacing: 2px; color: var(--dim); font-style: normal; }
 
 .controls-ref {
   margin: 4px 0 10px;
@@ -2731,7 +2720,7 @@ html, body { overscroll-behavior: none; }
 }
 .photo-tag {
   font-family: var(--font-display);
-  font-size: 9.5px;
+  font-size: 11px;
   font-weight: 800;
   letter-spacing: 3px;
   color: var(--ink);
@@ -2756,7 +2745,7 @@ html, body { overscroll-behavior: none; }
   background: transparent;
   color: var(--muted);
   font: inherit;
-  font-size: 9.5px;
+  font-size: 11px;
   letter-spacing: 2px;
   cursor: pointer;
 }
@@ -2827,13 +2816,13 @@ html, body { overscroll-behavior: none; }
   border: 1px solid rgba(34, 211, 238, 0.45);
   color: var(--cyan-l);
   font-family: var(--font-display);
-  font-size: 9.5px;
+  font-size: 11px;
   letter-spacing: 2.4px;
 }
 
 @media (max-width: 760px) {
   .photo-keys { display: none; }
-  .photo-what { font-size: 9px; }
+  .photo-what { font-size: 11px; }
 }
 
 /* --- locked cars ---------------------------------------------------------
@@ -2861,7 +2850,7 @@ html, body { overscroll-behavior: none; }
 }
 .car-card .car-lock em {
   font-style: normal;
-  font-size: 0.62rem;
+  font-size: 0.72rem;
   letter-spacing: 0.06em;
   color: #cbd5f5;
   text-transform: uppercase;
@@ -3000,9 +2989,9 @@ html, body { overscroll-behavior: none; }
    quiet — it is an answer to a question, not an advertisement. */
 .sync-line {
   margin: 0.3rem 0 0;
-  font: 500 0.6rem/1.5 var(--font-mono, monospace);
+  font: 600 0.72rem/1.5 var(--font-body);
   letter-spacing: 0.1em;
-  color: #6f6a8a;
+  color: var(--dim);
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -3013,7 +3002,7 @@ html, body { overscroll-behavior: none; }
 .sync-line.syncing { color: #67e8f9; }
 .sync-now {
   padding: 0.15rem 0.45rem;
-  font: 600 0.58rem/1 var(--font-mono, monospace);
+  font: 700 0.72rem/1 var(--font-body);
   letter-spacing: 0.1em;
   color: #cfe9f5;
   background: transparent;
@@ -3023,3 +3012,162 @@ html, body { overscroll-behavior: none; }
 }
 .sync-now:hover:not(:disabled) { color: #67e8f9; border-color: #67e8f9; }
 .sync-now:disabled { opacity: 0.45; cursor: default; }
+
+/* ==========================================================================
+   UI pass, 2026-10-21 — measured against screenshots at 1440, 1024 and 390.
+   Identity unchanged; these fix what the screenshots showed was broken or
+   empty. Kept together so the pass can be read (or reverted) as one thing.
+   ========================================================================== */
+
+/* --- mode cards: the world each mode races in, not a ghost index number ---
+   The old card was two lines of copy over ~70% empty panel and a 68px "01".
+   The art takes the slack the way the realm cards' art does, and the accent
+   line under it ties the card to its colour. */
+.mode-card { padding: 0; gap: 0; }
+.mode-art {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 72px;
+  display: flex;
+  gap: 2px;
+  overflow: hidden;
+  border-bottom: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+}
+.mode-art img {
+  flex: 1 1 0;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.5s var(--ease);
+}
+.mode-card:hover .mode-art img { transform: scale(1.04); }
+.mode-copy {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 18px 16px;
+}
+.mode-card .pick-flag { top: 10px; right: 10px; }
+.mode-tags i { letter-spacing: 1.5px; }
+
+/* --- go step: the lore sits on the world it describes -------------------
+   This step was centred between two empty bands. The world you are about to
+   drive is the thing worth looking at here. */
+.realm-lore {
+  position: relative;
+  min-height: clamp(120px, 24vh, 260px);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 18px 20px;
+  overflow: hidden;
+  isolation: isolate;
+}
+.realm-lore::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(90deg, rgba(7, 5, 26, 0.92) 0%, rgba(7, 5, 26, 0.6) 46%, rgba(7, 5, 26, 0.05) 100%),
+    var(--art);
+  background-size: cover;
+  background-position: center;
+}
+.realm-lore em { font-size: 13px; }
+.realm-lore p { max-width: 56ch; font-size: 15px; color: #ece6ff; }
+
+/* --- locked cars: the requirement is read, the stats are dimmed -----------
+   The requirement used to be an overlay lying on top of the car's own name,
+   and the whole card sat at half opacity, so the one line that says how to
+   get the car was the hardest thing on the screen to read. */
+.car-card.locked { opacity: 1; filter: none; }
+.car-card.locked .car-head strong { color: var(--dim); }
+.car-card.locked .car-stats { opacity: 0.45; filter: saturate(0.3); }
+.car-card .car-lock {
+  position: static;
+  inset: auto;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  gap: 5px;
+}
+.car-card .car-lock em { font-size: 11px; color: #e3dcff; letter-spacing: 0.05em; }
+
+/* --- the phone header --------------------------------------------------------
+   At 390px the header took ~230px of an 844px screen: the data-safety line
+   stacked into five one-word lines and DRIVE NOW became a wrapped circle. Now
+   two rows of controls and one full-width action. */
+@media (max-width: 680px) {
+  .hero.slim .hero-kicker { display: none; }
+  .hero-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px 10px;
+  }
+  .hero-side { display: contents; }
+  .sync-line { margin: 0; white-space: nowrap; }
+  .board-open { justify-self: end; }
+  .hero.slim .quick-race,
+  .daily-card,
+  .season-resume { grid-column: 1 / -1; }
+  .hero.slim .quick-race {
+    border-radius: 14px;
+    padding: 0.6rem 1rem;
+    width: 100%;
+  }
+  .hero.slim .quick-race .qr-sub {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .daily-card { margin-top: 0; flex-direction: row; align-items: center; }
+  .daily-go, .daily-wait { align-self: center; }
+
+  /* modes on a phone: a strip of art, not a square of it, and the grid
+     scrolls in its own box like the cars do rather than clipping the tags */
+  .home.fit .modes { grid-template-rows: none; grid-auto-rows: max-content; overflow-y: auto; padding: 2px; margin: -2px; }
+  .mode-art { flex: none; height: 64px; min-height: 0; }
+}
+
+/* touch: no grey flash and no double-tap zoom delay on the menu controls */
+.home button,
+.result-menu button,
+.pause-panel button {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* --- results actions: one primary, then the rest in a row under it ---------
+   Four side by side squeezed RACE AGAIN onto two lines while three outline
+   boxes the same height held one small word each. */
+.result-actions { flex-wrap: wrap; gap: 10px; }
+.result-actions .start { flex: 1 1 100%; }
+.result-menu { flex: 1 1 0; min-width: 0; padding: 13px 12px; letter-spacing: 2px; }
+@media (max-width: 720px) {
+  .result-menu { flex-basis: 100%; }
+}
+
+/* figures that sit in columns or tick over should not jiggle sideways */
+.board-table,
+.result-stats,
+.result-score,
+.place-time,
+.result-standings,
+.loadout-txt b {
+  font-variant-numeric: tabular-nums;
+}
+
+/* the scroll boxes clipped the 6px focus ring on edge cards */
+.home.fit .cars,
+.home.fit .realms { padding: 6px; margin: -6px; }
+
+/* a destructive pause action, armed and waiting for the second press */
+.pause-btn.armed { border-color: #fb7185; color: #fecdd3; background: rgba(244, 63, 94, 0.14); }
+.season-drop.armed { border-color: #fb7185; color: #fecdd3; }

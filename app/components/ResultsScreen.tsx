@@ -117,7 +117,11 @@ export default function ResultsScreen({
   useEffect(() => {
     againRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Enter") {
+      // Enter on a FOCUSED control is that control's own activation. Taking it
+      // here meant Tab to SHARE, press Enter, and a new race started instead.
+      const onOtherButton =
+        e.target instanceof HTMLElement && e.target.closest("button") && e.target !== againRef.current;
+      if (e.key === "Enter" && !onOtherButton) {
         e.preventDefault();
         onRaceAgain();
       } else if (e.key === "Escape") {
@@ -233,8 +237,8 @@ export default function ResultsScreen({
             ▸ WATCH LAP
           </button>
         )}
-        <button type="button" className="result-menu" disabled={sharing} onClick={onShare}>
-          {shareMsg ?? (sharing ? "…" : "SHARE RESULT")}
+        <button type="button" className="result-menu" disabled={sharing} onClick={onShare} aria-live="polite">
+          {shareMsg ?? (sharing ? "SAVING…" : "SHARE RESULT")}
         </button>
         <button type="button" className="result-menu" onClick={onMenu}>
           MENU <kbd>Esc</kbd>

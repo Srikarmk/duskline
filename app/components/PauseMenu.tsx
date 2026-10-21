@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { loadSettings, saveSettings, type Settings } from "@/src/ui/settings";
 import { loadIdentity } from "@/src/ui/identity";
 import { pushProfileSoon } from "@/src/ui/sync";
@@ -17,6 +17,13 @@ interface Props {
 export default function PauseMenu({ onResume, onRestart, onQuit, onApply, onPhoto }: Props) {
   const [view, setView] = useState<"menu" | "settings">("menu");
   const [s, setS] = useState<Settings>(() => loadSettings());
+  // RESTART and QUIT throw the race away, so each asks once: the first press
+  // arms it, a second confirms, anything else disarms.
+  const [armed, setArmed] = useState<"restart" | "quit" | null>(null);
+  const resumeRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (view === "menu") resumeRef.current?.focus();
+  }, [view]);
 
   const update = (patch: Partial<Settings>) => {
     const next = saveSettings(patch);
@@ -29,15 +36,29 @@ export default function PauseMenu({ onResume, onRestart, onQuit, onApply, onPhot
 
   return (
     <div className="pause-overlay">
-      <div className="pause-panel">
+      <div className="pause-panel" role="dialog" aria-modal="true" aria-label={view === "menu" ? "Paused" : "Settings"}>
         {view === "menu" ? (
           <>
             <h2>PAUSED</h2>
-            <button className="start" onClick={onResume}>RESUME</button>
-            <button className="pause-btn" onClick={onPhoto}>PHOTO MODE</button>
-            <button className="pause-btn" onClick={() => setView("settings")}>SETTINGS</button>
-            <button className="pause-btn" onClick={onRestart}>RESTART</button>
-            <button className="pause-btn" onClick={onQuit}>QUIT TO MENU</button>
+            <button type="button" ref={resumeRef} className="start" onClick={onResume}>RESUME</button>
+            <button type="button" className="pause-btn" onClick={() => { setArmed(null); onPhoto(); }}>PHOTO MODE</button>
+            <button type="button" className="pause-btn" onClick={() => { setArmed(null); setView("settings"); }}>SETTINGS</button>
+            <button
+              type="button"
+              className={`pause-btn ${armed === "restart" ? "armed" : ""}`}
+              onClick={() => (armed === "restart" ? onRestart() : setArmed("restart"))}
+              onBlur={() => armed === "restart" && setArmed(null)}
+            >
+              {armed === "restart" ? "PRESS AGAIN TO RESTART" : "RESTART"}
+            </button>
+            <button
+              type="button"
+              className={`pause-btn ${armed === "quit" ? "armed" : ""}`}
+              onClick={() => (armed === "quit" ? onQuit() : setArmed("quit"))}
+              onBlur={() => armed === "quit" && setArmed(null)}
+            >
+              {armed === "quit" ? "PRESS AGAIN TO QUIT" : "QUIT TO MENU"}
+            </button>
           </>
         ) : (
           <>
@@ -45,11 +66,13 @@ export default function PauseMenu({ onResume, onRestart, onQuit, onApply, onPhot
             <label className="set-row">
               <span>MUSIC</span>
               <input type="range" min={0} max={1} step={0.05} value={s.musicVolume}
+                aria-valuetext={`${Math.round(s.musicVolume * 100)}%`}
                 onChange={(e) => update({ musicVolume: +e.target.value })} />
             </label>
             <label className="set-row">
               <span>SFX</span>
               <input type="range" min={0} max={1} step={0.05} value={s.sfxVolume}
+                aria-valuetext={`${Math.round(s.sfxVolume * 100)}%`}
                 onChange={(e) => update({ sfxVolume: +e.target.value })} />
             </label>
             {/* The tier is the control that actually matters on slow hardware:
@@ -57,12 +80,13 @@ export default function PauseMenu({ onResume, onRestart, onQuit, onApply, onPhot
                 chain at once. The individual toggles below only nibble. */}
             <div className="set-row">
               <span>QUALITY</span>
-              <span className="seg">
+              <span className="seg" role="group" aria-label="Quality">
                 {(["low", "medium", "high"] as const).map((q) => (
                   <button
                     type="button"
                     key={q}
                     className={s.quality === q ? "on" : ""}
+                    aria-pressed={s.quality === q}
                     onClick={() => update({ quality: q })}
                   >{q.toUpperCase()}</button>
                 ))}
@@ -113,7 +137,7 @@ export default function PauseMenu({ onResume, onRestart, onQuit, onApply, onPhot
               <div><dt>M</dt><dd>mute</dd></div>
               <div><dt>ESC / P</dt><dd>pause</dd></div>
             </dl>
-            <button className="start" onClick={() => setView("menu")}>BACK</button>
+            <button type="button" className="start" onClick={() => setView("menu")}>BACK</button>
           </>
         )}
       </div>

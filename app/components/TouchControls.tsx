@@ -54,11 +54,13 @@ export default function TouchControls({ onPause }: Props) {
     };
   }, []);
 
-  const pad = (which: keyof typeof KEY, label: string, cls: string) => (
+  // `label` is what the pad shows; `name` is what a screen reader says —
+  // "◀" and "BRK" are glyphs, not names.
+  const pad = (which: keyof typeof KEY, label: string, cls: string, name: string) => (
     <button
       type="button"
       className={`tpad ${cls}`}
-      aria-label={label}
+      aria-label={name}
       onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); press(which, true); }}
       onPointerUp={(e) => { e.preventDefault(); press(which, false); }}
       onPointerCancel={() => press(which, false)}
@@ -68,15 +70,15 @@ export default function TouchControls({ onPause }: Props) {
   );
 
   return (
-    <div className="touch" aria-hidden="false">
+    <div className="touch">
       <div className="touch-left">
-        {pad("left", "◀", "steer")}
-        {pad("right", "▶", "steer")}
+        {pad("left", "◀", "steer", "Steer left")}
+        {pad("right", "▶", "steer", "Steer right")}
       </div>
       <div className="touch-right">
-        {pad("nitro", "NOS", "nos")}
-        {pad("down", "BRK", "brake")}
-        {pad("up", "GO", "gas")}
+        {pad("nitro", "NOS", "nos", "Nitro")}
+        {pad("down", "BRK", "brake", "Brake")}
+        {pad("up", "GO", "gas", "Accelerate")}
       </div>
       <button type="button" className="touch-pause" onClick={onPause} aria-label="Pause">II</button>
     </div>

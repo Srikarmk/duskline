@@ -47,7 +47,10 @@ export default function PhotoMode({ onShoot, onExit, onNudge, realm, car, touch 
     const onKey = (e: KeyboardEvent) => {
       // SPACE is the shutter and ESC leaves. Both are swallowed so they do not
       // also reach the engine (space is nitro) or the pause toggle.
-      if (e.key === " ") {
+      // …unless a button has focus: Space is how a keyboard presses DONE, and it
+      // used to take a photo instead.
+      const onButton = e.target instanceof HTMLElement && e.target.closest("button");
+      if (e.key === " " && !onButton) {
         e.preventDefault();
         e.stopPropagation();
         shoot();

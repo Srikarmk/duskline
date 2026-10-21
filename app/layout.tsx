@@ -53,7 +53,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport = {
-  themeColor: "#07070b",
+  themeColor: "#07051a",   // the page's own --ink, so the browser chrome meets it
   // Without width=device-width a phone renders at a 980px layout width and
   // scales down, so the HUD is unreadable.
   //
