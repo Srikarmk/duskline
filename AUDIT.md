@@ -757,6 +757,42 @@ columns still fit down to 900. The showroom now has a floor of
 floor bites. It is 20vh and not 22 because 22 put ten pixels of pointless
 scroll on 1366×768, the commonest laptop screen there is.
 
+### ✅ 🔴 N11 — The cars shook at speed on high-refresh screens
+
+Reported 2026-10-21: "the cars are shaking when they're speeding". The loop
+steps the simulation at a fixed 60 Hz and rendered the latest step as-is, with
+no interpolation. On a 120 Hz display every other frame showed a car that had
+not moved, while the chase camera eased toward it every *rendered* frame — so
+the car lurched forward one frame and slid back the next, by more the faster
+it went (1.2 m per step at 70 m/s). Rivals are placed inside the step too.
+
+Measured by driving `frame()` with synthetic timestamps at 65 m/s, camera
+shake off, and taking the frame-to-frame wobble of each car on a 1080p screen
+(the second difference of its projected position):
+
+| | Player, before | after | Nearest rival, before | after |
+| --- | --- | --- | --- | --- |
+| 60 Hz, exact | 0.05 px | 0.05 px | 0.18 px | 0.15 px |
+| 60 Hz, ±3 ms timing jitter | 1.07 px | 0.13 px | 1.05 px | 0.12 px |
+| 120 Hz | 5.21 px | 0.04 px | 1.92 px | 0.22 px |
+| 144 Hz | 4.71 px | 0.04 px | 1.51 px | 0.13 px |
+
+Fix: draw the player's pose and the rivals between the last two steps, at the
+fraction of a step the clock has reached (`renderInterpolated` in engine.ts),
+and put the true state back the moment the frame is drawn. The camera's
+per-frame easing factors are now converted to real time (`ease()`), so a fast
+screen no longer settles the camera twice as fast. Exact 60 Hz is unchanged.
+
+Two measurement traps, both mine:
+
+- The rival has to be measured *inside* `render()`. After `frame()` returns
+  its true position has been restored, and projecting that through the
+  blended camera made the fix look like it did nothing.
+- A harness clock that runs ahead of the real one lets the game's own rAF
+  deliver an earlier timestamp: a negative frame time, which `ease()` turned
+  into a factor far above 1 and the camera flew to 10^93 m. Real rAF is
+  monotonic, but the frame time is now clamped at zero anyway.
+
 ---
 
 ## 2. What we could improve

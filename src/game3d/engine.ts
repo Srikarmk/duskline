@@ -4384,14 +4384,142 @@ export class Game {
     // matters is the sustained rate, not one slow frame
     this.frameMs += (raw - this.frameMs) * 0.06;
     this.accumulator += raw / 1000;
+    // Never negative: rAF timestamps are monotonic, but ease() turns a negative
+    // frame time into a factor far above 1, and one of those throws the camera
+    // into orbit. (A test harness stepping its own clock found it.)
+    this.renderDt = clamp(raw / 1000, 0, 0.1);
     this.last = now;
     while (this.accumulator >= STEP) {
+      this.captureRenderState(this.prevView);
+      this.hasPrevView = true;
       this.update(STEP);
       this.accumulator -= STEP;
     }
-    this.render();
+    this.renderInterpolated(this.accumulator / STEP);
     this.rafId = requestAnimationFrame(this.frame);
   };
+
+  /*
+   * RENDER INTERPOLATION.
+   *
+   * The simulation steps at a fixed 60 Hz; the display refreshes at whatever
+   * it refreshes at. Rendering the latest step as-is meant that on a 120 Hz
+   * screen every other frame showed a car that had not moved — while the chase
+   * camera, which eases toward the car every RENDERED frame, kept closing in.
+   * So the car lurched forward one frame and slid back the next, by more the
+   * faster it went: measured at 70 m/s, 5.6 px RMS frame-to-frame wobble at
+   * 120 Hz against 0.9 px at 60 Hz, and the rivals the same. That was "the
+   * cars shake when they're speeding".
+   *
+   * The fix is the standard one: draw the world between the last two steps, at
+   * the fraction of a step the clock has reached. Only what the eye tracks is
+   * blended — the player's pose, the camera's inputs, and the rivals — and the
+   * true state is put back the moment the frame is drawn, so nothing the
+   * simulation reads ever sees a blended value.
+   */
+  private renderDt = STEP;
+  private hasPrevView = false;
+  private prevView = Game.emptyView();
+  private currView = Game.emptyView();
+  private mixView = Game.emptyView();
+  private oppPrev: number[] = [];
+  private oppCurr: number[] = [];
+
+  private static emptyView() {
+    return {
+      x: 0, z: 0, heading: 0, lateral: 0, dist: 0, slip: 0,
+      alt: 0, carPitch: 0, carYaw: 0, weightPitch: 0, weightRoll: 0, gLoad: 0, steer: 0, time: 0,
+    };
+  }
+
+  private captureRenderState(v: ReturnType<typeof Game.emptyView>) {
+    const fd = this.freeDrive;
+    v.x = fd.x; v.z = fd.z; v.heading = fd.heading; v.lateral = fd.lateral; v.dist = fd.dist; v.slip = fd.slip;
+    v.alt = this.alt; v.carPitch = this.carPitch; v.carYaw = this.carYaw;
+    v.weightPitch = this.weightPitch; v.weightRoll = this.weightRoll; v.gLoad = this.gLoad;
+    v.steer = this.steer; v.time = this.time;
+    if (v === this.prevView) this.captureOpponents(this.oppPrev);
+  }
+
+  private applyRenderState(v: ReturnType<typeof Game.emptyView>) {
+    const fd = this.freeDrive;
+    fd.x = v.x; fd.z = v.z; fd.heading = v.heading; fd.lateral = v.lateral; fd.dist = v.dist; fd.slip = v.slip;
+    this.position = v.dist;
+    this.alt = v.alt; this.carPitch = v.carPitch; this.carYaw = v.carYaw;
+    this.weightPitch = v.weightPitch; this.weightRoll = v.weightRoll; this.gLoad = v.gLoad;
+    this.steer = v.steer; this.time = v.time;
+  }
+
+  /** Rival transforms, flat: x, y, z, yaw, roll per car. */
+  private captureOpponents(out: number[]) {
+    out.length = 0;
+    for (const o of this.opponents) {
+      const p = o.obj.position;
+      out.push(p.x, p.y, p.z, o.obj.rotation.y, o.obj.rotation.z);
+    }
+  }
+
+  private renderInterpolated(alpha: number) {
+    const a = clamp(alpha, 0, 1);
+    if (!this.hasPrevView || this.phase === "loading") { this.render(); return; }
+    const p = this.prevView, c = this.currView, m = this.mixView;
+    this.captureRenderState(c);
+    // A respawn or reset moves the car tens of metres in one step; blending
+    // across it would draw the car flying between the two spots for a frame.
+    if (Math.hypot(c.x - p.x, c.z - p.z) > 25) { this.render(); return; }
+
+    const lerp = (x: number, y: number) => x + (y - x) * a;
+    const lerpAngle = (x: number, y: number) => x + Math.atan2(Math.sin(y - x), Math.cos(y - x)) * a;
+    let dd = c.dist - p.dist;                       // across the start line, the short way
+    const len = this.track.length;
+    if (dd > len / 2) dd -= len; else if (dd < -len / 2) dd += len;
+    m.x = lerp(p.x, c.x); m.z = lerp(p.z, c.z);
+    m.heading = lerpAngle(p.heading, c.heading);
+    m.lateral = lerp(p.lateral, c.lateral);
+    m.dist = this.track.wrap(p.dist + dd * a);
+    m.slip = lerp(p.slip, c.slip);
+    m.alt = lerp(p.alt, c.alt);
+    m.carPitch = lerp(p.carPitch, c.carPitch); m.carYaw = lerpAngle(p.carYaw, c.carYaw);
+    m.weightPitch = lerp(p.weightPitch, c.weightPitch); m.weightRoll = lerp(p.weightRoll, c.weightRoll);
+    m.gLoad = lerp(p.gLoad, c.gLoad); m.steer = lerp(p.steer, c.steer);
+    m.time = lerp(p.time, c.time);
+
+    this.captureOpponents(this.oppCurr);
+    const op = this.oppPrev, oc = this.oppCurr;
+    const blendRivals = op.length === oc.length;
+    if (blendRivals) {
+      this.opponents.forEach((o, i) => {
+        const k = i * 5;
+        // a rival that was just reset (respawn after a crash) jumps; draw it where it is
+        if (Math.hypot(oc[k] - op[k], oc[k + 2] - op[k + 2]) > 25) return;
+        o.obj.position.set(lerp(op[k], oc[k]), lerp(op[k + 1], oc[k + 1]), lerp(op[k + 2], oc[k + 2]));
+        o.obj.rotation.y = lerpAngle(op[k + 3], oc[k + 3]);
+        o.obj.rotation.z = lerp(op[k + 4], oc[k + 4]);
+      });
+    }
+
+    this.applyRenderState(m);
+    try {
+      this.render();
+    } finally {
+      this.applyRenderState(c);
+      if (blendRivals) {
+        this.opponents.forEach((o, i) => {
+          const k = i * 5;
+          o.obj.position.set(oc[k], oc[k + 1], oc[k + 2]);
+          o.obj.rotation.y = oc[k + 3];
+          o.obj.rotation.z = oc[k + 4];
+        });
+      }
+    }
+  }
+
+  /** A per-frame easing factor `k` tuned at 60 fps, converted to this frame's
+   *  real length — so the camera settles in the same TIME at 60, 120 or 144 Hz
+   *  instead of twice as fast on a fast screen. */
+  private ease(k: number): number {
+    return 1 - Math.pow(1 - k, this.renderDt * 60);
+  }
 
   /**
    * The most recently COMPLETED lap, as a flat [x, z, heading, alt, …] array.
@@ -6079,7 +6207,7 @@ export class Game {
       let dyaw = targetYaw - this.camYaw;
       dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw));
       if (this.camSnap) this.camYaw = targetYaw;
-      else this.camYaw += dyaw * 0.17; // settle faster so the view leads the corner instead of trailing it
+      else this.camYaw += dyaw * this.ease(0.17); // settle faster so the view leads the corner instead of trailing it
       const fx = Math.sin(this.camYaw), fz = Math.cos(this.camYaw);
 
       // Drive the speed smear from the SAME number as the FOV kick, so the
@@ -6089,14 +6217,14 @@ export class Game {
           ? 0
           : (Math.max(0, spd - 0.45) / 0.55) * (boosting ? 1.35 : 1);
         const u = this.radialBlur.uniforms.amount;
-        u.value += (Math.min(1.15, want) - u.value) * 0.1;
+        u.value += (Math.min(1.15, want) - u.value) * this.ease(0.1);
       }
       // FOV kick, eased back from 9/12. A wide lens at speed stretches the
       // periphery, which makes the same roadside object cross the frame faster
       // AND arrive distorted — the opposite of legible. The smear now carries
       // the sense of speed, so the lens doesn't have to shout.
       const targetFov = preset.fov + spd * 5 + (boosting ? 8 : 0);
-      this.camera.fov += (targetFov - this.camera.fov) * (boosting ? 0.14 : 0.08); // snappier kick, gentle relax
+      this.camera.fov += (targetFov - this.camera.fov) * this.ease(boosting ? 0.14 : 0.08); // snappier kick, gentle relax
       this.camera.updateProjectionMatrix();
 
       const camAnchor = new THREE.Vector3(
@@ -6126,7 +6254,7 @@ export class Game {
       // beside it, and the lift rocketed the viewpoint to 8.7 m. The eased,
       // road-first floor below is the whole fix; this was one term too many.
       if (this.camSnap) { this.camPos.copy(camAnchor); this.camSnap = false; this.camFloor = 0; }
-      else this.camPos.lerp(camAnchor, preset.follow);
+      else this.camPos.lerp(camAnchor, this.ease(preset.follow));
 
       // DO NOT LET THE CAMERA GO UNDER THE GROUND. Its height is taken from the
       // road at the CAR's position, but it sits several metres behind — and on
@@ -6160,7 +6288,7 @@ export class Game {
         // at 0.5 is quick enough to stay out of the tarmac (the surface under
         // the camera moves slowly now the corridor is wide); falling at 0.12
         // is what stops a crest from dropping the viewpoint out from under you.
-        const k = floor > this.camFloor ? 0.5 : 0.12;
+        const k = this.ease(floor > this.camFloor ? 0.5 : 0.12);
         this.camFloor = this.camFloor === 0 ? floor : this.camFloor + (floor - this.camFloor) * k;
         if (this.camPos.y < this.camFloor) this.camPos.y = this.camFloor;
       }
