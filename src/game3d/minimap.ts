@@ -4,6 +4,8 @@ export interface MapDot {
   x: number;
   z: number;
   color: string;
+  /** Radians, same convention as freeDrive.heading: forward = (sin h, cos h). */
+  heading?: number;
 }
 
 /** Top-down minimap of the circuit, drawn onto the 2D HUD canvas. */
@@ -57,7 +59,7 @@ export class Minimap {
     ctx.strokeRect(ox, oy, size, size * (this.h / Math.max(this.w, this.h)) + pad);
 
     // track ribbon
-    ctx.strokeStyle = "#5b5378";
+    ctx.strokeStyle = "#6a6290";
     ctx.lineWidth = 6;
     ctx.lineJoin = "round";
     ctx.beginPath();
@@ -97,21 +99,36 @@ export class Minimap {
     ctx.fillStyle = "#fbbf24";
     ctx.fillRect(px(s.x) - 3, py(s.z) - 3, 6, 6);
 
-    // opponents
+    // opponents — a dark rim so a pale livery still reads on the pale ribbon
+    ctx.strokeStyle = "#0b0b1a";
+    ctx.lineWidth = 1.5;
     for (const o of opponents) {
       ctx.fillStyle = o.color;
       ctx.beginPath();
       ctx.arc(px(o.x), py(o.z), 3.5, 0, Math.PI * 2);
       ctx.fill();
+      ctx.stroke();
     }
 
-    // player
-    ctx.fillStyle = "#67e8f9";
-    ctx.strokeStyle = "#0b0b1a";
-    ctx.lineWidth = 1.5;
+    // player: an arrow, not a dot. As a cyan dot it was the same shape as the
+    // nine rivals and close in colour to the teal one, and it could not say
+    // which way you were going — which is the question a glance at the map is for.
+    const X = px(player.x), Y = py(player.z);
+    ctx.save();
+    ctx.translate(X, Y);
+    if (player.heading !== undefined) ctx.rotate(Math.atan2(Math.cos(player.heading), Math.sin(player.heading)));
     ctx.beginPath();
-    ctx.arc(px(player.x), py(player.z), 5, 0, Math.PI * 2);
+    ctx.moveTo(8, 0);
+    ctx.lineTo(-5, 5.5);
+    ctx.lineTo(-2.5, 0);
+    ctx.lineTo(-5, -5.5);
+    ctx.closePath();
+    ctx.fillStyle = player.color;
     ctx.fill();
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 1.5;
+    ctx.lineJoin = "round";
     ctx.stroke();
+    ctx.restore();
   }
 }

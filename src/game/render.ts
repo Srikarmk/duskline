@@ -569,6 +569,36 @@ export interface HudState {
   replay?: boolean;
 }
 
+/**
+ * The game's own faces, for canvas text.
+ *
+ * Every HUD string used to be `monospace`, so the race was the one screen in
+ * the game set in Courier while the menus around it were Orbitron and
+ * Rajdhani. next/font serves both under generated family names, exposed as
+ * --font-orbitron / --font-rajdhani on <html>; a canvas needs the real name,
+ * so read it from there. Cached once it resolves.
+ */
+let FACES: { display: string; body: string } | null = null;
+function faces(): { display: string; body: string } {
+  if (FACES) return FACES;
+  let display = "", body = "";
+  if (typeof document !== "undefined") {
+    const cs = getComputedStyle(document.documentElement);
+    display = cs.getPropertyValue("--font-orbitron").trim();
+    body = cs.getPropertyValue("--font-rajdhani").trim();
+  }
+  const f = {
+    display: `${display ? display + ", " : ""}"Arial Black", sans-serif`,
+    body: `${body ? body + ", " : ""}"Segoe UI", system-ui, sans-serif`,
+  };
+  if (display && body) FACES = f;
+  return f;
+}
+/** Orbitron: numbers and callouts. */
+const disp = (px: number, weight = 800) => `${weight} ${Math.round(px)}px ${faces().display}`;
+/** Rajdhani: labels. 11px is the floor for anything a player has to read. */
+const ui = (px: number, weight = 600) => `${weight} ${Math.round(Math.max(11, px))}px ${faces().body}`;
+
 function panel(
   ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number,
   accent = "#c084fc"
@@ -597,7 +627,7 @@ export function formatTime(seconds: number) {
 
 function drawFps(ctx: CanvasRenderingContext2D, fps: number, ms: number, vw: number) {
   ctx.save();
-  ctx.font = "600 12px ui-monospace, Menlo, monospace";
+  ctx.font = ui(13, 700);
   ctx.textAlign = "right";
   // green above 55, amber 30-55, red below — so a screenshot of it is
   // self-explanatory without having to know what a good number is
@@ -615,16 +645,19 @@ export function drawHud(
   // --- speed (top-left) ---
   panel(ctx, 16, 16, 168, 66);
   ctx.fillStyle = hud.nitroActive ? "#fb923c" : "#e8e0ff";
-  ctx.font = "bold 30px monospace";
+  ctx.font = disp(30);
   ctx.textAlign = "left";
   ctx.fillText(`${hud.mph}`, 28, 40);
-  ctx.fillStyle = "#8b85a8";
-  ctx.font = "11px monospace";
-  ctx.fillText("MPH", 92, 44);
+  // Orbitron's figures are wider than monospace's were, so the unit follows
+  // the number rather than sitting at a fixed x it would collide with.
+  const mphRight = 28 + ctx.measureText(`${hud.mph}`).width;
+  ctx.fillStyle = "#a7a1c6";
+  ctx.font = ui(12, 700);
+  ctx.fillText("MPH", mphRight + 6, 44);
   if (hud.carName) {
     ctx.textAlign = "right";
     ctx.fillStyle = "#c084fc";
-    ctx.font = "bold 12px monospace";
+    ctx.font = ui(13, 700);
     ctx.fillText(hud.carName, 176, 30);
   }
   // speed bar
@@ -641,13 +674,13 @@ export function drawHud(
   // --- score + lap/time (top-right) ---
   panel(ctx, vw - 200, 16, 184, 66);
   ctx.fillStyle = "#fbbf24";
-  ctx.font = "bold 26px monospace";
+  ctx.font = disp(24);
   ctx.textAlign = "right";
   // In a replay the score is fixed and already on the results screen behind
   // this; the clock running through the lap is the number worth watching.
   ctx.fillText(hud.replay ? formatTime(hud.raceTime) : `${hud.score}`, vw - 28, 38);
-  ctx.fillStyle = "#cfc9e8";
-  ctx.font = "14px monospace";
+  ctx.fillStyle = "#d8d2f0";
+  ctx.font = ui(15, 600);
   // Endless has no lap target — "LAP 1/9999" is meaningless, so show how far
   // you've actually driven, which IS the score in that mode.
   ctx.fillText(
@@ -664,11 +697,11 @@ export function drawHud(
     const lead = hud.position === 1;
     panel(ctx, vw - 200, 90, 184, 46, lead ? "#fbbf24" : "#c084fc");
     ctx.fillStyle = lead ? "#fbbf24" : "#f0abfc";
-    ctx.font = "bold 28px monospace";
+    ctx.font = disp(26);
     ctx.textAlign = "right";
     ctx.fillText(ord, vw - 28, 114);
-    ctx.fillStyle = "#8b85a8";
-    ctx.font = "12px monospace";
+    ctx.fillStyle = "#a7a1c6";
+    ctx.font = ui(14, 600);
     ctx.textAlign = "left";
     ctx.fillText(`of ${hud.totalRacers}`, vw - 192, 114);
   }
@@ -750,8 +783,8 @@ export function drawHud(
     // (driftBoostT), it does not bank a nitro charge. Charges come back on a
     // ~14 s timer and from cans, so "CHARGING" is what is actually happening.
     const label = burning ? "BOOSTING" : charges > 0 ? "[SPACE] NITRO" : "CHARGING…";
-    ctx.fillStyle = burning ? "#fbbf24" : charges > 0 ? "#a7f3d0" : "#6f6a8a";
-    ctx.font = "9px monospace";
+    ctx.fillStyle = burning ? "#fbbf24" : charges > 0 ? "#a7f3d0" : "#a7a1c6";
+    ctx.font = ui(12, 700);
     ctx.textAlign = "center";
     ctx.fillText(label, bx + bw / 2, by + bh + 13);
     ctx.textAlign = "left";
@@ -764,7 +797,7 @@ export function drawHud(
     const links = hud.chainLinks ?? 0;
     const pending = hud.chainPending ?? 0;
     const mult = Math.min(6, 1 + Math.floor(links / 2));
-    const w = 176, h = 44, x = Math.round(vw / 2 - w / 2), y = 132;
+    const w = 176, h = 52, x = Math.round(vw / 2 - w / 2), y = 132;
     panel(ctx, x, y, w, h);
 
     // the fuse: how long until it banks
@@ -776,18 +809,18 @@ export function drawHud(
 
     ctx.textAlign = "left";
     ctx.fillStyle = "#67e8f9";
-    ctx.font = "bold 22px monospace";
-    ctx.fillText(`x${mult}`, x + 12, y + 26);
+    ctx.font = disp(20);
+    ctx.fillText(`x${mult}`, x + 12, y + 21);
 
     ctx.fillStyle = "#e8e0ff";
-    ctx.font = "bold 18px monospace";
+    ctx.font = disp(16, 700);
     ctx.textAlign = "right";
-    ctx.fillText(`+${pending.toLocaleString()}`, x + w - 12, y + 26);
+    ctx.fillText(`+${pending.toLocaleString()}`, x + w - 12, y + 21);
 
-    ctx.fillStyle = "#8b85a8";
-    ctx.font = "8px monospace";
+    ctx.fillStyle = "#a7a1c6";
+    ctx.font = ui(12, 700);
     ctx.textAlign = "center";
-    ctx.fillText(`${links} LINK${links === 1 ? "" : "S"} AT STAKE`, x + w / 2, y + 38);
+    ctx.fillText(`${links} LINK${links === 1 ? "" : "S"} AT STAKE`, x + w / 2, y + 36);
     ctx.textAlign = "left";
   }
 
@@ -799,17 +832,23 @@ export function drawHud(
   if ((hud.grip ?? 1) < 0.995) {
     const g = Math.max(0, Math.min(1, hud.grip ?? 1));
     const w = 104, x = 18, y = 96;
+    const cause = `${hud.gripCause ?? "SURFACE"}`;
+    ctx.font = ui(13, 700);
+    const causeW = ctx.measureText(cause).width;
+    ctx.font = ui(12, 600);
+    const gripText = `GRIP ${Math.round(g * 100)}%`;
+    const boxW = Math.max(w, causeW + 8 + ctx.measureText(gripText).width);
     ctx.fillStyle = "rgba(20,17,34,0.7)";
-    ctx.fillRect(x - 6, y - 15, w + 12, 30);
+    ctx.fillRect(x - 6, y - 15, boxW + 12, 30);
     ctx.textAlign = "left";
     // amber for a nuisance, red once it is genuinely treacherous
     const col = g < 0.85 ? "#f87171" : "#fbbf24";
     ctx.fillStyle = col;
-    ctx.font = "bold 11px monospace";
-    ctx.fillText(`${hud.gripCause ?? "SURFACE"}`, x, y - 4);
-    ctx.fillStyle = "#6f6a8a";
-    ctx.font = "9px monospace";
-    ctx.fillText(`GRIP ${Math.round(g * 100)}%`, x + 58, y - 4);
+    ctx.font = ui(13, 700);
+    ctx.fillText(cause, x, y - 4);
+    ctx.fillStyle = "#a7a1c6";
+    ctx.font = ui(12, 600);
+    ctx.fillText(gripText, x + causeW + 8, y - 4);
     ctx.fillStyle = "#2a2340";
     ctx.fillRect(x, y + 3, w, 4);
     ctx.fillStyle = col;
@@ -828,19 +867,23 @@ export function drawHud(
     ctx.fillRect(x, y, w * f, h);
     ctx.textAlign = "center";
     ctx.fillStyle = "#5eead4";
-    ctx.font = "bold 8px monospace";
-    ctx.fillText("SLIPSTREAM", vw / 2, y - 4);
+    ctx.font = ui(12, 700);
+    ctx.fillText("SLIPSTREAM", vw / 2, y - 7);
     ctx.textAlign = "left";
   }
 
   // --- control hints (bottom-left, above nitro) ---
+  // These sat in dim grey straight on the 3D frame, which over a sunset sky or
+  // a bright road made them close to invisible. Now on a backing strip.
   if (hud.cameraName) {
-    ctx.fillStyle = "#6f6a8a";
-    ctx.font = "11px monospace";
+    const hint = `[C] ${hud.cameraName}    [M] SOUND ${hud.soundMuted ? "OFF" : "ON"}    [ESC] ${hud.replay ? "EXIT REPLAY" : "PAUSE"}`;
+    ctx.font = ui(13, 600);
     ctx.textAlign = "left";
-    ctx.fillText(
-      `[C] ${hud.cameraName}    [M] SOUND ${hud.soundMuted ? "OFF" : "ON"}    [ESC] ${hud.replay ? "EXIT REPLAY" : "PAUSE"}`,
-      18, vh - 74);
+    const hw = ctx.measureText(hint).width;
+    ctx.fillStyle = "rgba(11, 11, 26, 0.55)";
+    ctx.fillRect(10, vh - 86, hw + 16, 24);
+    ctx.fillStyle = "#cfc9e8";
+    ctx.fillText(hint, 18, vh - 74);
   }
 
   // --- transform timer (top center) ---
@@ -850,7 +893,7 @@ export function drawHud(
     ctx.fillStyle = "#d946ef";
     ctx.fillRect(vw / 2 - w / 2 + 4, 20, (w - 8) * (hud.transformT / TRANSFORM_DURATION), 20);
     ctx.fillStyle = "#fdf4ff";
-    ctx.font = "bold 13px monospace";
+    ctx.font = ui(14, 700);
     ctx.textAlign = "center";
     ctx.fillText("TRANSFORMED — SHIFT TO FLY", vw / 2, 30);
   }
@@ -874,17 +917,17 @@ export function drawHud(
       panel(ctx, x, by, slotW, slotH, has ? (next ? "#f0abfc" : "#8b5cf6") : "#2c264a");
       if (has) {
         ctx.fillStyle = next ? "#f7d0ff" : "#c9a5f7";
-        ctx.font = "bold 14px monospace";
+        ctx.font = ui(15, 700);
         ctx.fillText(`◆ ${items[i]}`, x + slotW / 2, by + slotH / 2 + 1);
       } else {
         ctx.fillStyle = "#55506e";
-        ctx.font = "11px monospace";
+        ctx.font = ui(12, 600);
         ctx.fillText("—", x + slotW / 2, by + slotH / 2 + 1);
       }
     }
-    ctx.fillStyle = "#8b85a8";
-    ctx.font = "10px monospace";
-    ctx.fillText("POWER-UPS · [E] FIRE", vw / 2, by - 9);
+    ctx.fillStyle = "#a7a1c6";
+    ctx.font = ui(12, 700);
+    ctx.fillText("POWER-UPS · [E] FIRE", vw / 2, by - 10);
   }
 
   // off-track warning: an amber pulsing edge + a big countdown telling you to
@@ -898,10 +941,10 @@ export function drawHud(
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillStyle = "#fbbf24";
-    ctx.font = "bold 26px monospace";
+    ctx.font = disp(24);
     ctx.fillText("⚠ RETURN TO TRACK", vw / 2, vh * 0.22);
     ctx.fillStyle = "#fde68a";
-    ctx.font = "bold 42px monospace";
+    ctx.font = disp(40, 900);
     ctx.fillText(String(secs), vw / 2, vh * 0.22 + 42);
   }
 
@@ -1018,7 +1061,7 @@ export function drawToasts(
 ) {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.font = "bold 19px monospace";
+  ctx.font = disp(17, 700);
   toasts.forEach((toast, i) => {
     ctx.globalAlpha = Math.min(1, toast.t * 2);
     ctx.fillStyle = "rgba(0,0,0,0.5)";
@@ -1051,8 +1094,12 @@ export function drawCallout(
   ctx.translate(cx, cy);
   ctx.scale(scale, scale);
 
-  const big = Math.max(30, Math.min(52, vw * 0.05));
-  ctx.font = `bold ${big}px monospace`;
+  // Orbitron runs wider than monospace did; a long callout shrinks to fit
+  // rather than running off a phone screen.
+  let big = Math.max(30, Math.min(52, vw * 0.05));
+  ctx.font = disp(big, 900);
+  const wide = ctx.measureText(text).width;
+  if (wide > vw * 0.88) { big *= (vw * 0.88) / wide; ctx.font = disp(big, 900); }
   ctx.lineWidth = Math.max(3, big * 0.12);
   ctx.strokeStyle = "rgba(8, 6, 20, 0.85)";
   ctx.strokeText(text, 0, 0);
@@ -1060,8 +1107,8 @@ export function drawCallout(
   ctx.fillText(text, 0, 0);
 
   if (sub) {
-    const small = Math.max(12, big * 0.34);
-    ctx.font = `bold ${small}px monospace`;
+    const small = Math.max(13, big * 0.4);
+    ctx.font = ui(small, 700);
     ctx.lineWidth = Math.max(2, small * 0.14);
     ctx.strokeText(sub, 0, big * 0.72);
     ctx.fillStyle = "#f4f0ff";
@@ -1075,7 +1122,7 @@ export function drawCenterText(
   ctx: CanvasRenderingContext2D, text: string, size = 64, color = "#e8e0ff",
   vw = WIDTH, vh = HEIGHT
 ) {
-  ctx.font = `bold ${size}px monospace`;
+  ctx.font = disp(size, 900);
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillStyle = "rgba(11, 11, 26, 0.5)";
@@ -1104,7 +1151,7 @@ export function drawReplayBar(
   ctx.strokeStyle = "rgba(103, 232, 249, 0.55)";
   ctx.lineWidth = 1;
   ctx.strokeRect(x + 0.5, y + 0.5, w - 1, 29);
-  ctx.font = "bold 13px monospace";
+  ctx.font = ui(14, 700);
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
   ctx.fillStyle = "#67e8f9";
@@ -1166,8 +1213,8 @@ export function drawStartLights(
 
   if (lightsOut) drawCenterText(ctx, "GO!", 76, "#4ade80", vw, vh);
   else {
-    ctx.fillStyle = "#8b85a8";
-    ctx.font = "bold 13px monospace";
+    ctx.fillStyle = "#b9b3d8";
+    ctx.font = ui(14, 700);
     ctx.textAlign = "center";
     ctx.fillText("LIGHTS OUT TO START", vw / 2, cy + rowGap / 2 + r + padY + 16);
   }

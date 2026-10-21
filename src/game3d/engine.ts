@@ -6422,7 +6422,7 @@ export class Game {
         vw - size - 18,
         vh - size - 18,
         size,
-        { x: this.playerRoot.position.x, z: this.playerRoot.position.z, color: "#67e8f9" },
+        { x: this.playerRoot.position.x, z: this.playerRoot.position.z, color: "#67e8f9", heading: this.freeDrive.heading },
         this.opponents.map((o) => ({ x: o.obj.position.x, z: o.obj.position.z, color: `#${o.color.toString(16).padStart(6, "0")}` }))
       );
     }
