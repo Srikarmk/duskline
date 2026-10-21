@@ -46,12 +46,14 @@ fs.mkdirSync(path.join(OUT, "sfx"), { recursive: true });
 const page = tpl.replace("/*__SOUNDS__*/", () => `${toIife(before, "OldSound")}\n${toIife(after, "NewSound")}`);
 fs.writeFileSync(path.join(OUT, "index.html"), page);
 for (const f of fs.readdirSync(path.join(ROOT, "public", "sfx"))) {
-  if (f.endsWith(".m4a")) fs.copyFileSync(path.join(ROOT, "public", "sfx", f), path.join(OUT, "sfx", f));
+  if (f.endsWith(".m4a")) {
+    fs.copyFileSync(path.join(ROOT, "public", "sfx", f), path.join(OUT, "sfx", f.replace(/\.m4a$/, ".mp4")));
+  }
 }
 console.log(`sound lab built: before = ${ref}, ${Math.round(page.length / 1024)} kB → .sound-lab/`);
 
 if (!args.includes("--no-serve")) {
-  const TYPES = { ".html": "text/html; charset=utf-8", ".m4a": "audio/mp4" };
+  const TYPES = { ".html": "text/html; charset=utf-8", ".mp4": "audio/mp4" };
   const port = 3081;
   createServer((req, res) => {
     const rel = decodeURIComponent((req.url ?? "/").split("?")[0]).replace(/^\/+/, "") || "index.html";

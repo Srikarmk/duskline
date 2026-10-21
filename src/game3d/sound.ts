@@ -88,8 +88,8 @@ interface ToneOpts {
  *
  * Signal flow: engine / road / sfx / music(→duck) / ambience → mix → limiter
  * → master (mute) → speakers. The limiter is a safety net, not a sound: the
- * worst stack measured (flat out on nitro, five hits on one frame) peaks at
- * −2.2 dBFS synthesised and −5.7 with the recordings, under its threshold.
+ * worst stack measured (flat out on nitro, five hits on one frame) has peaked
+ * at no more than −2.2 dBFS in any render, under its threshold.
  */
 export class Sound {
   private ctx: BaseAudioContext | null = null;
@@ -280,14 +280,14 @@ export class Sound {
    * take arrives — or if this browser cannot decode AAC — that effect plays its
    * synthesised voice, so nothing is ever silent for want of a file.
    */
-  async loadSamples(base = "/sfx/") {
+  async loadSamples(base = "/sfx/", ext = "m4a") {
     const ctx = this.ctx;
     if (!ctx) return;
     await Promise.all(Object.entries(SAMPLE_TAKES).map(async ([name, n]) => {
       const takes: AudioBuffer[] = [];
       await Promise.all(Array.from({ length: n }, async (_, i) => {
         try {
-          const res = await fetch(`${base}${name}-${i}.m4a`);
+          const res = await fetch(`${base}${name}-${i}.${ext}`);
           if (!res.ok) return;
           takes[i] = await ctx.decodeAudioData(await res.arrayBuffer());
         } catch {

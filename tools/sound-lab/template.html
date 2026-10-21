@@ -184,7 +184,9 @@ function boot(kind, off, music) {
 async function render(kind, scene) {
   const off = new OfflineAudioContext(2, Math.ceil(SR * scene.seconds), SR);
   const { s, tick } = boot(kind, off, scene.music);
-  if (kind === "rec") await s.loadSamples("sfx/");
+  // .mp4, not .m4a: the same MPEG-4 audio bytes, under a name every static
+  // host serves (the artifact host refuses .m4a)
+  if (kind === "rec") await s.loadSamples("sfx/", "mp4");
   if (scene.ambient) s.setAmbient(scene.ambient);
   const run = scene.script();
   const Q = 1024 / SR;
@@ -236,7 +238,7 @@ const SCENES = [
   },
   {
     id: "stack", label: "Worst case: everything at once", seconds: 3, music: true,
-    about: "Flat out on nitro with the music at full intensity, then a crash, a nitro, a gem, a bump and a landing on the same frame. This is the moment that clipped.",
+    about: "Flat out on nitro with the music at full intensity, then a crash, a nitro, a gem, a bump and a landing on the same frame: the loudest moment the game can produce.",
     script: timeline([[1.0, "crash"], [1.0, "nitro"], [1.0, "gem"], [1.0, "bump"], [1.0, "land"]],
       (s) => { s.setEngine(1, true, 1); s.setRoad?.(1, 0, false, false); s.setMusicIntensity(1); }),
   },
@@ -343,6 +345,7 @@ function statLine(el, buf) {
 }
 
 const scenesEl = document.getElementById("scenes");
+const pending = [];
 for (const sc of SCENES) {
   const box = document.createElement("div");
   box.className = "scene";
@@ -356,8 +359,10 @@ for (const sc of SCENES) {
     const cv = document.createElement("canvas");
     cv.dataset.kind = kind; cv.setAttribute("aria-label", `${kind} waveform`);
     const st = document.createElement("div");
-    st.className = "stats"; st.textContent = "renders on first play";
-    btn.addEventListener("click", () => play(btn, kind, sc, (buf) => { draw(cv, buf); statLine(st, buf); }));
+    st.className = "stats"; st.textContent = "rendering…";
+    const show = (buf) => { draw(cv, buf); statLine(st, buf); };
+    btn.addEventListener("click", () => play(btn, kind, sc, show));
+    pending.push(() => get(kind, sc).then(show, () => { st.textContent = "could not render in this browser"; }));
     row.append(btn, cv, st);
     box.append(row);
   }
@@ -436,5 +441,8 @@ document.getElementById("remeasure").addEventListener("click", async (e) => {
   catch (err) { b.textContent = "Measuring failed: " + err.message; }
   b.disabled = false;
 });
+// Render every strip once on load, one at a time so the page stays responsive;
+// playing a strip later reuses the same render.
+(async () => { for (const job of pending) await job(); })();
 window.lab = { render, stats, seam, measure, SCENES, FX, fxScene, get };
 </script>
