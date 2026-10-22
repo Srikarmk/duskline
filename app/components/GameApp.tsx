@@ -11,7 +11,9 @@ import { loadSeason, saveSeason, clearSeason, SEASON_ORDER, type SeasonState } f
 import { todaysChallenge, recordDaily, dayKey } from "@/src/ui/daily";
 import { loadIdentity } from "@/src/ui/identity";
 import { pushProfileSoon } from "@/src/ui/sync";
+import { eventById, loadCampaign, nextEvent, recordCampaign, goalLabel, type CampaignOutcome } from "@/src/ui/campaign";
 import HomeScreen from "./HomeScreen";
+import CampaignScreen from "./CampaignScreen";
 import ResultsScreen from "./ResultsScreen";
 import dynamic from "next/dynamic";
 
@@ -38,7 +40,7 @@ const GameCanvas = dynamic(() => import("./GameCanvas"), {
   ),
 });
 
-type Screen = "home" | "race" | "intermission" | "gpresult" | "result" | "replay";
+type Screen = "home" | "race" | "intermission" | "gpresult" | "result" | "replay" | "campaign";
 
 // Championship rounds only draw from realms that are live in the picker —
 // Ember Wastes is archived while its art is rebuilt.
@@ -119,6 +121,34 @@ export default function GameApp() {
    * never driven and so has no lap on it.
    */
   const [lastLap, setLastLap] = useState<number[] | null>(null);
+  /** the campaign event being raced, or null for anything else */
+  const [campaignEvent, setCampaignEvent] = useState<string | null>(null);
+  const [campaignOutcome, setCampaignOutcome] = useState<CampaignOutcome | null>(null);
+  const [campaignStars, setCampaignStars] = useState<Record<string, number>>({});
+
+  const openCampaign = () => {
+    setCampaignStars(loadCampaign());
+    setCampaignEvent(null);
+    setCampaignOutcome(null);
+    setLastResult(null);
+    setScreen("campaign");
+  };
+
+  /** Race one campaign event, in the car the player has picked. */
+  const playCampaignEvent = (id: string) => {
+    const ev = eventById(id);
+    if (!ev) return;
+    setMode(ev.mode);
+    setRealm(ev.realm);
+    setLaps(ev.laps ?? 3);
+    setGp(null);
+    setDailyDay(null);
+    setLastResult(null);
+    setUnlocked([]);
+    setCampaignOutcome(null);
+    setCampaignEvent(id);
+    startRace();
+  };
 
   const applyStandings = (champ: Record<string, number>, standings: RaceStanding[]) => {
     const next = { ...champ };
@@ -137,10 +167,11 @@ export default function GameApp() {
     if (gained.length) setUnlocked(gained);
     // Every finished race, including each GP round, leaves a lap behind.
     setLastLap(result.replay ?? null);
-    // Send the new career (and season, and settings) up if this player is
-    // signed in with a credential from this session. No-ops otherwise, which
-    // is every guest and every reloaded tab — see sync.ts.
-    pushProfileSoon(loadIdentity());
+    // Send the new career (and season, and settings, and campaign stars) up
+    // if this player is signed in with a credential from this session.
+    // No-ops otherwise, which is every guest and every reloaded tab — see
+    // sync.ts. Deferred a tick so the campaign record above is on disk first.
+    queueMicrotask(() => pushProfileSoon(loadIdentity()));
 
     // A daily run is logged against the day it was FOR, not the day it
     // finished — a race started at 23:59 UTC would otherwise be filed under
@@ -148,6 +179,14 @@ export default function GameApp() {
     if (dailyDay) {
       recordDaily({ day: dailyDay, score: result.score, timeMs: result.timeMs, position: result.position });
       setDailyDay(null);
+    }
+
+    // A campaign race is judged against its event's three goals before it
+    // is filed as an ordinary score, so the results screen can say which
+    // stars this run earned. The stars are written before the profile push
+    // below picks them up.
+    if (campaignEvent) {
+      setCampaignOutcome(recordCampaign(campaignEvent, result));
     }
 
     if (mode === "grandprix" && gp) {
@@ -209,8 +248,12 @@ export default function GameApp() {
         realm={realm}
         car={car}
         laps={laps}
+        targetDistanceM={campaignEvent ? (eventById(campaignEvent)?.targetKm ?? 0) * 1000 || undefined : undefined}
         onFinish={handleFinish}
         onQuit={() => {
+          // Out of a campaign race, back to the campaign — that is where the
+          // player came from and what they will want to pick from next.
+          if (campaignEvent) { openCampaign(); return; }
           // Leave the SAVED season alone. Quitting out of round two should put
           // you back on the menu with a season to resume, not throw the
           // championship away — that is the point of persisting it. Only the
@@ -376,7 +419,20 @@ export default function GameApp() {
     );
   }
 
+  if (screen === "campaign") {
+    return (
+      <CampaignScreen
+        stars={campaignStars}
+        carName={CAR_SPECS[car]?.name ?? car}
+        onPlay={playCampaignEvent}
+        onBack={() => setScreen("home")}
+      />
+    );
+  }
+
   if (screen === "result" && lastResult) {
+    const co = campaignOutcome;
+    const following = co ? nextEvent(loadCampaign(), co.event.id) : null;
     return (
       <ResultsScreen
         result={lastResult}
@@ -388,6 +444,13 @@ export default function GameApp() {
         isNewBest={resultBest.isNew}
         prevBest={resultBest.prev}
         unlocked={unlocked.map((id) => CAR_SPECS[id].name)}
+        campaign={co ? {
+          title: co.event.title,
+          goals: co.event.goals.map((g, i) => ({ label: goalLabel(g), met: co.met[i], fresh: co.fresh[i] })),
+          onNext: following ? () => playCampaignEvent(following.id) : undefined,
+          nextTitle: following?.title,
+          onCampaign: openCampaign,
+        } : undefined}
         // Only offered when there IS a lap. A retirement on lap one, or an
         // endless run that never crossed a line, has nothing to show, and a
         // button that loads a world to display an empty road is worse than no
@@ -396,12 +459,15 @@ export default function GameApp() {
         onRaceAgain={() => {
           setLastResult(null);
           setUnlocked([]);
+          setCampaignOutcome(null);
           startRace();
         }}
         onMenu={() => {
           setLastResult(null);
           setUnlocked([]);
           setLastLap(null);
+          setCampaignEvent(null);
+          setCampaignOutcome(null);
           setScreen("home");
         }}
       />
@@ -428,6 +494,13 @@ export default function GameApp() {
   return (
     <HomeScreen
       lastResult={lastResult}
+      onOpenCampaign={(playerName, playerCar) => {
+        setName(playerName);
+        saveLastName(playerName);
+        setCar(playerCar);
+        saveLastCar(playerCar);
+        openCampaign();
+      }}
       onResumeSeason={(playerName) => {
         const saved = loadSeason();
         if (!saved) return;
@@ -454,6 +527,7 @@ export default function GameApp() {
         setLaps(ch.laps);          // assigns a car, it does not buy you one
         setGp(null);
         setLastResult(null);
+        setCampaignEvent(null);
         setDailyDay(dayKey());
         startRace();
       }}
@@ -466,6 +540,7 @@ export default function GameApp() {
         setMode(playerMode);
         setLastResult(null);
         setDailyDay(null);
+        setCampaignEvent(null);
         if (playerMode === "grandprix") {
           const fresh: GpState = {
             round: 0, champ: {}, totalScore: 0, totalTimeMs: 0, gems: 0, stunts: 0,

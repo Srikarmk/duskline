@@ -59,6 +59,12 @@ deleted from `GameMode` entirely.
   pieces to game3d: `input.ts` (keyboard), `render.ts` HUD/toast drawing
   (drawn on a 2D canvas layered over WebGL), and the `GameMode`/`GameResult`
   types. The full 2D engine remains runnable if GameCanvas points back at it.
+- `src/ui/campaignData.ts` — the campaign (THE DUSK LINE): chapters, events,
+  goals and the judge that turns a GameResult into stars. Types-only imports,
+  tested by `npm run test:campaign`. `campaign.ts` is its storage; stars sync
+  through the profile by bitwise OR. The engine knows nothing about it except
+  two opt-in fields: `GameOptions.targetDistanceM` (ends a Neon Run) and
+  `GameResult.gemsOffered` (what gem goals are a share of).
 - `src/ui/storage.ts` — the ONLY place localStorage is touched. Namespaced
   `duskline-*`, with a lazy fallback that adopts the pre-rename
   `fantasy-racer-*` keys so a returning player keeps their car and scores.

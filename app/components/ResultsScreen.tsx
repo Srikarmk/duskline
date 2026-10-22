@@ -20,6 +20,15 @@ interface Props {
   onWatchLap?: () => void;
   onRaceAgain: () => void;
   onMenu: () => void;
+  /** set when this race was a campaign event: how it did against the goals */
+  campaign?: {
+    title: string;
+    goals: { label: string; met: boolean; fresh: boolean }[];
+    /** the next event with stars left in it, if there is one */
+    onNext?: () => void;
+    nextTitle?: string;
+    onCampaign: () => void;
+  };
 }
 
 function formatTime(ms: number) {
@@ -65,7 +74,7 @@ function taunt(solo: boolean, pos: number, total: number) {
 
 export default function ResultsScreen({
   result, realmName, realmId, carName, racer, modeLabel, isNewBest, prevBest, unlocked,
-  onWatchLap, onRaceAgain, onMenu,
+  onWatchLap, onRaceAgain, onMenu, campaign,
 }: Props) {
   const [sharing, setSharing] = useState(false);
   const [shareMsg, setShareMsg] = useState<string | null>(null);
@@ -191,6 +200,21 @@ export default function ResultsScreen({
           )}
         </div>
 
+        {campaign && (
+          <div className="result-campaign">
+            <h2>THE DUSK LINE · {campaign.title}</h2>
+            <ul>
+              {campaign.goals.map((g, i) => (
+                <li key={i} className={`${g.met ? "met" : ""} ${g.fresh ? "fresh" : ""}`}>
+                  <span className="camp-star" aria-hidden="true">{g.met ? "★" : "☆"}</span>
+                  <span>{g.label}</span>
+                  <em>{g.fresh ? "NEW STAR" : g.met ? "met" : "not this time"}</em>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {unlocked && unlocked.length > 0 && (
           <p className="result-unlock">
             <strong>UNLOCKED</strong> {unlocked.join(" · ")} — now in the garage
@@ -240,6 +264,16 @@ export default function ResultsScreen({
         <button type="button" className="result-menu" disabled={sharing} onClick={onShare} aria-live="polite">
           {shareMsg ?? (sharing ? "SAVING…" : "SHARE RESULT")}
         </button>
+        {campaign?.onNext && (
+          <button type="button" className="result-menu next-event" onClick={campaign.onNext}>
+            NEXT · {campaign.nextTitle} ▸
+          </button>
+        )}
+        {campaign ? (
+          <button type="button" className="result-menu" onClick={campaign.onCampaign}>
+            CAMPAIGN
+          </button>
+        ) : null}
         <button type="button" className="result-menu" onClick={onMenu}>
           MENU <kbd>Esc</kbd>
         </button>

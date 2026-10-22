@@ -90,6 +90,14 @@ The happy path was exercised with verification temporarily stubbed out — which
 does **not** prove the `tokeninfo` call itself. If you set a client id, that is
 the first thing to actually try.
 
+### Campaign — THE DUSK LINE, added 2026-10-22
+
+12 events in 3 chapters plus a Neon Run finale, 39 stars. Goals use position,
+a share of gems on offer, tricks, clean lanes, and (finale) distance and time —
+never per-track lap times or scores, which nobody has measured. Every number in
+`src/ui/campaignData.ts` is a first pass: **tune it from real play**, and
+`npm run test:campaign` keeps the data honest while you do.
+
 ### 5. Lower priority
 
 The five older realms (Forest, Peaks, Void, Circuit, Metro) have had every

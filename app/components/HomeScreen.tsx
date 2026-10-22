@@ -18,6 +18,7 @@ import { warmRaceAssets } from "@/src/ui/warm";
 import { loadCareer, seedFromHistory, isUnlocked, CAR_REQUIREMENT, nextUnlock, type Career } from "@/src/ui/progress";
 import { loadSeason, seasonStanding, SEASON_ORDER, type SeasonState } from "@/src/ui/season";
 import { todaysChallenge, dailyResult, msUntilNext } from "@/src/ui/daily";
+import { loadCampaign, totalStars, TOTAL_STARS } from "@/src/ui/campaign";
 
 // live 3D garage preview — client-only (WebGL), so it must never be SSR'd
 const CarShowroom = dynamic(() => import("./CarShowroom"), { ssr: false });
@@ -30,6 +31,8 @@ interface Props {
   onAbandonSeason: () => void;
   /** today's fixed challenge — same realm, car and laps for everyone */
   onStartDaily: (name: string) => void;
+  /** THE DUSK LINE — the campaign, raced in the car picked here */
+  onOpenCampaign: (name: string, car: CarId) => void;
 }
 
 const LAP_OPTIONS = [1, 2, 3, 5, 7];
@@ -143,7 +146,7 @@ function realmAccent(id: RealmId): string {
  *   - the free-text name field is gone: you arrive as a numbered guest or
  *     connect Google.
  */
-export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAbandonSeason, onStartDaily }: Props) {
+export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAbandonSeason, onStartDaily, onOpenCampaign }: Props) {
   const [ident, setIdent] = useState<Identity | null>(null);
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -158,6 +161,11 @@ export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAban
   const [localScores, setLocalScores] = useState<ScoreEntry[]>([]);
   const [globalScores, setGlobalScores] = useState<ScoreEntry[] | null>(null);
   const [abandonArmed, setAbandonArmed] = useState(false);
+  // Read after mount: storage does not exist on the server, and a count that
+  // differs between the server render and the first client one is a
+  // hydration error.
+  const [campStars, setCampStars] = useState<number | null>(null);
+  useEffect(() => { setCampStars(totalStars(loadCampaign())); }, []);
   const [boardFailed, setBoardFailed] = useState(false);
   const [isGlobal, setIsGlobal] = useState(false);
   const [board, setBoard] = useState<"global" | "local">("global");
@@ -388,6 +396,7 @@ export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAban
           </div>
 
           <div className="hero-side">
+            <div className="who-col">
             <button type="button" className="who" onClick={switchRacer} title="Switch racer">
               {ident.picture && <img src={ident.picture} alt="" width={20} height={20} />}
               <span className="who-name">{ident.name}</span>
@@ -413,8 +422,13 @@ export default function HomeScreen({ lastResult, onStart, onResumeSeason, onAban
             ) : (
               <p className="sync-line guest">SAVED ON THIS DEVICE ONLY</p>
             )}
+            </div>
             <button type="button" className="board-open" onClick={() => setShowBoard(true)}>
               HALL OF LEGENDS
+            </button>
+            <button type="button" className="camp-open" onClick={() => onOpenCampaign(racerName, car)}>
+              <span>CAMPAIGN</span>
+              <b>{campStars ?? 0} / {TOTAL_STARS} ★</b>
             </button>
             {/* One click to drive. Four steps is the right amount of choice for
                 someone who wants to make choices, and three steps too many for

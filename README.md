@@ -26,6 +26,9 @@ impacts are CC0 recordings (see `CREDITS.md`).
 - **Four modes** — Circuit (nine rivals, a standing grid), Neon Run (an endless
   wet highway under a dead city), Grand Prix (three rounds, points), and Space
   Wars (anti-gravity tube, live ordnance).
+- **A campaign, The Dusk Line** — twelve races ordered by the hour in each
+  world's sky (golden hour, sunset, night) and a finale run down the neon
+  highway. Three stars an event, earned on any attempt; stars open chapters.
 - **Drift charges nitro.** That is the mechanic the whole game is built around.
 - Plays on a phone: touch controls, installable, and it runs offline once
   you have loaded it.

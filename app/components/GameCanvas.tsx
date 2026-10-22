@@ -20,13 +20,15 @@ interface Props {
   realm: RealmId;
   car: CarId;
   laps: number;
+  /** Neon Run only: end the run at this distance (the campaign finale) */
+  targetDistanceM?: number;
   /** watch a recorded lap instead of driving one */
   replay?: number[];
   onFinish: (result: GameResult) => void;
   onQuit: () => void;
 }
 
-export default function GameCanvas({ mode, realm, car, laps, replay, onFinish, onQuit }: Props) {
+export default function GameCanvas({ mode, realm, car, laps, targetDistanceM, replay, onFinish, onQuit }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const gameRef = useRef<Game | null>(null);
   // Latest-callback ref, so the engine can be built once and still call the
@@ -107,6 +109,7 @@ export default function GameCanvas({ mode, realm, car, laps, replay, onFinish, o
       realm,
       car,
       laps,
+      targetDistanceM,
       replay,
       onFinish: (result) => onFinishRef.current(result),
       // The async world build is the likeliest thing to fail on someone
@@ -129,7 +132,7 @@ export default function GameCanvas({ mode, realm, car, laps, replay, onFinish, o
       game.stop();
       gameRef.current = null;
     };
-  }, [mode, realm, car, laps, replay, runId, cap.ok, fatal, cap.renderer]);
+  }, [mode, realm, car, laps, targetDistanceM, replay, runId, cap.ok, fatal, cap.renderer]);
 
   // AUDIO AUTOPLAY. The race starts from a click, so the AudioContext is
   // normally allowed — but iOS Safari only honours a resume() made INSIDE the

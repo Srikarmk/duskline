@@ -3112,7 +3112,7 @@ main {
   }
   .hero-side { display: contents; }
   .sync-line { margin: 0; white-space: nowrap; }
-  .board-open { justify-self: end; }
+  .board-open { justify-self: start; }
   .hero.slim .quick-race,
   .daily-card,
   .season-resume { grid-column: 1 / -1; }
@@ -3171,3 +3171,124 @@ main {
 /* a destructive pause action, armed and waiting for the second press */
 .pause-btn.armed { border-color: #fb7185; color: #fecdd3; background: rgba(244, 63, 94, 0.14); }
 .season-drop.armed { border-color: #fb7185; color: #fecdd3; }
+
+/* ==========================================================================
+   THE DUSK LINE — the campaign (2026-10-22). Gold is the campaign's colour:
+   it is the one the hero already uses for the racer's own name and for a
+   win, so stars and the way in to them read as the same thing.
+   ========================================================================== */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+.camp-open {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  padding: 6px 14px;
+  border: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
+  border-radius: 999px;
+  background: rgba(251, 191, 36, 0.1);
+  color: var(--gold-l);
+  font: inherit; font-family: var(--font-display); font-weight: 800;
+  font-size: 11px; letter-spacing: 2px; line-height: 1.15;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.15s var(--pop);
+}
+.camp-open b { font-family: var(--font-body); font-size: 12px; letter-spacing: 0.5px; color: #fff5d6; }
+.camp-open:hover { border-color: var(--gold); background: rgba(251, 191, 36, 0.18); transform: translateY(-1px); }
+
+/* the campaign page scrolls — it is a route to read, not a step that fits */
+.home.campaign {
+  width: min(1320px, 96vw);
+  margin: 0 auto;
+  padding-block: clamp(16px, 3vh, 32px) 64px;
+  display: flex; flex-direction: column; gap: clamp(28px, 4vh, 44px);
+  align-items: stretch;
+}
+.camp-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 18px 24px; align-items: center; }
+.camp-title { display: flex; flex-direction: column; gap: 6px; min-width: 0; text-align: left; }
+.camp-title .title { font-size: clamp(26px, 4vw, 44px); margin: 0; text-wrap: balance; }
+.camp-sub { margin: 0; color: var(--muted); font-size: 15px; max-width: 60ch; }
+.camp-total { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; min-width: 150px; }
+.camp-total strong { font-family: var(--font-display); font-size: 30px; color: var(--gold-l); font-variant-numeric: tabular-nums; }
+.camp-total strong span { font-family: var(--font-body); font-size: 15px; color: var(--muted); margin-left: 6px; letter-spacing: 0.5px; }
+.camp-bar { width: 150px; height: 6px; border-radius: 3px; background: var(--sunk); overflow: hidden; }
+.camp-bar i { display: block; height: 100%; background: var(--gold); }
+
+.camp-chapter { display: flex; flex-direction: column; gap: 16px; }
+.camp-ch-head { display: grid; grid-template-columns: auto auto 1fr; align-items: baseline; gap: 4px 14px; text-align: left; }
+.camp-hour { font-family: var(--font-display); font-size: 13px; font-weight: 800; letter-spacing: 2px; color: var(--gold); }
+.camp-ch-head h2 { margin: 0; font-family: var(--font-display); font-size: clamp(18px, 2.4vw, 24px); letter-spacing: 3px; }
+.camp-ch-stars { justify-self: end; font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.camp-ch-head p { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 15px; }
+
+.camp-events { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.camp-chapter.finale .camp-events { grid-template-columns: minmax(0, 1fr); }
+.camp-chapter.finale .camp-event { flex-direction: row; }
+.camp-chapter.finale .camp-art { flex: 0 0 46%; aspect-ratio: auto; min-height: 220px; }
+
+.camp-event {
+  display: flex; flex-direction: column;
+  padding: 0; overflow: hidden; text-align: left;
+  border: 2px solid var(--line-soft); border-radius: var(--r-md);
+  background: var(--panel-2); color: var(--text); font: inherit; cursor: pointer;
+  transition: border-color 0.16s, transform 0.16s var(--ease);
+}
+.camp-event:hover:not([aria-disabled]) { border-color: color-mix(in srgb, var(--gold) 60%, transparent); transform: translateY(-3px); }
+.camp-event.next { border-color: var(--gold); }
+.camp-event.done { border-color: color-mix(in srgb, var(--gold) 35%, var(--line-soft)); }
+.camp-art { position: relative; aspect-ratio: 16 / 9; max-width: 100%; overflow: hidden; background: var(--sunk); }
+.camp-art img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.5s var(--ease); }
+.camp-event:hover:not([aria-disabled]) .camp-art img { transform: scale(1.04); }
+.camp-next-flag {
+  position: absolute; top: 10px; left: 10px;
+  padding: 4px 10px; border-radius: 999px;
+  background: var(--gold); color: #1c1203;
+  font-family: var(--font-display); font-size: 11px; font-weight: 900; letter-spacing: 2px;
+}
+.camp-body { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px 16px; min-width: 0; }
+.camp-body strong { font-family: var(--font-display); font-size: 16px; letter-spacing: 2px; }
+.camp-where { font-size: 13px; color: var(--cyan-l); letter-spacing: 0.5px; }
+.camp-brief { font-size: 14px; color: var(--muted); line-height: 1.45; }
+.camp-goals { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.camp-goals li { display: flex; align-items: baseline; gap: 8px; font-size: 14px; color: var(--muted); }
+.camp-goals li.got { color: var(--text); }
+.camp-star { color: var(--dim); font-size: 15px; width: 1em; flex: none; }
+.camp-goals li.got .camp-star { color: var(--gold); }
+
+.camp-chapter.locked .camp-event { cursor: not-allowed; }
+.camp-chapter.locked .camp-art img { filter: grayscale(0.85) brightness(0.55); }
+.camp-chapter.locked .camp-body > *:not(.camp-goals) { opacity: 0.6; }
+
+@media (max-width: 1100px) { .camp-events { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 680px) {
+  .camp-head { grid-template-columns: minmax(0, 1fr) auto; }
+  .camp-back { grid-column: 1 / -1; justify-self: start; }
+  .camp-events { grid-template-columns: minmax(0, 1fr); }
+  .camp-chapter.finale .camp-event { flex-direction: column; }
+  .camp-chapter.finale .camp-art { flex: none; aspect-ratio: 16 / 9; min-height: 0; }
+  .camp-total { min-width: 0; }
+  .camp-bar { width: 110px; }
+}
+
+/* the results screen, for a campaign race */
+.result-campaign { display: flex; flex-direction: column; gap: 10px; text-align: left; }
+.result-campaign h2 { margin: 0; font-family: var(--font-display); font-size: 14px; letter-spacing: 3px; color: var(--gold-l); }
+.result-campaign ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.result-campaign li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: baseline; font-size: 15px; color: var(--muted); }
+.result-campaign li.met { color: var(--text); }
+.result-campaign li.met .camp-star { color: var(--gold); }
+.result-campaign li em { font-style: normal; font-size: 12px; letter-spacing: 1px; color: var(--dim); }
+.result-campaign li.fresh em { color: var(--gold); font-weight: 700; }
+.result-menu.next-event { border-color: color-mix(in srgb, var(--gold) 55%, var(--line)); color: var(--gold-l); }
+
+/* the racer chip and where its progress lives, as one column — the safety
+   line used to take its own 170px of a header that now also holds CAMPAIGN */
+.who-col { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.who-col .sync-line { margin: 0; padding-left: 12px; white-space: nowrap; }
+@media (max-width: 680px) {
+  .who-col { align-items: flex-end; }
+  .who-col .sync-line { padding: 0; }
+  .camp-open { justify-self: end; }
+}
+.result-menu.next-event { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
