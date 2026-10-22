@@ -10,6 +10,7 @@
 import { loadSettings, saveSettings } from "./settings";
 import { loadCareer, writeCareer } from "./progress";
 import { loadSeason, saveSeason, clearSeason } from "./season";
+import { loadCampaign, writeCampaign } from "./campaign";
 import { mergeProfiles, type Profile } from "./profileMerge";
 import type { Identity } from "./identity";
 
@@ -51,6 +52,7 @@ export function localProfile(): Profile {
     settings: loadSettings(),
     career: loadCareer(),
     season: loadSeason(),
+    campaign: loadCampaign(),
     updated: Date.now(),
   };
 }
@@ -61,6 +63,7 @@ export function applyProfile(p: Profile): void {
   writeCareer(p.career);
   if (p.season) saveSeason(p.season);
   else clearSeason();
+  if (p.campaign) writeCampaign(p.campaign);
 }
 
 interface ProfileResponse {

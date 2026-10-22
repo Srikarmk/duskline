@@ -23,6 +23,11 @@ export interface Profile {
   career: Career;
   /** null is meaningful: it means "no season in progress", not "unknown". */
   season: SeasonState | null;
+  /**
+   * Campaign stars: per event, a bitmask of goals met. Optional, because
+   * documents written before the campaign existed do not carry it.
+   */
+  campaign?: Record<string, number>;
   /** epoch ms this document was assembled */
   updated: number;
 }
@@ -68,6 +73,23 @@ export function mergeProfiles(remote: Profile | null, local: Profile): Profile {
     // abandoned. Resurrecting that on the other device would be a bug, not a
     // rescue.
     season: newer.season,
+    // A star, once earned, stays earned — so per event, every goal either
+    // device has met: bitwise OR over the union of events. Monotonic like the
+    // career, so a phone that last synced this morning cannot take a star away.
+    campaign: mergeStars(remote.campaign, local.campaign),
     updated: Math.max(remote.updated, local.updated),
   };
+}
+
+function mergeStars(
+  a: Record<string, number> | undefined,
+  b: Record<string, number> | undefined,
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const src of [a ?? {}, b ?? {}]) {
+    for (const [id, mask] of Object.entries(src)) {
+      if (typeof mask === "number" && Number.isFinite(mask)) out[id] = (out[id] ?? 0) | (mask & 7);
+    }
+  }
+  return out;
 }

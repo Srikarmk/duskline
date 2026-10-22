@@ -737,6 +737,8 @@ export class Game {
   private stunts = 0;
   private laneBonuses = 0;
   private penalties = 0;
+  /** metres at which a Neon Run ends; 0 = it does not (see GameOptions) */
+  private targetM = 0;
 
   private crashFlash = 0;
   private toasts: Toast[] = [];
@@ -796,6 +798,7 @@ export class Game {
     if (options.laps && options.mode !== "grandprix" && !this.cfg.endless) {
       this.cfg.laps = options.laps;
     }
+    if (this.cfg.endless && options.targetDistanceM) this.targetM = options.targetDistanceM;
     // Space Wars is always fought in deep space — swap the realm pick for one of
     // the two battle tubes (the 2nd, "nebula", is otherwise hidden)
     if (options.mode === "spacewars") {
@@ -4998,6 +5001,10 @@ export class Game {
           // uses — so a retired or endless run reports what it really covered
           // rather than a lap count it never completed.
           distanceM: Math.max(0, Math.round(this.playerProgress())),
+          gemsOffered: Math.round(
+            (this.entities.filter((e) => e.type === "gem" || e.type === "airGem").length *
+              Math.max(0, this.playerProgress())) / this.track.length,
+          ),
           standings: this.finalStandings,
           // The lap itself, so the results screen has something to offer.
           // Handed over here because `stop()` runs moments later and takes the
@@ -5363,16 +5370,7 @@ export class Game {
         this.replayCur = [];
         this.lap++;
         if (this.lap > this.cfg.laps) {
-          this.phase = "finished";
-          this.finishT = 2.5;
-          // stamp the player into the finish sequence, then snapshot the order at
-          // the line so the results screen reflects who actually crossed first
-          this.playerFinishOrder = ++this.finishSeq;
-          this.finalStandings = this.computeStandings();
-          this.finalPosition = this.finalStandings.find((s) => s.isPlayer)?.position ?? 1;
-          this.score += SCORE_FINISH;
-          this.sound.play("finish");
-          this.toast(`FINISH +${SCORE_FINISH}`, "#fbbf24");
+          this.crossFinish();
         } else {
           this.sound.play("lap");
           this.toast(`LAP ${this.lap}/${this.cfg.laps}`, "#c084fc");
@@ -5388,8 +5386,27 @@ export class Game {
       }
     }
 
+    // A run to a distance (the campaign finale): the target is the line.
+    if (this.phase === "racing" && this.targetM > 0 && this.playerProgress() >= this.targetM) {
+      this.crossFinish();
+    }
+
     // wheels, weight transfer and tyre smoke
     this.animateCar(dt);
+  }
+
+  /** The finish sequence — reached by the last lap, or by a target distance. */
+  private crossFinish() {
+    this.phase = "finished";
+    this.finishT = 2.5;
+    // stamp the player into the finish sequence, then snapshot the order at
+    // the line so the results screen reflects who actually crossed first
+    this.playerFinishOrder = ++this.finishSeq;
+    this.finalStandings = this.computeStandings();
+    this.finalPosition = this.finalStandings.find((s) => s.isPlayer)?.position ?? 1;
+    this.score += SCORE_FINISH;
+    this.sound.play("finish");
+    this.toast(`FINISH +${SCORE_FINISH}`, "#fbbf24");
   }
 
   /**

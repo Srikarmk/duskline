@@ -132,6 +132,25 @@ console.log("\nprofile merge\n");
   check(out.settings.showFps === true, "a setting only the newer document has is kept");
 }
 
+// --- campaign stars ---------------------------------------------------------
+{
+  const base = profile(career(1, 0, 0, 0, 0), 1000, null);
+  const newer = profile(career(1, 0, 0, 0, 0), 2000, null);
+  const out = mergeProfiles(
+    { ...newer, campaign: { "heat-haze": 0b001, "red-rock": 0b100 } },
+    { ...base, campaign: { "heat-haze": 0b110, causeway: 0b011 } },
+  );
+  check(out.campaign["heat-haze"] === 0b111, "a star earned on EITHER device is kept (bitwise OR)");
+  check(out.campaign["red-rock"] === 0b100 && out.campaign.causeway === 0b011,
+    "an event only one device has played is kept");
+  check(mergeProfiles({ ...newer, campaign: {} }, { ...base, campaign: { moonlit: 7 } }).campaign.moonlit === 7,
+    "a NEWER document with no stars cannot take stars away");
+  const legacy = mergeProfiles(newer, { ...base, campaign: { "zero-g": 1 } });
+  check(legacy.campaign["zero-g"] === 1, "a pre-campaign document (no field) merges without losing stars");
+  check(mergeProfiles({ ...newer, campaign: { x: 255 } }, base).campaign.x === 7,
+    "a mask is clamped to the three goals an event has");
+}
+
 console.log("");
 if (failures.length) {
   console.error(`✗ ${failures.length} failed:`);

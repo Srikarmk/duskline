@@ -53,6 +53,11 @@ jobs:
       # hands the player a smaller career on whichever machine they open next.
       - name: Profile merge
         run: npm run test:sync
+      # Campaign events, chapters and the star judge. An event pointing at a
+      # renamed realm, or a chapter needing more stars than exist before it,
+      # breaks nothing the compiler can see.
+      - name: Campaign
+        run: npm run test:campaign
       - name: Build
         run: npm run build
       # Budgets AFTER the build, because they measure it. The first-load figure

@@ -74,6 +74,13 @@ export interface GameResult {
   /** metres actually driven this race, for career progress */
   distanceM?: number;
   /**
+   * Gems this race put in front of the player: the per-lap count scaled by
+   * the distance driven (gems come back every lap). What a "collect 30% of
+   * the gems" goal is measured against, so it stays fair on a 6 km lap and a
+   * 2 km one, and keeps up if a track's layout changes.
+   */
+  gemsOffered?: number;
+  /**
    * The last complete lap, as a flat [x, z, heading, alt, ...] array — what
    * the results screen replays.
    *
@@ -91,6 +98,13 @@ export interface GameOptions {
   realm?: RealmId;
   car?: CarId;
   laps?: number;
+  /**
+   * Neon Run only: end the run when this many metres have been driven. Neon
+   * Run has no line, so without it a run only ends when you quit — and a quit
+   * reports nothing. The campaign's finale is a run to a distance. Unset,
+   * Neon Run is as endless as ever.
+   */
+  targetDistanceM?: number;
   onFinish: (result: GameResult) => void;
   /**
    * Play a recorded lap instead of racing it. The world is built exactly as
