@@ -23,12 +23,26 @@ const nextConfig: NextConfig = {
       // One entry per directory rather than a single alternation pattern: the
       // matcher syntax is easy to get subtly wrong, and a header rule that
       // silently matches nothing looks exactly like a header rule that works.
-      ...["textures", "models", "previews"].map((dir) => ({
+      ...["textures", "models", "previews", "sfx"].map((dir) => ({
         source: `/${dir}/:file*`,
         headers: [
           { key: "Cache-Control", value: "public, max-age=604800, stale-while-revalidate=2592000" },
         ],
       })),
+      {
+        // Conservative hardening for every route. Deliberately NO
+        // Content-Security-Policy: the game loads three.js chunks, Google
+        // Identity, a Sentry ingest endpoint and a service worker, and a CSP
+        // that misses one of them breaks the game silently. Add one only with
+        // the live game tested against it.
+        source: "/:path*",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+        ],
+      },
       {
         // The worker script itself must never be held: a stale sw.js is a
         // stale everything, since it decides what comes from cache.

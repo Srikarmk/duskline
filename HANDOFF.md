@@ -63,7 +63,11 @@ no branches or PRs here.
 
 ### 2. ~~Code-split the engine~~ — done 2026-10-21, see above and AUDIT 2.1
 
-### 3. Two launch blockers that need something outside the repo
+### 3. Launch blockers that need something outside the repo
+
+**`RELEASE.md` ends with the owner checklist, step by step** (updated
+2026-10-22, when the service worker was verified offline in a real browser and
+security headers, `metadataBase` and the favicon went live). The two that block:
 
 - **Connect a KV store.** `.env.example` names the variables. It powers three
   things now: the shared leaderboard, the guest-number sequence, and the synced

@@ -33,7 +33,14 @@ const DESCRIPTION =
   "A browser racing game. Fourteen road cars, twelve worlds, and an endless neon highway. No install, no account.";
 
 export const metadata: Metadata = {
+  // Absolute base for the share image. Unset, Next resolved it against
+  // whatever host built it — fine on the production URL, wrong on a preview
+  // deployment or a custom domain added later.
+  metadataBase: new URL("https://playduskline.vercel.app"),
   title: "Duskline — drive it in your browser",
+  // Declared so browsers stop asking for /favicon.ico, which does not exist
+  // and was the one 404 on every page load.
+  icons: { icon: "/icon-192.png", apple: "/icon-192.png" },
   description: DESCRIPTION,
   applicationName: "Duskline",
   openGraph: {

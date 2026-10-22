@@ -1,6 +1,8 @@
 # Duskline — what's left before this is public
 
-Updated 2026-09-15. Ordered by whether it *blocks* a public launch.
+Updated 2026-10-22. Ordered by whether it *blocks* a public launch. The owner
+checklist at the bottom is the short version: everything still open needs an
+account or a device, not a code change.
 
 Legend: **[BLOCKER]** must be done first · **[SHIP-SOON]** days after launch is
 fine · **[LATER]** real work, not urgent · **[DONE]** cleared, kept for the record.
@@ -13,9 +15,11 @@ Items that were listed as blockers and turned out not to exist. Recording
 that, because acting on a wrong list wastes as much time as having no list.
 
 - **Music licensing** was listed as "the single easiest thing to get sued
-  over". There is no music to licence. All audio is generated at runtime by the
-  Web Audio API — oscillators, filtered noise and envelopes in
-  `src/game3d/sound.ts`. There is not a single audio file in the repository.
+  over". There is no music to licence: the music, engine, tyres and ambience
+  are generated at runtime by the Web Audio API in `src/game3d/sound.ts`.
+  Since 2026-10-21 seven effects also use recordings — all CC0, from Kenney's
+  Impact and Sci-fi packs, every take mapped to its source in `CREDITS.md`
+  with the licences in `public/sfx/`. Still nothing to licence.
 - **"The leaderboard is a lie across devices"** overstated it. The API already
   supports Vercel KV / Upstash via env vars and reports `global: hasKV`, and
   the UI already says *"shared board activates once a KV store is connected"*
@@ -201,11 +205,13 @@ cross-origin are never touched.
 real file, and CI runs it — the worker is plain JS outside the bundle, so
 neither `tsc` nor `next build` would ever look at it.
 
-⚠️ **Registration itself is unverified in a real browser.** The in-app preview
-pane refuses to register any service worker ("An unknown error occurred when
-fetching the script") even though `/sw.js` serves 200 with the right MIME type,
-so the install path has only been checked by inspection. Worth thirty seconds
-in Chrome DevTools → Application → Service Workers on the deployed site.
+✅ **Verified in a real browser, 2026-10-22**, against the production URL in
+Chromium (the in-app preview pane refuses to register any worker, which is why
+this was open). First visit: the worker registers and activates. After a
+reload: the page is controlled, with 33 entries cached (`dl-v1-immutable` 14,
+`dl-v1-assets` 18, `dl-v1-pages` 1). Then offline, a reload still opens the
+sign-in screen. The only failed requests offline are the API calls, as
+designed.
 
 ---
 
@@ -245,19 +251,67 @@ performance blocker.
 
 ---
 
-## What is actually left
+### [DONE] Launch hardening, 2026-10-22
+- **Security headers on every route**: `X-Content-Type-Options: nosniff`,
+  `Referrer-Policy: strict-origin-when-cross-origin`, a `Permissions-Policy`
+  that denies camera, microphone, geolocation and payment, and
+  `X-Frame-Options: SAMEORIGIN` (HSTS was already sent by Vercel). **No CSP, on
+  purpose**: three.js chunks, Google Identity, the Sentry ingest endpoint and
+  the service worker all need allowing, and a CSP that misses one breaks the
+  game with no visible error. Only add one with the live game tested against it.
+- **`metadataBase`** is set, so the share image stays an absolute
+  production URL on preview deployments and on any custom domain.
+- **The favicon 404** that every page load produced (`/favicon.ico` does not
+  exist) is gone; the page now declares the existing app icon.
+- **`/sfx` gets the same one-week cache** as the other art. It was the one art
+  folder still served with `max-age=0`.
+- **Smoke-tested as a first-time visitor in Chromium**: the sign-in screen,
+  guest, DRIVE NOW, a race on screen, pause, quit (with its new confirmation)
+  and back to the menu, with no console or HTTP errors. A first visit
+  transfers about 1.15 MB, most of it the race textures fetched in the
+  background while you are on the menu.
 
-Two things, and **neither can be done from inside the repository**:
+---
 
-1. **Connect the KV store**, or remove the GLOBAL tab. Needs credentials on
-   the Vercel project. `.env.example` says exactly what to set.
-2. **Get a frame-time number** on a phone and a mid-range laptop. Needs
-   hardware that is not this machine. Open the deployed build, turn on the FPS
-   readout in the pause menu, run Neon Run and Forest.
+## What is actually left — the owner checklist
 
-Optional, also outside the repo: set `NEXT_PUBLIC_SENTRY_DSN` if crash reports
-are wanted at launch, and `NEXT_PUBLIC_GOOGLE_CLIENT_ID` if Google sign-in is.
-Both degrade honestly when unset.
+Nothing below can be done from inside the repository. In order:
+
+1. **Connect a database for the shared leaderboard.** Vercel → the `duskline`
+   project → Storage (or Marketplace) → **Upstash for Redis** → create (the
+   free tier is enough) → connect it to the project for Production and
+   Preview. That sets `KV_REST_API_URL` and `KV_REST_API_TOKEN` itself. Then
+   **redeploy**: env vars are read at build time. It turns on three things at
+   once: the GLOBAL board, real guest numbers ("RACER 1015" as the 1015th
+   guest instead of a random one), and profile sync for signed-in players.
+   If you would rather not, the game is honest about it as it is; just know
+   the GLOBAL tab will say it is not switched on.
+2. **Once the board is shared, set `RACE_TOKEN_SECRET`.** Vercel → Settings →
+   Environment Variables → add `RACE_TOKEN_SECRET` = any random string of 16+
+   characters (e.g. the output of `openssl rand -hex 24`), all environments,
+   then redeploy. Without it anyone can `curl` a believable score onto the
+   board.
+3. **Measure the frame rate on real hardware.** On a phone and on an ordinary
+   laptop (not a gaming machine): open playduskline.vercel.app, start a race,
+   press **Esc** (or the pause button on a phone) → **Settings** → **Show
+   FPS** on → resume. Drive a lap of **Neon Run** (the heaviest world) and one
+   of **Enchanted Forest**, and note the number at the top right. Under 30 on
+   either device is the thing to report back; the quality setting in the same
+   menu is the first lever.
+4. *Optional* — **Google sign-in.** Google Cloud Console → APIs & Services →
+   Credentials → Create OAuth client ID → Web application → add
+   `https://playduskline.vercel.app` (and any custom domain) under *Authorised
+   JavaScript origins*. To publish the consent screen beyond test users,
+   Google requires a privacy-policy URL. Then set
+   `NEXT_PUBLIC_GOOGLE_CLIENT_ID` in Vercel and redeploy. The first thing to
+   try afterwards is sign-in on two devices, because the real token check has
+   never run against Google (see HANDOFF).
+5. *Optional* — **crash reports.** Create a Sentry project (Browser
+   JavaScript), copy its DSN, set `NEXT_PUBLIC_SENTRY_DSN` in Vercel,
+   redeploy.
+6. *Optional* — **a custom domain.** Vercel → the project → Settings →
+   Domains → add it and follow the DNS instructions. If Google sign-in is on,
+   add the new origin to the OAuth client too.
 
 Still open inside the repo, but not launch-blocking: the five older realms
 (Forest, Peaks, Void, Circuit, Metro) have not had the bespoke landmark pass
