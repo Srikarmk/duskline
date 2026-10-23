@@ -277,7 +277,7 @@ performance blocker.
 
 Nothing below can be done from inside the repository. In order:
 
-1. **Connect a database for the shared leaderboard — Supabase** (chosen
+1. ✅ **Done 2026-10-23** — verified live: `global: true`, guest numbers count up, scores store and read back. **Connect a database for the shared leaderboard — Supabase** (chosen
    2026-10-22; Upstash still works, see `.env.example`).
    1. supabase.com → **New project** (the free tier is enough). Pick a region
       near your players; keep the database password somewhere safe.
@@ -296,7 +296,7 @@ Nothing below can be done from inside the repository. In order:
    sync for signed-in players (including campaign stars). Check: after the
    redeploy, `https://playduskline.vercel.app/api/scores` should say
    `"global":true`.
-2. **Once the board is shared, set `RACE_TOKEN_SECRET`.** Vercel → Settings →
+2. ✅ **Done 2026-10-23** — `/api/race-token` reports `enforced: true`. (The one-use check, `dl_set_once`, first runs on the first real score.) **Once the board is shared, set `RACE_TOKEN_SECRET`.** Vercel → Settings →
    Environment Variables → add `RACE_TOKEN_SECRET` = any random string of 16+
    characters (e.g. the output of `openssl rand -hex 24`), all environments,
    then redeploy. Without it anyone can `curl` a believable score onto the
