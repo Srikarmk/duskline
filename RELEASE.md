@@ -277,15 +277,25 @@ performance blocker.
 
 Nothing below can be done from inside the repository. In order:
 
-1. **Connect a database for the shared leaderboard.** Vercel → the `duskline`
-   project → Storage (or Marketplace) → **Upstash for Redis** → create (the
-   free tier is enough) → connect it to the project for Production and
-   Preview. That sets `KV_REST_API_URL` and `KV_REST_API_TOKEN` itself. Then
-   **redeploy**: env vars are read at build time. It turns on three things at
-   once: the GLOBAL board, real guest numbers ("RACER 1015" as the 1015th
-   guest instead of a random one), and profile sync for signed-in players.
-   If you would rather not, the game is honest about it as it is; just know
-   the GLOBAL tab will say it is not switched on.
+1. **Connect a database for the shared leaderboard — Supabase** (chosen
+   2026-10-22; Upstash still works, see `.env.example`).
+   1. supabase.com → **New project** (the free tier is enough). Pick a region
+      near your players; keep the database password somewhere safe.
+   2. **SQL Editor → New query** → paste all of `supabase/schema.sql` →
+      **Run**. It is safe to run again.
+   3. **Project Settings → API** (or *API Keys*): copy the **Project URL** and
+      the **service_role** key (or a new **secret** key, `sb_secret_…`).
+   4. Vercel → the `duskline` project → **Settings → Environment Variables**:
+      `SUPABASE_URL` = the project URL, and `SUPABASE_SERVICE_ROLE_KEY` = the
+      key (or `SUPABASE_SECRET_KEY` for an `sb_secret_` key). Production and
+      Preview. **Never** a `NEXT_PUBLIC_` name — that key bypasses every
+      security rule on the database.
+   5. **Redeploy** (env vars are read at build time).
+   It turns on three things at once: the GLOBAL board, real guest numbers
+   ("RACER 1015" as the 1015th guest instead of a random one), and profile
+   sync for signed-in players (including campaign stars). Check: after the
+   redeploy, `https://playduskline.vercel.app/api/scores` should say
+   `"global":true`.
 2. **Once the board is shared, set `RACE_TOKEN_SECRET`.** Vercel → Settings →
    Environment Variables → add `RACE_TOKEN_SECRET` = any random string of 16+
    characters (e.g. the output of `openssl rand -hex 24`), all environments,

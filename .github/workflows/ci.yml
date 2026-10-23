@@ -58,6 +58,11 @@ jobs:
       # breaks nothing the compiler can see.
       - name: Campaign
         run: npm run test:campaign
+      # The shared store's client (Supabase and Upstash) against fake servers.
+      # A wrong header or filter fails silently in production: every caller
+      # degrades to "not shared" and the board just never fills.
+      - name: Store client
+        run: npm run test:store
       - name: Build
         run: npm run build
       # Budgets AFTER the build, because they measure it. The first-load figure

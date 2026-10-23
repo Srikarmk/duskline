@@ -98,6 +98,16 @@ never per-track lap times or scores, which nobody has measured. Every number in
 `src/ui/campaignData.ts` is a first pass: **tune it from real play**, and
 `npm run test:campaign` keeps the data honest while you do.
 
+### Shared store — Supabase, switched 2026-10-22
+
+`src/server/store.ts` is the only place that talks to a store. Supabase wins
+if `SUPABASE_URL` + a service key are set, else Upstash, else per-instance
+memory. Schema: `supabase/schema.sql` (RLS on, no policies; the atomic bits —
+counter, claim-once, add-and-trim score — are SQL functions only
+`service_role` may call). `npm run test:store` checks the client against fake
+servers; the SQL itself has only been checked against a real project once the
+owner creates one — run the checks in RELEASE.md step 1 the first time.
+
 ### 5. Lower priority
 
 The five older realms (Forest, Peaks, Void, Circuit, Metro) have had every

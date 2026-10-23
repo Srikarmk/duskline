@@ -12,15 +12,13 @@
  * in AUDIT.md. What this does is turn "trivial to flood" into "not worth the
  * effort", which is the right size of defence for a browser game's board.
  *
- * Uses the same KV store as the leaderboard when it is configured, because a
+ * Uses the same store as the leaderboard when one is configured, because a
  * per-instance counter on serverless is barely a limit at all — each cold
- * start gets a fresh one. Without KV it still limits per instance, which is
+ * start gets a fresh one. Without one it still limits per instance, which is
  * better than nothing and is all that is available.
  */
 
-const KV_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-const KV_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
-const hasKV = Boolean(KV_URL && KV_TOKEN);
+import { incr, storeShared } from "./store";
 
 /** Per-instance fallback: bucket key -> [windowStartMs, count]. */
 const local = new Map<string, [number, number]>();
@@ -37,17 +35,6 @@ function clientKey(req: Request): string {
   const fwd = req.headers.get("x-forwarded-for") ?? "";
   const ip = fwd.split(",")[0]?.trim();
   return ip || req.headers.get("x-real-ip") || "unknown";
-}
-
-async function kv(cmd: (string | number)[]): Promise<unknown> {
-  const res = await fetch(KV_URL as string, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${KV_TOKEN}`, "Content-Type": "application/json" },
-    body: JSON.stringify(cmd),
-    cache: "no-store",
-  });
-  if (!res.ok) throw new Error(`kv ${res.status}`);
-  return ((await res.json()) as { result: unknown }).result;
 }
 
 export interface RateLimitResult {
@@ -74,13 +61,12 @@ export async function rateLimit(
   const key = `dl:rl:${bucket}:${clientKey(req)}:${window}`;
   const retryAfter = windowSec - Math.floor((now % (windowSec * 1000)) / 1000);
 
-  if (hasKV) {
+  if (storeShared) {
     try {
-      const count = Number(await kv(["INCR", key]));
-      if (count === 1) await kv(["EXPIRE", key, windowSec + 1]);
+      const count = await incr(key, windowSec);
       return { ok: count <= limit, retryAfter };
     } catch {
-      // KV unreachable. Refusing every write because the limiter is down
+      // Store unreachable. Refusing every write because the limiter is down
       // would be a worse failure than not limiting, so fall through to local.
     }
   }

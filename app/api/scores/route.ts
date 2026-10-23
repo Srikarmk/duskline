@@ -1,20 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, tooManyRequests } from "@/src/server/rateLimit";
 import { verifyRaceToken, spendRaceToken, tokenEnforced } from "@/src/server/raceToken";
+import { addScore, storeShared, topScores, type ScoreEntry } from "@/src/server/store";
 import type { GameMode } from "@/src/game/engine";
 
 export const dynamic = "force-dynamic";
 
-interface Entry {
-  name: string;
-  score: number;
-  mode: GameMode;
-  timeMs: number;
-  date: string;
-}
+type Entry = ScoreEntry;
 
-const KEY = "dl:scores:v1";
 const MAX = 20;
+/** what the store keeps beyond the 20 shown — room for "where would I rank" */
+const KEEP = 1000;
 // Every mode that can reach this endpoint. "spacewars" and "endless" were
 // missing, so scores from them were silently relabelled "classic" — the board
 // was attributing Neon Run distances to circuit races.
@@ -22,59 +18,25 @@ const VALID_MODES = new Set<GameMode>([
   "classic", "transform", "grandprix", "spacewars", "endless",
 ]);
 
-// Works with a Vercel KV / Upstash Redis store when its env vars are present;
-// otherwise falls back to per-instance memory so the app never breaks.
-const KV_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-const KV_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
-const hasKV = Boolean(KV_URL && KV_TOKEN);
-
-const memory: { member: string; score: number }[] = [];
-
-async function kv(cmd: (string | number)[]): Promise<unknown> {
-  const res = await fetch(KV_URL as string, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${KV_TOKEN}`, "Content-Type": "application/json" },
-    body: JSON.stringify(cmd),
-    cache: "no-store",
-  });
-  if (!res.ok) throw new Error(`kv ${res.status}`);
-  const json = (await res.json()) as { result: unknown };
-  return json.result;
-}
+// Works with the shared store (Supabase or Upstash — see src/server/store.ts)
+// when one is configured; otherwise falls back to per-instance memory so the
+// app never breaks.
+const memory: Entry[] = [];
 
 async function topEntries(): Promise<Entry[]> {
-  if (hasKV) {
-    const flat = (await kv(["ZREVRANGE", KEY, "0", String(MAX - 1), "WITHSCORES"])) as string[];
-    const out: Entry[] = [];
-    for (let i = 0; i < flat.length; i += 2) {
-      try {
-        out.push(JSON.parse(flat[i]) as Entry);
-      } catch {
-        // skip malformed
-      }
-    }
-    return out;
-  }
-  return [...memory]
-    .sort((a, b) => b.score - a.score)
-    .slice(0, MAX)
-    .map((m) => JSON.parse(m.member) as Entry);
+  if (storeShared) return topScores(MAX);
+  return [...memory].sort((a, b) => b.score - a.score).slice(0, MAX);
 }
 
 async function addEntry(e: Entry): Promise<void> {
-  const member = JSON.stringify(e);
-  if (hasKV) {
-    await kv(["ZADD", KEY, String(e.score), member]);
-    await kv(["ZREMRANGEBYRANK", KEY, "0", String(-(MAX + 1))]);
-  } else {
-    memory.push({ member, score: e.score });
-  }
+  if (storeShared) await addScore(e, KEEP);
+  else memory.push(e);
 }
 
 export async function GET() {
   try {
     const scores = await topEntries();
-    return NextResponse.json({ scores, global: hasKV });
+    return NextResponse.json({ scores, global: storeShared });
   } catch {
     return NextResponse.json({ scores: [], global: false });
   }
@@ -123,7 +85,7 @@ export async function POST(req: NextRequest) {
     }
     await addEntry({ name, score, mode, timeMs, date: new Date().toISOString().slice(0, 10) });
     const scores = await topEntries();
-    return NextResponse.json({ scores, global: hasKV, verified: tokenEnforced });
+    return NextResponse.json({ scores, global: storeShared, verified: tokenEnforced });
   } catch {
     return NextResponse.json({ error: "server" }, { status: 500 });
   }

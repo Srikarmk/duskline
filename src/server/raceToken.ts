@@ -1,8 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-
-const KV_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-const KV_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
-const hasKV = Boolean(KV_URL && KV_TOKEN);
+import { setOnce, storeShared } from "./store";
 
 /**
  * A server-issued ticket that says "a race actually started here, at this
@@ -107,7 +104,8 @@ const usedLocally = new Map<string, number>();
  * the total. Verified as a real hole before it was closed: the same ticket
  * posted twice, and both scores landed.
  *
- * KV makes this airtight across instances (`SET NX` is atomic). Without it,
+ * A shared store makes this airtight across instances (Redis `SET NX` and
+ * the Supabase `dl_set_once` function are both atomic). Without one,
  * per-instance memory catches a naive loop and not much more, which is the
  * same honest limitation the rate limiter has and is documented rather than
  * papered over.
@@ -118,20 +116,11 @@ export async function spendRaceToken(nonce: string | undefined): Promise<boolean
   const key = `dl:nonce:${nonce}`;
   const ttl = Math.ceil(MAX_AGE_MS / 1000);
 
-  if (hasKV) {
+  if (storeShared) {
     try {
-      const res = await fetch(KV_URL as string, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${KV_TOKEN}`, "Content-Type": "application/json" },
-        body: JSON.stringify(["SET", key, "1", "NX", "EX", String(ttl)]),
-        cache: "no-store",
-      });
-      if (res.ok) {
-        const { result } = (await res.json()) as { result: unknown };
-        return result !== null;      // null means the key already existed
-      }
+      return await setOnce(key, ttl);
     } catch {
-      // KV unreachable — fall through rather than refuse every honest score.
+      // Store unreachable — fall through rather than refuse every honest score.
     }
   }
 

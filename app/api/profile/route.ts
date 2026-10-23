@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { rateLimit, tooManyRequests } from "@/src/server/rateLimit";
 import { verifyGoogleCredential, googleConfigured } from "@/src/server/googleAuth";
+import { getDoc, setDoc, storeShared } from "@/src/server/store";
 
 export const dynamic = "force-dynamic";
 
@@ -18,13 +19,10 @@ export const dynamic = "force-dynamic";
  *
  * Both unconfigured cases return `synced: false` with a reason rather than an
  * error. The game is entirely playable from local storage; sync is an extra,
- * and a deployment without a client id or a KV store should say so plainly
+ * and a deployment without a client id or a store should say so plainly
  * instead of throwing.
  */
 
-const KV_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-const KV_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
-const hasKV = Boolean(KV_URL && KV_TOKEN);
 
 /**
  * Hard ceiling on a stored profile.
@@ -36,17 +34,6 @@ const hasKV = Boolean(KV_URL && KV_TOKEN);
  */
 const MAX_BYTES = 8 * 1024;
 
-async function kv(cmd: (string | number)[]): Promise<unknown> {
-  const res = await fetch(KV_URL as string, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${KV_TOKEN}`, "Content-Type": "application/json" },
-    body: JSON.stringify(cmd),
-    cache: "no-store",
-  });
-  if (!res.ok) throw new Error(`kv ${res.status}`);
-  return ((await res.json()) as { result: unknown }).result;
-}
-
 export async function POST(req: Request) {
   // 30 a minute. A pull on sign-in plus a push after each race is a handful an
   // hour; this only has to stop a loop.
@@ -56,7 +43,7 @@ export async function POST(req: Request) {
   if (!googleConfigured) {
     return NextResponse.json({ synced: false, reason: "no-identity" });
   }
-  if (!hasKV) {
+  if (!storeShared) {
     return NextResponse.json({ synced: false, reason: "no-store" });
   }
 
@@ -77,8 +64,7 @@ export async function POST(req: Request) {
   // No profile in the request = a pull.
   if (body.profile === undefined) {
     try {
-      const raw = (await kv(["GET", key])) as string | null;
-      return NextResponse.json({ synced: true, profile: raw ? JSON.parse(raw) : null });
+      return NextResponse.json({ synced: true, profile: await getDoc(key) });
     } catch {
       return NextResponse.json({ synced: false, reason: "store unavailable" });
     }
@@ -93,7 +79,7 @@ export async function POST(req: Request) {
     // A year. Long enough that a player who drifts away for a season still
     // finds their garage; short enough that abandoned profiles do not
     // accumulate in the store forever.
-    await kv(["SET", key, serialised, "EX", String(365 * 24 * 60 * 60)]);
+    await setDoc(key, body.profile, 365 * 24 * 60 * 60);
     return NextResponse.json({ synced: true, profile: body.profile });
   } catch {
     return NextResponse.json({ synced: false, reason: "store unavailable" });
