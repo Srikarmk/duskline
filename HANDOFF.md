@@ -110,8 +110,11 @@ owner creates one — run the checks in RELEASE.md step 1 the first time.
 
 ### 5. Lower priority
 
-The five older realms (Forest, Peaks, Void, Circuit, Metro) have had every
-global fix but not the bespoke landmark pass the six photo realms got.
+~~The five older realms have not had the landmark pass~~ — done 2026-10-25,
+AUDIT L4. The same pass removed the water curtain across Forest's road, took
+out the alternate routes, and rebuilt the pickups (AUDIT L1–L5). Before
+adding scenery anywhere, run the road-intrusion check described in L2: it
+found four faults nobody had seen from the chase camera.
 
 ## How work gets done here
 

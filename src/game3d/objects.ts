@@ -1612,114 +1612,143 @@ export function makeMountainRing(pal: RealmPalette, cx: number, cz: number, radi
 
 // --- pickups & obstacles ---------------------------------------------------
 
-export function makeGem(color: number, air: boolean): THREE.Mesh {
-  // Not a diamond. The old pickup was a brilliant-cut jewel with an emissive
-  // shell at ~1.0 AND a white core at 2.1 behind it, so every facet blew out to
-  // the same cream white — all that cut geometry, and it read as a pale blob.
-  // Emissive is not the same thing as expensive.
-  //
-  // This is a spinning chrome CHIP instead: a dark octagonal body, a polished
-  // mirror rim that catches the sky probe as a hard moving glint, and a neon
-  // face inset with a chevron. Standing vertical and spinning about Y it goes
-  // edge-on and back like a flipped coin, which is what makes it catch the eye
-  // at 160 mph without needing to glow at the sky.
-  const base = new THREE.Color(air ? 0xffc857 : color);
-  const R = air ? 0.46 : 0.36;
+// Pickups are built ONCE per kind and shared: every gem on a lap used to build
+// its own eight meshes and four materials — 390 gems on Mirage Mile is ~3,000
+// draw calls in a renderer that is draw-call bound. Each pickup is now two
+// merged meshes (a lit body and an unlit glowing part) and one glow sprite.
+const pickupGeo = new Map<string, THREE.BufferGeometry>();
+const pickupMat = new Map<string, THREE.Material>();
+function cached<T>(map: Map<string, T>, key: string, make: () => T): T {
+  let v = map.get(key);
+  if (!v) { v = make(); map.set(key, v); }
+  return v;
+}
+
+/** Merge primitives into one geometry with a per-part vertex colour. */
+function mergeColoured(parts: [THREE.BufferGeometry, THREE.Color][]): THREE.BufferGeometry {
+  const geos = parts.map(([g, c]) => {
+    const n = g.index ? g.toNonIndexed() : g;
+    n.deleteAttribute("uv");
+    const count = n.getAttribute("position").count;
+    const col = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+    n.setAttribute("color", new THREE.BufferAttribute(col, 3));
+    return n;
+  });
+  return mergeGeometries(geos, false)!;
+}
+
+/** A primitive, moved/rotated into place before it is merged. */
+function placed(g: THREE.BufferGeometry, x: number, y: number, z: number, rx = 0, ry = 0, rz = 0): THREE.BufferGeometry {
+  g.applyMatrix4(new THREE.Matrix4().compose(
+    new THREE.Vector3(x, y, z),
+    new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz, "YXZ")),
+    new THREE.Vector3(1, 1, 1),
+  ));
+  return g;
+}
+
+let glowTex: THREE.Texture | null = null;
+/**
+ * The halo every pickup carries: a soft camera-facing glow in its own colour.
+ *
+ * This is what makes a pickup readable at racing distance. A 0.36 m chip is a
+ * few pixels at 60 m, and under a sunset grade it is a pale speck on pale
+ * tarmac; a two-metre additive glow is a light you can steer at.
+ */
+function glowSprite(color: number, size: number, strength = 0.85): THREE.Sprite {
+  glowTex ??= (() => {
+    const c = document.createElement("canvas");
+    c.width = c.height = 64;
+    const ctx = c.getContext("2d")!;
+    const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    g.addColorStop(0, "rgba(255,255,255,1)");
+    g.addColorStop(0.25, "rgba(255,255,255,0.55)");
+    g.addColorStop(0.6, "rgba(255,255,255,0.14)");
+    g.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(c);
+  })();
+  const mat = cached(pickupMat, `glow:${color}:${strength}`, () => new THREE.SpriteMaterial({
+    map: glowTex!, color, transparent: true, opacity: strength,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  })) as THREE.SpriteMaterial;
+  const s = new THREE.Sprite(mat);
+  s.scale.set(size, size, 1);
+  s.renderOrder = 2;
+  return s;
+}
+
+const litMat = () => cached(pickupMat, "lit", () => new THREE.MeshStandardMaterial({
+  vertexColors: true, metalness: 0.85, roughness: 0.28, flatShading: true,
+}));
+// toneMapped:false — these are light sources; they should land at full colour
+// whatever grade the realm runs, and the bloom picks them up
+const glowMat = () => cached(pickupMat, "glow", () => new THREE.MeshBasicMaterial({
+  vertexColors: true, toneMapped: false,
+}));
+
+export function makeGem(color: number, air: boolean): THREE.Group {
+  // A spinning chrome CHIP: a dark octagonal body with a mirror rim, a neon
+  // face and a chevron, standing vertical so that spinning about Y it goes
+  // edge-on and back like a flipped coin. Same idea as before, at half again
+  // the size (it was a few pixels at 60 m), with an unlit face and a halo.
+  const tint = new THREE.Color(air ? 0xffc857 : color);
+  const R = air ? 0.7 : 0.55;
   const T = R * 0.26;
-
-  // body: axis along local Y, then laid over so the face points along Z. Every
-  // child below is authored in this local frame.
-  const body = new THREE.Mesh(
-    new THREE.CylinderGeometry(R * 0.9, R * 0.9, T, 8),
-    new THREE.MeshStandardMaterial({ color: 0x16131d, metalness: 0.85, roughness: 0.3, flatShading: true })
-  );
-  body.rotation.x = Math.PI / 2;
-
-  const chrome = new THREE.MeshStandardMaterial({ color: 0xf4f6fa, metalness: 1, roughness: 0.08, flatShading: true });
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(R * 0.92, T * 0.44, 4, 8), chrome);
-  rim.rotation.x = Math.PI / 2;
-  body.add(rim);
-
-  const faceMat = new THREE.MeshStandardMaterial({
-    color: base, emissive: base, emissiveIntensity: air ? 1.5 : 1.1,
-    metalness: 0.2, roughness: 0.35, flatShading: true,
-  });
-  const glyphMat = new THREE.MeshStandardMaterial({
-    color: 0xffffff, emissive: base.clone().offsetHSL(0, -0.45, 0.4),
-    emissiveIntensity: air ? 2.2 : 1.7, flatShading: true,
-  });
-  for (const sy of [-1, 1]) {
-    const face = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.68, R * 0.68, T * 0.18, 8), faceMat);
-    face.position.y = sy * (T * 0.52);
-    body.add(face);
-    // chevron glyph: two short bars meeting at a point, pointing "up" the chip
+  const key = `gem:${tint.getHexString()}:${air}`;
+  const body = cached(pickupGeo, key + ":body", () => mergeColoured([
+    [placed(new THREE.CylinderGeometry(R * 0.9, R * 0.9, T, 8), 0, 0, 0, Math.PI / 2), new THREE.Color(0x16131d)],
+    [placed(new THREE.TorusGeometry(R * 0.92, T * 0.44, 4, 8), 0, 0, 0), new THREE.Color(0xf4f6fa)],
+  ]));
+  const glyph = tint.clone().lerp(new THREE.Color(0xffffff), 0.6);
+  const glowParts: [THREE.BufferGeometry, THREE.Color][] = [];
+  for (const sz of [-1, 1]) {
+    glowParts.push([placed(new THREE.CylinderGeometry(R * 0.68, R * 0.68, T * 0.18, 8), 0, 0, sz * T * 0.52, Math.PI / 2), tint]);
     for (const sx of [-1, 1]) {
-      const bar = new THREE.Mesh(new THREE.BoxGeometry(R * 0.5, T * 0.22, R * 0.14), glyphMat);
-      bar.position.set(sx * R * 0.17, sy * (T * 0.62), -R * 0.1);
-      bar.rotation.y = sx * 0.62;
-      body.add(bar);
+      glowParts.push([placed(new THREE.BoxGeometry(R * 0.5, R * 0.14, T * 0.22), sx * R * 0.17, R * 0.1, sz * T * 0.62, 0, 0, sx * -0.62), glyph]);
     }
   }
+  if (air) glowParts.push([placed(new THREE.TorusGeometry(R * 1.6, 0.05, 3, 16), 0, 0, 0, Math.PI / 2.6, 0, 0.4), tint]);
+  const face = cached(pickupGeo, key + ":glow", () => mergeColoured(glowParts));
 
-  if (air) {
-    // mid-air bonus: an orbiting ring so it reads as the high-value pickup
-    const halo = new THREE.Mesh(
-      new THREE.TorusGeometry(R * 1.7, 0.045, 3, 14),
-      new THREE.MeshStandardMaterial({
-        color: base, emissive: base.clone().offsetHSL(0, 0, 0.2), emissiveIntensity: 1.6, flatShading: true,
-      })
-    );
-    halo.rotation.set(Math.PI / 2.6, 0, 0.4);
-    body.add(halo);
-  }
-  return body;
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(body, litMat()));
+  g.add(new THREE.Mesh(face, glowMat()));
+  g.add(glowSprite(tint.getHex(), air ? 3.2 : 2.4));
+  return g;
 }
 
 export function makeNitroCan(): THREE.Group {
-  // A sleek energy canister: dark metal sleeves top and bottom leave a glowing
-  // cyan core exposed as an energy window, framed by machined bands, set on a
-  // flanged foot, and topped with a nozzle.
-  const group = new THREE.Group();
-  const cyan = new THREE.Color(0x22d3ee);
-  const shellMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.85, roughness: 0.3, flatShading: true });
-  const bandMat = new THREE.MeshStandardMaterial({ color: 0xd7dee9, metalness: 0.9, roughness: 0.24, flatShading: true });
-  const coreMat = new THREE.MeshStandardMaterial({ color: 0x67e8f9, emissive: cyan, emissiveIntensity: 2.0, flatShading: true });
-
+  // A sleek energy canister: dark sleeves top and bottom leave a glowing cyan
+  // core exposed as an energy window, framed by machined bands, on a flanged
+  // foot, topped with a nozzle. 1.35x the old size, merged, and haloed.
   const R = 0.32;
-
-  // glowing energy core running the full height (exposed in the gap between sleeves)
-  const core = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.94, R * 0.94, 1.0, 12), coreMat);
-  core.position.y = 0.55;
-  group.add(core);
-
-  // metal sleeves, leaving a bright band exposed in the middle
-  const lower = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 0.44, 10), shellMat);
-  lower.position.y = 0.27;
-  const upper = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 0.34, 10), shellMat);
-  upper.position.y = 0.9;
-  group.add(lower, upper);
-
-  // flanged foot ring — a proper machined base instead of a bare cylinder edge
-  const foot = new THREE.Mesh(new THREE.CylinderGeometry(R * 1.1, R * 0.96, 0.07, 10), bandMat);
-  foot.position.y = 0.085;
-  group.add(foot);
-
-  // machined bands framing the energy window
-  for (const y of [0.5, 0.76]) {
-    const band = new THREE.Mesh(new THREE.TorusGeometry(R + 0.015, 0.04, 4, 18), bandMat);
-    band.rotation.x = Math.PI / 2;
-    band.position.y = y;
-    group.add(band);
-  }
-
-  // nozzle + glowing tip
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 0.18, 10), bandMat);
-  neck.position.y = 1.16;
-  const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.12, 0.14, 10), coreMat);
-  tip.position.y = 1.31;
-  group.add(neck, tip);
-
-  return group;
+  const shell = new THREE.Color(0x1e293b), band = new THREE.Color(0xd7dee9);
+  const cyan = new THREE.Color(0x22d3ee);
+  const body = cached(pickupGeo, "nitro:body", () => mergeColoured([
+    [placed(new THREE.CylinderGeometry(R, R, 0.3, 10), 0, 0.2, 0), shell],
+    [placed(new THREE.CylinderGeometry(R, R, 0.22, 10), 0, 0.96, 0), shell],
+    [placed(new THREE.CylinderGeometry(R * 1.1, R * 0.96, 0.07, 10), 0, 0.085, 0), band],
+    [placed(new THREE.TorusGeometry(R + 0.015, 0.04, 4, 18), 0, 0.37, 0, Math.PI / 2), band],
+    [placed(new THREE.TorusGeometry(R + 0.015, 0.04, 4, 18), 0, 0.85, 0, Math.PI / 2), band],
+    [placed(new THREE.CylinderGeometry(0.12, 0.18, 0.18, 10), 0, 1.16, 0), band],
+  ]));
+  const core = cached(pickupGeo, "nitro:glow", () => mergeColoured([
+    [placed(new THREE.CylinderGeometry(R * 0.94, R * 0.94, 1.0, 12), 0, 0.55, 0), cyan],
+    [placed(new THREE.CylinderGeometry(0.07, 0.12, 0.14, 10), 0, 1.31, 0), cyan],
+  ]));
+  const g = new THREE.Group();
+  const can = new THREE.Group();
+  can.add(new THREE.Mesh(body, litMat()));
+  can.add(new THREE.Mesh(core, glowMat()));
+  can.scale.setScalar(1.35);
+  g.add(can);
+  const halo = glowSprite(0x22d3ee, 3.0);
+  halo.position.y = 0.75;
+  g.add(halo);
+  return g;
 }
 
 export function makeOrb(): THREE.Group {
@@ -1768,6 +1797,7 @@ export function makeOrb(): THREE.Group {
   ringB.rotation.set(Math.PI / 2.2, Math.PI / 2, 0);
   inner.add(ringA, ringB);
 
+  inner.add(glowSprite(0xd946ef, 3.4));
   inner.position.y = 1.1;
   const wrapper = new THREE.Group();
   wrapper.add(inner);
@@ -1815,6 +1845,7 @@ export function makeItemBox(): THREE.Group {
   );
   ring.rotation.x = Math.PI / 2.4;
   g.add(ring);
+  g.add(glowSprite(0xfbbf24, 3.0));
 
   g.position.y = 1.1;
   const wrapper = new THREE.Group();

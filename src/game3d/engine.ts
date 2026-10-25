@@ -31,7 +31,6 @@ import {
   makeSkyDome, makePosterSky, makeCloudLayer, makeEnvMap, windTime, makeGround, makeGrassTexture,
   makeGrassField, makeRockField, makeMountainRing,
   makeGem, makeNitroCan, makeOrb, makeRamp, RAMP_SPECS, type RampKind,
-  makeBoostPad,
   makeCrystalCluster, makeMonster,
   makeMech, makeSlash, makeFlame, makeUnderGlow,
   makeItemBox, makeMissile, makeMine, makeShieldBubble,
@@ -43,13 +42,13 @@ import {
 import { makeWeather, type WeatherSystem } from "./weather";
 import { makeTunnelArch, makeTunnelPortal } from "./setpieces";
 import { makeGrandWaterfall, updateGrandWaterfall, makeBatFlock, updateBatFlock } from "./props/grand";
-import { makeOceanPlane, makeSkyline, makePalmField, makePalmProp, makeSandTexture } from "./props/coast";
-import { makeForkArrowSign, makeBlimp } from "./props/signage";
+import { makeOceanPlane, makeSkyline, makePalmField, makePalmVariants, makePalmProp, makeSandTexture } from "./props/coast";
+import { makeBlimp } from "./props/signage";
 import { BranchPath } from "./branch";
 import { FreeDrive } from "./freedrive";
 import { loadPBR, pbr, groundTextureFor } from "./textures";
 import { makeKart, setCarEnvTint, setCarPosterMode, CAR_SPECS, CAR_IDS, type CarStat } from "./cars";
-import { REALMS, pickScenery, REALM_WEATHER, REALM_WEATHER_POOL, REALM_AMBIENCE, REALM_TUNNELS, REALM_RIVERS, REALM_SPLITS, type RealmSpec, type SceneryKind, type RealmPalette, type WeatherKind } from "./realms";
+import { REALMS, pickScenery, REALM_WEATHER, REALM_WEATHER_POOL, REALM_AMBIENCE, REALM_TUNNELS, REALM_RIVERS, type RealmSpec, type SceneryKind, type RealmPalette, type WeatherKind } from "./realms";
 import { makePyramid, makeObelisk, makeSphinx, makeSandRock } from "./props/egyptian";
 import { makeTower, makeGatehouse, makeCastleWall, makeBanner, makeTorch } from "./props/castle";
 import { makeGrandstand, makeTyreStack, makeFloodlight, makePitBuilding, makeMarshalBoard } from "./props/circuit";
@@ -499,7 +498,6 @@ export class Game {
   private resizeObs: ResizeObserver | null = null;
   private carId: CarId;
   private carStat: CarStat;
-  private waterCurtains: THREE.Group[] = []; // road-spanning water sheets (scrolling)
   private grandFalls: THREE.Group[] = [];   // monumental waterfalls (scrolling water)
   private batFlocks: THREE.Group[] = [];    // cave bats (vertex-animated)
   private weather: WeatherSystem | null = null;
@@ -1128,7 +1126,6 @@ export class Game {
     // cleared HERE, not in the race reset: that runs after buildWorld and was
     // wiping the set-pieces placement had just registered (0 animated groups)
     this.grandFalls.length = 0;
-    this.waterCurtains.length = 0;
     this.batFlocks.length = 0;
     // must precede the ground mesh / scenery / grass — they all sample
     // groundHeightAtXZ and need the coastline already in it
@@ -1612,24 +1609,54 @@ export class Game {
     const mat = new THREE.MeshStandardMaterial({
       color: finish === "ice" ? 0xbfe4ff : 0x0a0e18,
       roughness: 0.05, metalness: 0.25, envMapIntensity: 2.4,
-      transparent: true, opacity: 0.72, depthWrite: false,
+      transparent: true, opacity: 0.72, depthWrite: false, side: THREE.DoubleSide,
     });
-    const geo = new THREE.CircleGeometry(1, 14);
     const len = this.track.length;
     let seed = 4242;
     const rand = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    // LAID ON THE ROAD, not placed level at one point's height. A level disc up
+    // to 8 m across on a banked or sloping road floated off it at the edges —
+    // measured hovering up to 0.8 m above the tarmac on Peaks, Metro and
+    // Hokkai: dark (or icy) saucers in the air. One merged mesh, too.
+    const parts: THREE.BufferGeometry[] = [];
     for (let i = 0; i < 50; i++) {
-      const p = this.track.pointAt(rand() * len, (rand() * 2 - 1) * ROAD_HALF_WIDTH * 0.72);
-      const m = new THREE.Mesh(geo, mat);
-      m.position.set(p.x, p.y + 0.02, p.z);
-      m.rotation.x = -Math.PI / 2;
-      m.rotation.z = rand() * Math.PI;
-      m.scale.set(1.2 + rand() * 2.8, 0.9 + rand() * 2.0, 1);
+      const disc = new THREE.CircleGeometry(1, 14);
+      disc.scale(1.2 + rand() * 2.8, 0.9 + rand() * 2.0, 1);
+      parts.push(this.layOnRoad(disc, rand() * len, (rand() * 2 - 1) * ROAD_HALF_WIDTH * 0.72, rand() * Math.PI, 0.025));
+    }
+    const merged = mergeGeometries(parts, false);
+    if (merged) {
+      const m = new THREE.Mesh(merged, mat);
       m.renderOrder = 1;
       m.userData.noShadow = true;
       g.add(m);
     }
     this.scene.add(g);
+  }
+
+  /**
+   * Lay a flat shape onto the road surface.
+   *
+   * `geo` is built in its own XY plane; X runs ALONG the road and Y ACROSS it
+   * (rotated by `rot`), and every vertex is dropped onto the real surface at
+   * that (distance, lateral) — banking, camber and slope included — then
+   * lifted by `lift`. A level plane positioned at one point's height is what
+   * made puddles and light pools hover over hills and banked corners.
+   */
+  private layOnRoad(geo: THREE.BufferGeometry, dist: number, lat: number, rot: number, lift: number): THREE.BufferGeometry {
+    const pos = geo.getAttribute("position");
+    const c = Math.cos(rot), s = Math.sin(rot);
+    const out = new Float32Array(pos.count * 3);
+    const p = new THREE.Vector3();
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i);
+      this.track.pointAt(this.track.wrap(dist + x * c - y * s), lat + x * s + y * c, p);
+      out[i * 3] = p.x; out[i * 3 + 1] = p.y + lift; out[i * 3 + 2] = p.z;
+    }
+    const g = geo.clone();
+    g.setAttribute("position", new THREE.BufferAttribute(out, 3));
+    g.computeVertexNormals();
+    return g;
   }
 
   /** Build a recycled pool of world-space smoke sprites for drifting tyres. */
@@ -2712,288 +2739,11 @@ export class Game {
       this.scene.add(wf);
       this.grandFalls.push(wf);
 
-      // A curtain of water falling ACROSS the road, so you drive through it.
-      //
-      // Two earlier attempts failed for instructive reasons. Scaling down
-      // makeGrandWaterfall dragged its 60 m cliff onto the carriageway. Then
-      // untextured planes with an unlit white material composited into a solid
-      // white billboard — a flat rectangle cannot read as water no matter how
-      // transparent it is, because the eye needs STREAKS and needs the edges to
-      // dissolve rather than end in a straight line. So the alpha does the work:
-      // vertical streaks of varying brightness, faded out at both sides and top
-      // so there is no rectangular border, scrolling downward.
-      const od = this.track.wrap(d - 34);
-      const op = this.track.pointAt(od, 0);
-      const otan = this.track.tangentAt(od);
-      const cv = document.createElement("canvas");
-      cv.width = 128; cv.height = 256;
-      const cx2 = cv.getContext("2d")!;
-      const img = cx2.createImageData(cv.width, cv.height);
-      let cseed = 24601;
-      const crnd = () => { cseed = (cseed * 16807) % 2147483647; return cseed / 2147483647; };
-      const cols: number[] = [];
-      for (let i = 0; i < cv.width; i++) cols.push(0.25 + crnd() * 0.75);
-      for (let y = 0; y < cv.height; y++) {
-        for (let x = 0; x < cv.width; x++) {
-          const u = x / (cv.width - 1), v = y / (cv.height - 1);
-          // streak brightness, with fine vertical grain so it isn't banded
-          const streak = cols[x] * (0.65 + 0.35 * Math.sin(v * 40 + cols[x] * 25));
-          // dissolve the left/right edges and the very top: no hard rectangle
-          const edge = Math.sin(Math.PI * u);
-          const top = Math.min(1, v * 3.2);
-          const a = Math.max(0, streak * Math.pow(edge, 1.6) * top) * 205;
-          const o = (y * cv.width + x) * 4;
-          img.data[o] = 232; img.data[o + 1] = 245; img.data[o + 2] = 255;
-          img.data[o + 3] = a;
-        }
-      }
-      cx2.putImageData(img, 0, 0);
-      const curtain = new THREE.Group();
-      const CW = ROAD_HALF_WIDTH * 2.25, CH = 6.5;
-      for (let k = 0; k < 2; k++) {
-        const tex = new THREE.CanvasTexture(cv);
-        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-        tex.repeat.set(2 + k, 1);
-        const mat = new THREE.MeshBasicMaterial({
-          map: tex, transparent: true, opacity: 0.5 - k * 0.16,
-          depthWrite: false, side: THREE.DoubleSide,
-        });
-        const sheet = new THREE.Mesh(new THREE.PlaneGeometry(CW, CH, 1, 1), mat);
-        sheet.position.set(0, CH / 2 - 0.4, (k - 0.5) * 0.8);
-        sheet.userData.noShadow = true;
-        sheet.userData.scroll = 1.6 + k * 0.7;   // fall speed
-        curtain.add(sheet);
-      }
-      curtain.position.set(op.x, op.y, op.z);
-      curtain.rotation.y = Math.atan2(otan.x, otan.z);   // lie across the road
-      this.scene.add(curtain);
-      this.waterCurtains.push(curtain);
+      // There used to be a curtain of water falling ACROSS the road here, so
+      // you drove through it. On screen it was a waterfall standing on the
+      // tarmac — reported as exactly that, twice — and it is gone. The fall
+      // beside the crossing is the monument; the road stays clear.
     }
-  }
-
-  /**
-   * Build the fork routes from REALM_SPLITS: a SEPARATE alternate road that
-   * peels off the main track, bows to one side, and rejoins later. A big fork
-   * sign marks the mouth; steering toward the branch side takes it, and
-   * `freeDrive` then walls you onto whichever road you are nearest.
-   *
-   * WHICH SIDE IS THE POINT. The old version picked the side from a character
-   * code, which on a straight makes the branch a lens — and a lens is always
-   * LONGER than its chord. Measured: a 130 m fork span produced a 152 m branch,
-   * 22 m and half a second of pure penalty for nothing, and the geometry cannot
-   * be tightened out of it because the two roads need 13.2 m between their
-   * centrelines just not to overlap.
-   *
-   * So the bow goes to the INSIDE of a bend, where it is a chord rather than a
-   * lens — a genuine shortcut you pay for with a tighter radius. `outsideSign`
-   * measures which side that is (see there for why it is measured rather than
-   * derived from the sign of the curvature), and the fork slides along the lap
-   * to find a bend worth cutting.
-   */
-  private placeBranches() {
-    const pal = this.realm.palette;
-    const len = this.track.length;
-    // the branch uses the SAME textured, double-sided asphalt as the main road,
-    // so it reads as a real road (a flat single-sided material rendered as a
-    // "ghost" surface — grass showing through with only the lines drawn)
-    const roadMat = new THREE.MeshStandardMaterial({
-      map: makeRoadTexture(pal), roughness: 0.95, metalness: 0.0, side: THREE.DoubleSide,
-    });
-    // samplers give the branch the main road's flat centre + tangent at any dist
-    const sampleP = (dist: number, out?: THREE.Vector3) => this.track.pointAt(this.track.wrap(dist), 0, out, true);
-    const sampleT = (dist: number, out?: THREE.Vector3) => this.track.tangentAt(this.track.wrap(dist), out);
-    const forks = REALM_SPLITS[this.realm.id] ?? [];
-    for (let fi = 0; fi < forks.length; fi++) {
-      const s = forks[fi];
-      // Slide the configured position along the lap until the span actually
-      // bends. A fork on a straight can only ever be the slower road.
-      const bendAt = (at: number) => {
-        let sum = 0;
-        for (let o = 0; o <= s.len; o += 10) sum += Math.abs(this.track.curvatureAt(this.track.wrap(at + o)));
-        return sum / (s.len / 10 + 1);
-      };
-      // …but NOT into a cave. The fork positions in REALM_SPLITS are hand-placed
-      // clear of each realm's tunnels and river crossings, and then this search
-      // used to move them up to 600 m downstream without checking what it was
-      // moving them into. On Enchanted Forest the fork is authored at 244 m to
-      // miss the cave at 756-838; the bend search slid it to 819 and put the
-      // mouth 19 m INSIDE the cave, which is why the alternate route could only
-      // be reached by scraping through rock. Reject any candidate whose span
-      // touches a tunnel or a river, with a margin so the junction is not right
-      // on a portal either.
-      const MARGIN = 45;
-      const blocked: { d0: number; d1: number }[] = [
-        ...(REALM_TUNNELS[this.realm.id] ?? []).map((t) => ({ d0: t.at * len, d1: t.at * len + t.len })),
-        ...(REALM_RIVERS[this.realm.id] ?? []).map((f) => ({ d0: f * len - 40, d1: f * len + 40 })),
-      ];
-      const clear = (at: number) => {
-        const a0 = at - MARGIN, a1 = at + s.len + MARGIN;
-        // compare on the unwrapped lap, testing the span shifted by ±one lap
-        // so a fork that straddles the start line is still caught
-        return blocked.every((b) =>
-          [-len, 0, len].every((sh) => a0 >= b.d1 + sh || a1 <= b.d0 + sh));
-      };
-      let startDist = s.at * len;
-      let best = clear(startDist) ? bendAt(startDist) : -1;
-      for (let k = 1; k <= 24; k++) {
-        const cand = s.at * len + k * 25;
-        if (!clear(cand)) continue;
-        const score = bendAt(cand);
-        if (score > best) { best = score; startDist = cand; }
-      }
-      const endDist = startDist + s.len;
-      this.splits.push({ d0: this.track.wrap(startDist), d1: this.track.wrap(endDist) });
-      // OUTSIDE of the bend, which is now the FASTER way round. Corner speed
-      // is √(grip · radius) since the friction circle went in, so the wide line
-      // is worth more than the metres it costs — the opposite of what was true
-      // before, when corners were free and only distance mattered. `outsideSign`
-      // measures which side that is rather than deriving it from the sign of the
-      // curvature, because this codebase has been bitten by that convention.
-      const side: 1 | -1 = this.outsideSign(startDist, endDist) > 0 ? 1 : -1;
-      // Just enough separation that the two ribbons never touch: each is
-      // drivable to 6.6 m from its own centreline, so 13.2 m is the floor and
-      // 16 leaves a 2.8 m median. Wider costs branch length quadratically.
-      const bulge = 16;
-      const branch = new BranchPath(sampleP, sampleT, startDist, endDist, { side, bulge, rise: 0, seed: 100 + fi });
-      // Same ribbon half-width as the main road (which is ROAD_HALF_WIDTH *
-      // 1.25, not ROAD_HALF_WIDTH). Built at 5 m the branch was visibly
-      // NARROWER than the road it forks off, while the containment walls — which
-      // are absolute, at 5.6 m soft and 6.6 m hard — sat outside its edge. So
-      // the fork could be driven a metre and a half past its own tarmac, and
-      // measured, the car spent 47% of the branch flagged off-road, grinding
-      // the wall out over nothing.
-      this.scene.add(branch.buildRoad(roadMat, ROAD_HALF_WIDTH * 1.25));
-      this.branches.push({ path: branch, side });
-      // …and put it on the minimap. A second road you cannot see on the map is
-      // a second road you do not know is there.
-      {
-        const pts = [];
-        const steps = Math.max(8, Math.round(branch.length / 6));
-        for (let i = 0; i <= steps; i++) {
-          const q = branch.pointAt((i / steps) * branch.length, 0);
-          pts.push({ x: q.x, z: q.z });
-        }
-        this.branchRoutes.push(pts);
-      }
-      // the divider sitting in the median between the main road and the branch
-      this.placeSplitIsland((startDist + endDist) / 2, side, branch);
-      this.placeRouteFeatures(this.branches.length - 1);
-      // Fork sign on the VERGE, 34 m before the mouth, on the side the branch
-      // goes. It was placed on the centreline at the mouth — and it is built as
-      // a gantry with two narrow central posts (|x| < 1.05), so those posts
-      // stood in the middle of the racing line. They are not registered as
-      // solid, so you drove straight through a steel sign at 115 mph. Moving it
-      // upstream also makes it do its job: a direction sign you reach at the
-      // same instant as the junction is not a direction sign.
-      const sign = makeForkArrowSign(pal);
-      const signD = this.track.wrap(startDist - 34);
-      const sp = this.track.pointAt(signD, side * (ROAD_HALF_WIDTH * 1.25 + 2.2));
-      const stan = this.track.tangentAt(signD);
-      sign.position.set(sp.x, this.terrainYAt(signD, side * (ROAD_HALF_WIDTH * 1.25 + 2.2)), sp.z);
-      sign.rotation.order = "YXZ";
-      sign.rotation.y = Math.atan2(stan.x, stan.z);
-      this.scene.add(sign);
-    }
-  }
-
-  /**
-   * What makes an alternate route worth taking: a boost chain into a ramp.
-   *
-   * The route's whole problem was that it had nothing on it. It could not — an
-   * entity's lateral is metres from a centreline, and "which centreline" was
-   * not a question the data could answer, so every pickup, pad and ramp in the
-   * game belonged to the main road by construction. `Entity.road` fixes that,
-   * and this is the first thing to use it.
-   *
-   * The ramp is the point. Cornering load is yaw rate × speed, and in the air
-   * both are irrelevant — so a jump carries speed through a bend that would
-   * otherwise scrub half of it away. That is why an Asphalt route feels fast
-   * and a merely-wider one does not, and it is only true here because the
-   * friction circle made corners cost something in the first place.
-   *
-   * Everything is placed along the branch's OWN arc length, on its own
-   * centreline, and only collides while you are on it.
-   */
-  private placeRouteFeatures(road: number) {
-    if (this.cfg.endless || road < 0 || road >= this.branches.length) return;
-    const b = this.branches[road].path;
-    const L = b.length;
-    // The plateau: the stretch where the branch runs parallel to the main road,
-    // clear of the peel-off and the merge. Everything goes here, because the
-    // ends are where the branch is busy changing direction.
-    const from = L * 0.28, to = L * 0.86;
-    if (to - from < 45) return;             // too short to be worth furnishing
-
-    // Three pads, centre lane, leading INTO the ramp — this is the run-up, so
-    // they are on the line you want rather than off it. The last one sits ~18 m
-    // short of the take-off, close enough that the surge is still burning.
-    const rampAt = from + (to - from) * 0.62;
-    for (let i = 0; i < 3; i++) {
-      this.addEntity("boostpad", rampAt - 52 + i * 13, 0, makeBoostPad(3.2), 0, 1, road);
-    }
-
-    // The ramp. `mega` because this is the one place on the circuit where a big
-    // launch is the intended line rather than a hazard to avoid.
-    const kind: RampKind = "mega";
-    this.addEntity("ramp", rampAt, 0, makeRamp(kind, this.realm.style === "void"), 0, RAMP_SPECS[kind].power, road);
-    this.ramps.push({
-      road,
-      // `ramps` is matched against `this.position`, which on a branch is the
-      // MAIN-track distance the branch maps to — so this has to be mapped the
-      // same way addEntity maps it, not stored as an arc length.
-      dist: this.track.wrap(b.startDist + (rampAt / L) * (b.endDist - b.startDist)),
-      power: RAMP_SPECS[kind].power,
-      lane: 0,
-      len: RAMP_SPECS[kind].l * 2,
-      height: RAMP_SPECS[kind].h,
-      twist: false,
-    });
-
-    // A run of chips down the back half, so the route pays even if you miss the
-    // ramp — and so it reads as a road that goes somewhere.
-    for (let i = 0; i < 6; i++) {
-      this.addEntity("gem", rampAt + 26 + i * 4, 0, makeGem(this.realm.palette.gem, false), 0.8, 1, road);
-    }
-  }
-
-  /**
-   * The divider in the median of a fork — a themed mound topped by a glowing
-   * beacon, so the split reads as two roads around something rather than a road
-   * that inexplicably doubles.
-   *
-   * SIZED FROM THE GAP THAT IS ACTUALLY THERE, by measuring where the branch's
-   * inner edge falls. Derived from `bulge` it was a 6.6 m cone in a 4.6 m
-   * median: it overlapped the main road at 5.5 m (drivable to 6.6) and the
-   * branch at 12.1 m (inner edge 11.2), so both roads had a hill in them. That
-   * is a good part of what "the separate curve felt bad" was.
-   */
-  private placeSplitIsland(midDist: number, side: number, branch: BranchPath) {
-    const pal = this.realm.palette;
-    // Where the branch centreline sits, in main-road metres, at the apex.
-    const apex = branch.pointAt(branch.length / 2, 0);
-    const gapOuter = Math.abs(this.track.project(apex.x, apex.z).lateral) - (ROAD_HALF_WIDTH + 1.6);
-    const gapInner = ROAD_HALF_WIDTH + 1.6;
-    const r = Math.max(0.8, (gapOuter - gapInner) / 2 - 0.5);
-    const centreOff = (gapInner + gapOuter) / 2;
-    const island = new THREE.Group();
-    const mound = new THREE.Mesh(
-      new THREE.ConeGeometry(r, r * 0.55, 8),
-      new THREE.MeshStandardMaterial({ color: new THREE.Color(pal.groundBase), flatShading: true, roughness: 1 }),
-    );
-    mound.position.y = r * 0.275; // base sits on the ground
-    mound.rotation.y = Math.random() * Math.PI;
-    island.add(mound);
-    const col = new THREE.Color(pal.gem);
-    const beacon = new THREE.Mesh(
-      new THREE.ConeGeometry(r * 0.3, r * 1.5, 5),
-      new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 0.6, flatShading: true }),
-    );
-    beacon.position.y = r * 0.55 + r * 0.75; // perched on top of the mound
-    island.add(beacon);
-    // median centre: halfway between the two roads' drivable edges
-    const p = this.track.pointAt(this.track.wrap(midDist), side * centreOff, undefined, true);
-    island.position.set(p.x, p.y, p.z);
-    this.scene.add(island);
   }
 
   /**
@@ -3341,30 +3091,10 @@ export class Game {
     const pal = realm.palette;
     this.placeTunnels();
     this.placeRivers();
-    // ALTERNATE ROUTES, on again — and this time with a reason to exist.
-    //
-    // The first version was deleted because it was never taken, and it deserved
-    // that: 8-12 m longer than the road it forks off, on a tighter radius, and
-    // structurally unable to hold a single pickup because entities were
-    // addressed in main-road coordinates only.
-    //
-    // Both halves are fixed. `Entity.road` and `ramps[].road` mean a branch can
-    // carry pads, chips and ramps of its own. And the friction circle changed
-    // what a route can BE: corner speed is now √(grip · radius), so geometry
-    // finally has a time value — and a RAMP is worth more than either, because
-    // in the air there is no cornering load at all, so a jump carries speed
-    // through a bend that would otherwise cost you half of it.
-    //
-    // So the fork goes where the main line is SLOWEST, bows to the outside for
-    // the wider radius, and carries a boost chain into a ramp. See
-    // placeRouteFeatures.
-    this.placeBranches();
-    this.minimap.setRoutes(this.branchRoutes);
-    this.freeDrive.branches = this.branches.map((b) => ({
-      path: b.path,
-      startDist: b.path.startDist,
-      endDist: b.path.endDist,
-    }));
+    // ALTERNATE ROUTES were removed on 2026-10-25, on request. Nothing builds
+    // a branch any more, so `branches` stays empty, `onBranch` stays null and
+    // freeDrive's branch handling never engages; that dead path is left in
+    // place rather than risk the driving model by cutting through it.
     this.placeSkyProps();
     this.treeMats = makeTreeMaterials(pal); // shared bark/foliage tree materials
     const lane = () => LANE_CENTERS[Math.floor(rand() * 3)];
@@ -3486,8 +3216,19 @@ export class Game {
         // this runs 4 rows at high fill where 2 sparse rows were the old ceiling.
         const kinds: ("pine" | "round" | "tall")[] = ["round", "round", "pine", "round"];
         const spots: { kind: "pine" | "round" | "tall"; x: number; y: number; z: number; s: number; r: number }[] = [];
+        // GLADES. The wall runs ~46 m back from the road, so anything set back
+        // less than that — the ancient tree, the mushroom groves — stood inside
+        // it and was never seen. Each set-piece's stretch is cleared on its own
+        // side, the same lap features placeLandmarks uses, so the clearing and
+        // the thing in it always line up.
+        const feat = this.lapFeatures();
+        const glades: { d: number; side: number }[] = [{ d: feat.straight, side: 1 }];
+        for (const cd of feat.corners(2)) glades.push({ d: cd, side: this.outsideSign(cd - 30, cd + 30) });
+        const inGlade = (d: number, side: number) =>
+          glades.some((gl) => gl.side === side && Math.min(Math.abs(d - gl.d), len - Math.abs(d - gl.d)) < 45);
         for (let d = 0; d < len; d += 3.4) {
           for (const side of [-1, 1]) {
+            if (inGlade(d, side)) continue;
             for (const row of [0, 1, 2, 3]) {
               if (rand() < [0.95, 0.8, 0.62, 0.45][row]) {
                 const kind = kinds[Math.floor(rand() * kinds.length)];
@@ -3790,6 +3531,7 @@ export class Game {
       for (const m of members) g.add(m);
       return g;
     };
+    const feat = this.lapFeatures();
 
     switch (realm.id) {
       case "sands": {
@@ -3829,55 +3571,111 @@ export class Game {
         break;
       }
       case "circuit": {
-        // a long grandstand run with floodlight masts behind, open to the track
+        // LANDMARK PASS, 2026-10-25. The stands used to sit 85-90 m out at
+        // fixed fractions of the lap, where nobody registered them. A grand-prix
+        // stadium is the main straight: stands down one side of it, the pits
+        // down the other, and marshal posts on the outside of the corners that
+        // actually bite.
+        const sd = feat.straight / len;
         drop(cluster(
+          at(makeGrandstand(rand), -30, 0, 2.0),
           at(makeGrandstand(rand), -15, 0, 2.0),
           at(makeGrandstand(rand), 0, 0, 2.0),
           at(makeGrandstand(rand), 15, 0, 2.0),
-          at(makeFloodlight(rand), -24, -5, 1.6),
-          at(makeFloodlight(rand), 24, -5, 1.6),
-        ), 0.5, 1, 85, true);
-        // the pit / paddock complex flanked by floodlights
+          at(makeGrandstand(rand), 30, 0, 2.0),
+          at(makeFloodlight(rand), -38, -6, 1.6),
+          at(makeFloodlight(rand), 0, -8, 1.7),
+          at(makeFloodlight(rand), 38, -6, 1.6),
+        ), sd, 1, 30, true);
         drop(cluster(
           at(makePitBuilding(rand), 0, 0, 2.2),
-          at(makeFloodlight(rand), -20, -6, 1.5),
-          at(makeFloodlight(rand), 20, -6, 1.5),
-        ), 0.16, -1, 80, true);
-        drop(cluster(
-          at(makeGrandstand(rand), -13, 0, 2.2),
-          at(makeGrandstand(rand), 13, 0, 2.2),
-        ), 0.8, -1, 90, true);
+          at(makeFloodlight(rand), -22, -6, 1.5),
+          at(makeFloodlight(rand), 22, -6, 1.5),
+        ), sd, -1, 26, true);
+        for (const cd of feat.corners(3)) {
+          const side = this.outsideSign(cd - 30, cd + 30) as 1 | -1;
+          drop(cluster(
+            at(makeTyreStack(rand), -3.2, 0, 1.2),
+            at(makeTyreStack(rand), 0, 0, 1.2),
+            at(makeTyreStack(rand), 3.2, 0, 1.2),
+            at(makeMarshalBoard(rand), 0, -3, 1.1),
+          ), cd / len, side, 12, true);
+        }
         break;
       }
       case "metro": {
-        // two downtown blocks of clustered towers rising over the skyline
+        // LANDMARK PASS, 2026-10-25. Two tower clusters 120-130 m off were the
+        // whole city. A street circuit is a canyon: buildings shoulder to
+        // shoulder down the main straight, each with a sign on its face, and
+        // the signs' colour on the wet road between them.
+        const washes: THREE.BufferGeometry[] = [];
+        for (let k = -6; k <= 6; k++) {
+          const d = track.wrap(feat.straight + k * 26);
+          for (const side of [-1, 1] as const) {
+            if (rand() < 0.15) continue;
+            const b = rand() < 0.55 ? makeBrownstone(rand) : makeSkyscraper(rand);
+            b.scale.multiplyScalar(rand() < 0.55 ? 1.3 : 1.7);
+            const box = new THREE.Box3().setFromObject(b);
+            const sign = makeNeonSign(rand);
+            sign.scale.multiplyScalar(1.1 + rand() * 0.6);
+            // on the face toward the road (+Z, which drop turns to the track)
+            sign.position.set((rand() - 0.5) * (box.max.x - box.min.x) * 0.5, 6 + rand() * Math.max(2, box.max.y * 0.35), box.max.z + 0.25);
+            const g = cluster(b, sign);
+            drop(g, d / len, side, 22, true);
+            const hue = sign.userData.signColor as number | undefined;
+            if (hue !== undefined && g.parent) {
+              const pool = makeLightWash(hue, 18 + rand() * 10, 0.18, 8);
+              washes.push(this.layOnRoad(pool.geometry, d, side * (1.5 + rand() * 2), rand() * Math.PI, 0.05));
+            }
+          }
+        }
+        if (washes.length) {
+          const merged = mergeGeometries(washes, false);
+          if (merged) {
+            const m = new THREE.Mesh(merged, washMaterial());
+            m.renderOrder = 3;
+            this.scene.add(m);
+          }
+        }
+        // and the skyline the canyon opens onto, brought in to where it reads
         drop(cluster(
-          at(makeSkyscraper(rand), 0, 0, 1.8),
-          at(makeSkyscraper(rand), 24, 12, 2.2),
-          at(makeSkyscraper(rand), 44, -6, 1.6),
-          at(makeSkyscraper(rand), 16, 30, 2.0),
-          at(makeSkyscraper(rand), 46, 28, 1.5),
-        ), 0.35, 1, 120, false);
-        drop(cluster(
-          at(makeSkyscraper(rand), 0, 0, 2.0),
-          at(makeSkyscraper(rand), 26, 14, 1.7),
-          at(makeSkyscraper(rand), 42, 32, 2.2),
-        ), 0.72, -1, 130, false);
+          at(makeSkyscraper(rand), 0, 0, 2.4),
+          at(makeSkyscraper(rand), 26, 14, 2.9),
+          at(makeSkyscraper(rand), -22, 18, 2.0),
+        ), track.wrap(feat.straight + len * 0.5) / len, -1, 70, false);
         break;
       }
       case "forest": {
-        // a giant ancient grove with a glowing crystal outcrop
-        const grove = new THREE.Group();
+        // LANDMARK PASS, 2026-10-25. The grove and crystals stood 90-95 m off,
+        // lost in the tree wall. The blurb promises moonlit woods and glowing
+        // mushrooms, so: one ancient tree that dwarfs the canopy, beside the
+        // straight where you have time to look up at it, with crystals glowing
+        // in its roots — and giant mushroom groves on the outside of the two
+        // tightest bends, where you are looking anyway.
         if (this.treeMats) {
-          grove.add(at(makeTree(rand, this.treeMats, "tall"), 0, 0, 2.4));
-          grove.add(at(makeTree(rand, this.treeMats, "pine"), 17, 9, 2.0));
-          grove.add(at(makeTree(rand, this.treeMats, "round"), -13, 11, 1.8));
+          // tall, not fat: a uniform 5x made the trunk a brown block that read
+          // as a cliff, so the height grows faster than the girth
+          const ancient = makeTree(rand, this.treeMats, "round");
+          ancient.scale.set(3.4, 5.6, 3.4);
+          drop(tag(cluster(
+            ancient,
+            at(makeCrystalCluster(rand, cols), 7, 5, 2.4),
+            at(makeCrystalCluster(rand, cols), -6, 7, 1.8),
+            at(makeCrystalCluster(rand, cols), 2, -7, 1.5),
+          ), "grandmotherTree"), feat.straight / len, 1, 34, false);
         }
-        grove.add(crystals(2.6));
-        drop(grove, 0.4, 1, 95, false);
+        for (const cd of feat.corners(2)) {
+          const side = this.outsideSign(cd - 30, cd + 30) as 1 | -1;
+          drop(tag(cluster(
+            at(instantiate(library, "mushroomTall", 7.5), 0, 0, 1),
+            at(instantiate(library, "mushroom", 5.0), 6, 4, 1),
+            at(instantiate(library, "mushroom", 3.6), -5, 5, 1),
+            at(instantiate(library, "mushroomTall", 4.2), 3, 9, 1),
+            at(makeCrystalCluster(rand, cols), -2, -3, 1.4),
+          ), "mushroomGrove"), cd / len, side, 16, false);
+        }
         // a big scenic waterfall cliff
         drop(tag(at(makeWaterfall(rand), 0, 0, 2.0), "waterfall"), 0.15, -1, 100, true, Math.PI, true);
-        drop(cluster(crystals(3.0), at(makeCrystalCluster(rand, cols), 11, 6, 2.2)), 0.78, 1, 90, false);
         break;
       }
       case "ember": {
@@ -3895,18 +3693,30 @@ export class Game {
         break;
       }
       case "peaks": {
-        // towering ice spires with a big rock and a frozen waterfall
-        drop(cluster(
-          crystals(3.6),
-          at(makeCrystalCluster(rand, cols), 12, 8, 2.8),
-          at(makeCrystalCluster(rand, cols), -10, 6, 2.4),
-          at(rock("rockA", 10), 6, -6, 1),
-        ), 0.4, 1, 100, false);
+        // LANDMARK PASS, 2026-10-25. The spires were 100-120 m out at fixed
+        // fractions. Ice belongs at the top: a crown of spires either side of
+        // the summit, so cresting it is the moment the lap is about — and rock
+        // and ice on the outside of the hairpins, where the road earns it.
+        const sf = feat.summit / len;
+        drop(tag(cluster(
+          crystals(5.2),
+          at(makeCrystalCluster(rand, cols), 13, 9, 3.6),
+          at(makeCrystalCluster(rand, cols), -11, 7, 3.0),
+          at(rock("rockA", 9), 6, -7, 1),
+        ), "summitCrown"), sf, 1, 30, false);
+        drop(tag(cluster(
+          crystals(4.4),
+          at(makeCrystalCluster(rand, cols), -12, 8, 3.2),
+          at(rock("rockB", 8), 8, 6, 1),
+        ), "summitCrown"), sf, -1, 34, false);
+        for (const cd of feat.corners(2)) {
+          const side = this.outsideSign(cd - 30, cd + 30) as 1 | -1;
+          drop(cluster(
+            at(rock("rockA", 11), 0, 0, 1),
+            at(makeCrystalCluster(rand, cols), 6, 5, 2.4),
+          ), cd / len, side, 18, false);
+        }
         drop(tag(at(makeWaterfall(rand), 0, 0, 2.2), "waterfall"), 0.62, -1, 95, true, Math.PI, true);
-        drop(cluster(
-          crystals(4.0),
-          at(makeCrystalCluster(rand, cols), 14, 10, 2.6),
-        ), 0.15, 1, 120, false);
         break;
       }
 
@@ -4096,13 +3906,12 @@ export class Game {
           const hue = sign.userData.signColor as number;
 
           // on the road below, stretched along it the way a real throw is
+          // Laid onto the road, not a level 50 m sheet at the ground height under
+          // the centreline — on Neon Run's climbs and banks that floated parts
+          // of it over the tarmac and sank the rest beneath it.
           const poolD = track.wrap(d + (rand() - 0.5) * 20);
-          const poolP = track.pointAt(poolD, side * (rand() * 6));
-          const pool = makeLightWash(hue, 34 + rand() * 22, 0.22);
-          pool.rotation.x = -Math.PI / 2;
-          pool.rotation.z = rand() * Math.PI;
-          pool.position.set(poolP.x, this.terrainYAt(poolD, 0) + 0.05, poolP.z);
-          collect(pool);
+          const pool = makeLightWash(hue, 34 + rand() * 22, 0.22, 10);
+          washGeos.push(this.layOnRoad(pool.geometry, poolD, side * (rand() * 6), rand() * Math.PI, 0.05));
 
           // and on the block across the road, facing back the way the sign does
           const farOff = -side * (30 + rand() * 34);
@@ -4236,22 +4045,46 @@ export class Game {
       }
 
       // palms all the way down both sides of the causeway, instanced
-      const palmSpots: { x: number; y: number; z: number; s: number; r: number }[] = [];
+      const palmSpots: { x: number; y: number; z: number; s: number; r: number; v: number }[] = [];
+      const palmKinds = makePalmVariants(rand, pal);
+      // the sand before the water: past this a palm would stand in the sea
+      const room = this.coast ? this.coast.r - 1 : Infinity;
       if (cs.palms) for (let d = 0; d < len; d += 15) {
         for (const side of [-1, 1]) {
           if (rand() < 0.28) continue;
-          // clear of the tarmac: a palm trunk at +5 m was close enough to
-          // overhang the road on a bend, which is why they read as standing
-          // "on the road"
-          const off = side * (ROAD_HALF_WIDTH + 2.4 + rand() * 3.2);
+          const v = Math.floor(rand() * palmKinds.length);
+          const pk = palmKinds[v];
+          let s = 0.85 + rand() * 0.3;
           const jd = d + rand() * 11;
+          // NO FRONDS OVER THE ROAD. The palm leans AWAY from the road (local
+          // +X turned outward), and the trunk stands far enough out that its
+          // crown's full reach ends 0.6 m short of the tarmac. Where the strip
+          // of sand is too narrow for that, the palm is scaled down to fit, and
+          // dropped if it would have to shrink below 0.7.
+          const need = (sc: number) => ROAD_HALF_WIDTH + 0.6 + (pk.crownR - pk.crownX) * sc;
+          let offAbs = Math.max(ROAD_HALF_WIDTH + 2.4 + rand() * 3.2, need(s));
+          if (offAbs > room) {
+            const fit = (room - ROAD_HALF_WIDTH - 0.6) / Math.max(0.01, pk.crownR - pk.crownX);
+            if (fit < 0.7) continue;
+            s = Math.min(s, fit);
+            offAbs = Math.min(room, Math.max(ROAD_HALF_WIDTH + 2.4, need(s)));
+          }
+          const off = side * offAbs;
           const p = track.pointAt(this.track.wrap(jd), off);
-          palmSpots.push({ x: p.x, y: this.terrainYAt(jd, off), z: p.z, s: 0.85 + rand() * 0.3, r: rand() * Math.PI * 2 });
+          const p0 = track.pointAt(this.track.wrap(jd), 0);
+          const ox = (p.x - p0.x) / offAbs, oz = (p.z - p0.z) / offAbs;
+          // rotation r takes local +X to (cos r, -sin r) in XZ; aim it outward
+          const r = Math.atan2(-oz, ox);
+          // and on a bend the road can curl back toward the crown: check the
+          // crown itself against every part of the lap
+          const cx = p.x + ox * pk.crownX * s, cz = p.z + oz * pk.crownX * s;
+          if (!this.roadClear(cx, cz, pk.crownR * s, 0.6)) continue;
+          palmSpots.push({ x: p.x, y: this.terrainYAt(jd, off), z: p.z, s, r, v });
           // and SOLID — scenery you can drive straight through breaks the world
           if (this.obstacleClear(p.x, p.z, 1.0)) this.obstacles.push({ x: p.x, z: p.z, r: 1.0 });
         }
       }
-      this.scene.add(makePalmField(rand, palmSpots, pal));
+      this.scene.add(makePalmField(palmKinds, palmSpots));
     } else if (realm.id === "forest") {
       // cave mouths set back in the hillsides, facing the road
       for (let d = 60; d < len - 40; d += 220) {
@@ -4334,13 +4167,25 @@ export class Game {
     // colour, so it reads as real space rather than a few scattered shapes.
     const { track, realm } = this;
     const len = track.length;
+    // Void's tube climbs and dives over itself, so a rock beside one part of
+    // the lap can float straight over another part of it. The usual clearance
+    // test (roadClear) is flat XZ distance, which says nothing here; this one
+    // is 3D, against every 4 m of the road.
+    const rs: THREE.Vector3[] = [];
+    for (let q = 0; q < len; q += 4) rs.push(track.pointAt(q, 0));
+    const clear3d = (x: number, y: number, z: number, r: number) => {
+      const need = (ROAD_HALF_WIDTH + r + 2) ** 2;
+      for (const q of rs) if ((q.x - x) ** 2 + (q.y - y) ** 2 + (q.z - z) ** 2 < need) return false;
+      return true;
+    };
     for (let d = 0; d < len; d += 2.6) {
       for (const side of [-1, 1]) {
         if (rand() < 0.28) continue;
         let obj: THREE.Object3D;
+        let size = 2.5;
         if (rand() < 0.86) {
           // rock asteroid (real PBR rock via the relit GLB), tumbling
-          const size = 1.4 + rand() * rand() * 9; // mostly small, a few huge
+          size = 1.4 + rand() * rand() * 9; // mostly small, a few huge
           obj = instantiate(library, rand() < 0.5 ? "rockA" : "rockB", size);
           varyTint(obj, rand);
         } else {
@@ -4348,9 +4193,46 @@ export class Game {
         }
         const lateral = side * (ROAD_HALF_WIDTH + 5 + rand() * 75);
         const p = track.pointAt(d + rand() * 2.6, lateral);
-        obj.position.set(p.x, p.y + (rand() - 0.5) * 130, p.z);
+        const y = p.y + (rand() - 0.5) * 130;
+        // the model's origin is its base, so its middle is half a size up
+        if (!clear3d(p.x, y + size * 0.5, p.z, size)) continue;
+        obj.position.set(p.x, y, p.z);
         obj.rotation.set(rand() * Math.PI * 2, rand() * Math.PI * 2, rand() * Math.PI * 2);
         this.scene.add(obj);
+      }
+    }
+    // LANDMARK PASS, 2026-10-25: two rings of asteroids around the tube that
+    // you drive straight through — the one thing out here with a shape you
+    // can recognise from one lap to the next. The ring is centred on the road
+    // and its rocks sit 20 m out, so the smallest gap to the tube is ~12 m.
+    {
+      const feat = this.lapFeatures();
+      // a ring around one point can clip a different part of the lap passing
+      // above or below it, so each rock takes the same 3D test as the field
+      for (const d of [feat.straight, this.track.wrap(feat.straight + len * 0.5)]) {
+        const c = track.pointAt(d, 0);
+        const t = track.tangentAt(d);
+        const rx = t.z, rz = -t.x;                 // across the road, in XZ
+        const rl = Math.hypot(rx, rz) || 1;
+        for (let k = 0; k < 11; k++) {
+          const a = (k / 11) * Math.PI * 2;
+          const R = 20 + rand() * 3;
+          const size = 4.5 + rand() * 3;
+          const px = c.x + (rx / rl) * Math.cos(a) * R, py = c.y + Math.sin(a) * R, pz = c.z + (rz / rl) * Math.cos(a) * R;
+          // the model's origin is its BASE, so its middle is half a size up
+          if (!clear3d(px, py + size * 0.5, pz, size)) continue;
+          const r = instantiate(library, rand() < 0.5 ? "rockA" : "rockB", size);
+          varyTint(r, rand);
+          r.position.set(px, py, pz);
+          r.rotation.set(rand() * Math.PI * 2, rand() * Math.PI * 2, rand() * Math.PI * 2);
+          r.userData.kind = "asteroidRing";
+          this.scene.add(r);
+        }
+        const beacon = makeCrystalCluster(rand, realm.palette.crystalColors);
+        beacon.scale.multiplyScalar(2.2);
+        beacon.position.set(c.x, c.y + 24, c.z);
+        beacon.userData.kind = "asteroidRing";
+        this.scene.add(beacon);
       }
     }
     // a handful of massive distant asteroids for a sense of scale
@@ -4742,6 +4624,52 @@ export class Game {
    *
    * @returns +1 or -1, in the lateral units `addEntity` takes.
    */
+  /**
+   * Where the lap gives a set-piece a reason to be.
+   *
+   * Landmarks used to go at fixed fractions of the lap (0.15, 0.4, 0.78), which
+   * on one track is the main straight and on another the middle of nowhere.
+   * These are found from the track itself: the longest calm stretch (where you
+   * have time to look), the highest point (where the view opens), and the
+   * tightest corners by the lap's OWN percentiles — an absolute curvature
+   * threshold finds nothing on a sweeping circuit and everything on a twisty one.
+   */
+  private lapFeatures() {
+    const len = this.track.length;
+    const step = 10;
+    const n = Math.max(1, Math.floor(len / step));
+    const curv: number[] = [];
+    let summit = 0, top = -Infinity;
+    for (let i = 0; i < n; i++) {
+      curv.push(Math.abs(this.track.curvatureAt(i * step)));
+      const y = this.track.pointAt(i * step, 0).y;
+      if (y > top) { top = y; summit = i * step; }
+    }
+    // the calmest 160 m window, by summed curvature
+    const w = 16;
+    let best = Infinity, straight = 0;
+    for (let i = 0; i < n; i++) {
+      let sum = 0;
+      for (let k = 0; k < w; k++) sum += curv[(i + k) % n];
+      if (sum < best) { best = sum; straight = (i + w / 2) * step; }
+    }
+    const sorted = [...curv].sort((a, b) => a - b);
+    const p85 = sorted[Math.floor(sorted.length * 0.85)] ?? 0;
+    const corners = (count: number, gap = 250): number[] => {
+      const order = curv.map((c, i) => [c, i] as const).sort((a, b) => b[0] - a[0]);
+      const out: number[] = [];
+      for (const [c, i] of order) {
+        if (out.length >= count || c < p85) break;
+        const d = i * step;
+        const near = (a: number) => Math.min(Math.abs(a - d), len - Math.abs(a - d)) < gap;
+        if (near(straight) || out.some(near)) continue;
+        out.push(d);
+      }
+      return out;
+    };
+    return { straight: this.track.wrap(straight), summit, corners };
+  }
+
   private outsideSign(from: number, to: number): number {
     const off = ROAD_HALF_WIDTH * 0.7;
     const walk = (side: number) => {
@@ -6167,12 +6095,6 @@ export class Game {
       // their userData, so this is safe to call unconditionally.
       for (const wf of this.grandFalls) updateGrandWaterfall(wf, this.time);
       for (const bf of this.batFlocks) updateBatFlock(bf, this.time);
-      for (const cu of this.waterCurtains) {
-        for (const sh of cu.children) {
-          const mm = (sh as THREE.Mesh).material as THREE.MeshBasicMaterial;
-          if (mm.map) mm.map.offset.y = -this.time * (sh.userData.scroll as number);
-        }
-      }
       // drive the foliage wind + shimmer/sway the god-ray shafts so they breathe
       windTime.value = this.time;
       if (this.heatHaze && this.heatHaze.enabled) this.heatHaze.uniforms.time.value = this.time;

@@ -23,9 +23,8 @@ Optional, also outside the repo: `NEXT_PUBLIC_SENTRY_DSN` (crash reports) and
 `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (Google sign-in). Both degrade honestly when
 unset rather than breaking or pretending.
 
-One non-blocking item remains inside the repo: the five older realms (Forest,
-Peaks, Void, Circuit, Metro) have had every global fix but not the bespoke
-landmark pass the six photo realms got.
+Nothing non-blocking is left inside the repo either: the five older realms got
+their landmark pass on 2026-10-25 (AUDIT L4).
 
 ---
 

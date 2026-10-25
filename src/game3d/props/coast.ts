@@ -223,7 +223,9 @@ function frondGeometry(rand: () => number, len: number): THREE.BufferGeometry {
 /** A single palm's merged geometry, with a vertical vertex tint. */
 function palmVariantGeometry(rand: () => number, lit: boolean): THREE.BufferGeometry {
   const h = 6.0 + rand() * 3.4;   // 6-9.4 m: a palm, not a radio mast
-  const lean = (rand() - 0.5) * 0.62;
+  // Always toward +X, so whoever places a palm can point its lean AWAY from
+  // the road; a random sign let half of them lean their crown over it.
+  const lean = rand() * 0.31;
   const parts: THREE.BufferGeometry[] = [];
 
   const seg = 7;
@@ -300,25 +302,53 @@ export function makePalmProp(rand: () => number, pal: RealmPalette): THREE.Group
   return g;
 }
 
+export interface PalmVariant {
+  geo: THREE.BufferGeometry;
+  /** how far the crown's axis sits out along +X from the trunk base, at scale 1 */
+  crownX: number;
+  /** the farthest the fronds reach horizontally from that axis, at scale 1 */
+  crownR: number;
+}
+
+/**
+ * The palm shapes a grove draws from, each MEASURED: where its crown is and
+ * how far its fronds reach. Placement needs those numbers — the causeway
+ * palms were planted 2.4 m off the tarmac at a random angle, and a palm that
+ * leans 31% of its height with fronds five metres long put leaves across the
+ * whole road, 1-4.5 m up, all the way round the lap.
+ */
+export function makePalmVariants(rand: () => number, pal: RealmPalette, variants = 8): PalmVariant[] {
+  const lit = pal.hemiInt >= 0.6;   // daylight realm vs a backlit sunset one
+  const out: PalmVariant[] = [];
+  for (let v = 0; v < variants; v++) {
+    const geo = palmVariantGeometry(rand, lit);
+    const p = geo.getAttribute("position");
+    // the crown is the highest point's x; its reach is measured from there
+    let topY = -Infinity, crownX = 0;
+    for (let i = 0; i < p.count; i++) if (p.getY(i) > topY) { topY = p.getY(i); crownX = p.getX(i); }
+    let crownR = 0;
+    for (let i = 0; i < p.count; i++) crownR = Math.max(crownR, Math.hypot(p.getX(i) - crownX, p.getZ(i)));
+    out.push({ geo, crownX, crownR });
+  }
+  return out;
+}
+
 /**
  * Instanced palm grove. These line both sides of the causeway for the whole
  * lap, so one mesh each would be hundreds of draw calls on the one realm that
- * can least afford them.
+ * can least afford them. Each spot names the variant it was placed for (`v`),
+ * because the placement depends on that variant's reach.
  */
 export function makePalmField(
-  rand: () => number,
-  spots: { x: number; y: number; z: number; s: number; r: number }[],
-  pal: RealmPalette,
-  variants = 8
+  variants: PalmVariant[],
+  spots: { x: number; y: number; z: number; s: number; r: number; v: number }[],
 ): THREE.Group {
   const out = new THREE.Group();
   if (!spots.length) return out;
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
-  const geos = [];
-  const lit = pal.hemiInt >= 0.6;   // daylight realm vs a backlit sunset one
-  for (let v = 0; v < variants; v++) geos.push(palmVariantGeometry(rand, lit));
+  const geos = variants.map((pv) => pv.geo);
   const buckets: (typeof spots)[] = geos.map(() => []);
-  spots.forEach((sp, i) => buckets[i % geos.length].push(sp));
+  spots.forEach((sp) => buckets[sp.v].push(sp));
   const m = new THREE.Matrix4(), q = new THREE.Quaternion();
   const up = new THREE.Vector3(0, 1, 0), pos = new THREE.Vector3(), scl = new THREE.Vector3();
   geos.forEach((geo, vi) => {

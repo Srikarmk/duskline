@@ -1,4 +1,4 @@
-# Audit — opened 2026-09-15, worked 2026-09-16, 09-18 and 09-22
+# Audit — opened 2026-09-15, worked 2026-09-16, 09-18, 09-22 and 10-25
 
 Run against the **deployed build**, not a local dev server, except where noted.
 Dependency and code checks are against the working tree.
@@ -554,6 +554,92 @@ assumed were missing were already there. The remaining distance to a
 photo-real racer is proportions and surfacing in the ten rib tables, which is
 art direction needing reference and taste, not more part types.
 
+
+---
+
+# Pass of 2026-10-25 — landmarks, things on the road, alternate routes, pickups
+
+Reported as: *"that waterfall in the middle of road is still there, need to
+fix shit like this. Also remove alternate routes. Improve sprites for nitros
+and all."*
+
+### ✅ 🔴 L1 — A curtain of water falling across the road
+
+Not `findCliff` this time (fixed in `d5abde9`). Forest's river crossings also
+hung a scrolling water curtain **across the carriageway** so you drove
+through it. From the chase camera that is a waterfall standing on the tarmac,
+which is exactly what was reported, twice. The curtain, its field and its
+per-frame scroll are gone; the river and the grand fall beside the road stay.
+
+### ✅ 🔴 L2 — "Shit like this": a road-intrusion audit of all thirteen worlds
+
+Rather than look for the next one by eye, every mesh vertex in every world is
+projected onto the circuit and flagged if it sits over the road
+(|lateral| < 4.7 m) between 0.25 and 4.5 m above the surface — the band a car
+drives through. Pickups, cars and the sky are excluded. Three real faults came
+out, plus one in Void:
+
+| What | Cause | Fix |
+| --- | --- | --- |
+| Puddles hovering over banked road | flat discs at the centreline's height, on a road that tilts | each disc's vertices laid onto the surface (`layOnRoad`), then merged into one mesh |
+| Neon light pools floating on the camber | same — flat planes | subdivided and laid onto the surface the same way |
+| Causeway palms with crowns over the lane | the lean was a random direction, and the spacing ignored the crown's reach | lean always points away from the road, each palm is shrunk to fit its spot or skipped, and its crown is clearance-checked |
+| Void asteroids floating 4 m over a different part of the lap | the tube climbs and dives over itself; `roadClear` is flat XZ distance | a 3D clearance test against every 4 m of road, for the field and the new rings |
+
+**Result: 0 intruders in 11 worlds.** The two that still report are expected
+and were checked on screen: Forest's cave roof (3.7–4.5 m, a drive-through
+cave) and five edge points of a Crystal Peaks marker at 0.25 m.
+
+### ✅ 🟠 L3 — Alternate routes removed
+
+The forks never earned their keep (see the 2026-09-22 pass: unreachable,
+pointless, off the map, and every system had to learn that "lateral" could
+mean a second road). `placeBranches`, `placeRouteFeatures`,
+`placeSplitIsland`, `REALM_SPLITS`, `makeForkArrowSign` and `props/split.ts`
+are deleted. `freeDrive.branches` stays empty, so the branch handling in the
+driving code is inert rather than ripped out.
+
+### ✅ 🟡 L4 — The landmark pass for the five older worlds
+
+Placed by the lap's own features (`lapFeatures()`: the longest calm 160 m, the
+summit, and corners by that lap's 85th-percentile curvature), not by fixed
+distances, so each lands where it reads.
+
+- **Apex Speedway** — a grandstand run with floodlights on the main straight,
+  the pit building opposite, marshal posts with tyre stacks on the outside of
+  three corners.
+- **Neon Metro** — a canyon of brownstones and towers along the straight, each
+  with a neon sign and a light pool on the road, and a skyline cluster across
+  the lap.
+- **Enchanted Forest** — an ancient tree ringed with crystals, and mushroom
+  groves on the outside of two corners. They were placed and invisible inside
+  the 46 m tree wall at first; the wall now leaves a 90 m glade at each.
+- **Crystal Peaks** — a crystal crown either side of the summit, rock-and-
+  crystal outcrops at two corners.
+- **Void Circuit** — two rings of asteroids around the tube you drive through,
+  each with a crystal beacon above it.
+
+### ✅ 🟡 L5 — Pickups: readable at racing distance, and half the draw calls
+
+A 0.36 m gem chip was a few pixels at 60 m and, under a sunset grade, a pale
+speck on pale tarmac. Every gem also built its own eight meshes and four
+materials.
+
+Now each pickup is two merged meshes — a lit body and an unlit glowing part
+(`toneMapped: false`, so it lands at full colour under any grade and blooms) —
+plus one additive glow sprite in its colour. Geometry and materials are built
+once per kind and shared. Gems are 1.5× larger, nitro cans 1.35× with a
+wider cyan energy window, and the orb and item box got halos too.
+
+Measured, mean draw calls per frame over eight points on the lap:
+
+| World | Before | After |
+| --- | --- | --- |
+| Mirage Mile (384 gems) | 1,519 | **846** |
+| Sunset Bay | 1,085 | **616** |
+| Neon Metro | 1,194 | **894** |
+
+Pickup meshes on Mirage Mile: 3,408 → 1,278.
 
 ---
 

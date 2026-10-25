@@ -236,10 +236,9 @@ Side effect worth noting: the settings panel had no height cap, and nine extra
 rows pushed BACK off the bottom of a landscape phone. Capped at 92vh with
 internal scroll.
 
-### [LATER] Older realms predate the current art direction
-Forest, Peaks, Void, Circuit and Metro have had the global fixes (banking,
-elevation, sky, props) but not the bespoke landmark pass the six photo realms
-got.
+### [DONE] Older realms predate the current art direction
+Forest, Peaks, Void, Circuit and Metro got their landmark pass on 2026-10-25
+(AUDIT L4).
 
 ### [DONE] Mobile
 Touch controls (`TouchControls.tsx` synthesises the same key events the engine
@@ -323,6 +322,5 @@ Nothing below can be done from inside the repository. In order:
    Domains → add it and follow the DNS instructions. If Google sign-in is on,
    add the new origin to the OAuth client too.
 
-Still open inside the repo, but not launch-blocking: the five older realms
-(Forest, Peaks, Void, Circuit, Metro) have not had the bespoke landmark pass
-the six photo realms got.
+Nothing else is open inside the repo: the landmark pass for the five older
+realms was done on 2026-10-25 (AUDIT L4).

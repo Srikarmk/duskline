@@ -412,8 +412,10 @@ export function washMaterial(): THREE.MeshBasicMaterial {
 }
 
 /** A wash quad of `size`, tinted `hex` at `strength`, ready to be positioned. */
-export function makeLightWash(hex: number, size: number, strength: number): THREE.Mesh {
-  const geo = new THREE.PlaneGeometry(size, size);
+export function makeLightWash(hex: number, size: number, strength: number, segs = 1): THREE.Mesh {
+  // `segs` > 1 for a wash that will be laid onto the road: four corners on a
+  // 50 m stretch of a climbing, banked road cannot follow it in between.
+  const geo = new THREE.PlaneGeometry(size, size, segs, segs);
   const c = new THREE.Color(hex).multiplyScalar(strength);
   const n = geo.getAttribute("position").count;
   const col = new Float32Array(n * 3);
